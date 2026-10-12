@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "vla-agent"
 version = "0.1.0"
-description = "Agent harness for VLA data processing, action labels, openpi training, evaluation and serving"
+description = "Agent harness for VLA demonstration-data preprocessing: cleaning, keyframes, still frames, coverage, action labels"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

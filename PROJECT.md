@@ -21,10 +21,11 @@ Do not duplicate:
 
 ## Purpose
 
-An agent harness for VLA policy work: skills and tools that take robot demonstration data through
-cleaning, keyframes, still-frame handling, diversity evaluation, action labels, openpi training,
-evaluation and serving. It serves agents (and people) fine-tuning openpi π0 / π0.5 on new robots and
-tasks.
+An agent harness for preparing robot demonstration data for VLA policies: skills and tools that take
+recorded LeRobot datasets through audit and cleaning, keyframes, still frames and end padding, coverage
+and a held-out split, and action labels, to a training-ready dataset with a data report. Training,
+evaluation and serving on openpi π0 / π0.5 are downstream of that dataset and covered by one skill. It
+serves agents (and people) fine-tuning openpi on new robots and tasks.
 
 ## Environment
 
@@ -63,10 +64,15 @@ Rules that apply only to this project, in addition to `AGENTS.md`.
   `examples/` modules, which must be on `PYTHONPATH`.
 - `src/vla_tools/arc_interp.py` imports nothing else from the package: it is delivered to serving machines
   as a single file.
+- Tools run from the project root (the parent of `runs/`); `run_status` and `data_report` resolve the
+  relative dataset paths recorded in artifacts against it.
+- `pytest` needs no GPU or network; tests marked `openpi` run only where openpi is importable. A
+  `PYTHONPATH` that contains a directory named `openpi` makes it importable as an empty namespace package,
+  so the openpi tests are gated on `openpi.models.lora`.
 
 ## Onboarding
 
 What a new contributor must read or know before making the first change.
 
 Read `AGENTS.md`, `README.md`, `.claude/skills/vla-pipeline/SKILL.md` and its `references/`, then
-`docs/validation.md` for what has been verified and how.
+`docs/validation.md` for what has been verified and how, and run `pytest`.

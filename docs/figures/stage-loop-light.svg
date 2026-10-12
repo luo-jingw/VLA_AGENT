@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 216" width="680" height="216" role="img" aria-label="一个阶段内部的循环" font-family="-apple-system, 'Segoe UI', 'Noto Sans CJK SC', 'PingFang SC', 'Microsoft YaHei', 'Noto Serif CJK SC', sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 292" width="680" height="292" role="img" aria-label="一个数据阶段内部的循环" font-family="-apple-system, 'Segoe UI', 'Noto Sans CJK SC', 'PingFang SC', 'Microsoft YaHei', 'Noto Serif CJK SC', sans-serif">
 <defs><marker id='arrow' viewBox='0 0 10 10' refX='8' refY='5' markerWidth='6' markerHeight='6' orient='auto-start-reverse'><path d='M2 1L8 5L2 9' fill='none' stroke='#6b6a64' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></marker></defs>
-<rect x="0.5" y="0.5" width="679" height="215" rx="12" fill="#ffffff" stroke="#dedcd3"/>
+<rect x="0.5" y="0.5" width="679" height="291" rx="12" fill="#ffffff" stroke="#dedcd3"/>
 <rect x="41" y="30" width="130" height="76" rx="8" fill="#FFFFFF" stroke="#B4B2A9" stroke-width="0.7"/>
 <text x="106.0" y="50" font-size="14" font-weight="600" fill="#1f1e1b" text-anchor="middle" dominant-baseline="central">① 运行工具</text>
 <text x="106.0" y="71" font-size="12" font-weight="400" fill="#6b6a64" text-anchor="middle" dominant-baseline="central">写新版本或报告</text>
@@ -9,21 +9,27 @@
 <text x="262.0" y="50" font-size="14" font-weight="600" fill="#1f1e1b" text-anchor="middle" dominant-baseline="central">② 观察</text>
 <text x="262.0" y="71" font-size="12" font-weight="400" fill="#6b6a64" text-anchor="middle" dominant-baseline="central">统计与核对图</text>
 <text x="262.0" y="89" font-size="12" font-weight="400" fill="#6b6a64" text-anchor="middle" dominant-baseline="central">一致性检查</text>
-<rect x="353" y="30" width="130" height="76" rx="8" fill="#FAECE7" stroke="#993C1D" stroke-width="0.7"/>
-<text x="418.0" y="50" font-size="14" font-weight="600" fill="#712B13" text-anchor="middle" dominant-baseline="central">③ 决定</text>
-<text x="418.0" y="71" font-size="12" font-weight="400" fill="#993C1D" text-anchor="middle" dominant-baseline="central">写入决定文件</text>
-<text x="418.0" y="89" font-size="12" font-weight="400" fill="#993C1D" text-anchor="middle" dominant-baseline="central">每条附理由</text>
+<rect x="353" y="30" width="130" height="76" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.7"/>
+<text x="418.0" y="50" font-size="14" font-weight="600" fill="#085041" text-anchor="middle" dominant-baseline="central">③ 决定</text>
+<text x="418.0" y="71" font-size="12" font-weight="400" fill="#0F6E56" text-anchor="middle" dominant-baseline="central">写入计划文件</text>
+<text x="418.0" y="89" font-size="12" font-weight="400" fill="#0F6E56" text-anchor="middle" dominant-baseline="central">每条附理由</text>
 <rect x="509" y="30" width="130" height="76" rx="8" fill="#FFFFFF" stroke="#B4B2A9" stroke-width="0.7"/>
 <text x="574.0" y="50" font-size="14" font-weight="600" fill="#1f1e1b" text-anchor="middle" dominant-baseline="central">④ 放行检查</text>
-<text x="574.0" y="71" font-size="12" font-weight="400" fill="#6b6a64" text-anchor="middle" dominant-baseline="central">产物齐全</text>
-<text x="574.0" y="89" font-size="12" font-weight="400" fill="#6b6a64" text-anchor="middle" dominant-baseline="central">问题已解释</text>
+<text x="574.0" y="71" font-size="12" font-weight="400" fill="#6b6a64" text-anchor="middle" dominant-baseline="central">run_status</text>
+<text x="574.0" y="89" font-size="12" font-weight="400" fill="#6b6a64" text-anchor="middle" dominant-baseline="central">产物与决定齐全</text>
 <path d="M171 68 L194 68" fill="none" stroke="#6b6a64" stroke-width="1.2" marker-end="url(#arrow)"/>
 <path d="M327 68 L350 68" fill="none" stroke="#6b6a64" stroke-width="1.2" marker-end="url(#arrow)"/>
 <path d="M483 68 L506 68" fill="none" stroke="#6b6a64" stroke-width="1.2" marker-end="url(#arrow)"/>
-<rect x="553" y="136" width="86" height="44" rx="8" fill="#FFFFFF" stroke="#B4B2A9" stroke-width="0.7"/>
-<text x="596.0" y="158.0" font-size="14" font-weight="600" fill="#1f1e1b" text-anchor="middle" dominant-baseline="central">下一阶段</text>
-<path d="M596 106 L596 133" fill="none" stroke="#6b6a64" stroke-width="1.2" marker-end="url(#arrow)"/>
-<path d="M530 106 L530 156 L106 156 L106 109" fill="none" stroke="#6b6a64" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
-<text x="318" y="174" font-size="12" font-weight="400" fill="#6b6a64" text-anchor="middle" dominant-baseline="central">未通过：调参数、改定义，或停下报告阻塞</text>
-<text x="340" y="200" font-size="12" font-weight="400" fill="#6b6a64" text-anchor="middle" dominant-baseline="central">珊瑚：写入的决定记录　虚线：回到本阶段开头</text>
+<rect x="353" y="150" width="130" height="76" rx="8" fill="#FAECE7" stroke="#993C1D" stroke-width="0.7"/>
+<text x="418.0" y="170" font-size="14" font-weight="600" fill="#712B13" text-anchor="middle" dominant-baseline="central">人的决定</text>
+<text x="418.0" y="191" font-size="12" font-weight="400" fill="#993C1D" text-anchor="middle" dominant-baseline="central">decisions.md</text>
+<text x="418.0" y="209" font-size="12" font-weight="400" fill="#993C1D" text-anchor="middle" dominant-baseline="central">未决时停在本阶段</text>
+<path d="M398 106 L398 147" fill="none" stroke="#6b6a64" stroke-width="1.2" marker-end="url(#arrow)"/>
+<path d="M438 150 L438 109" fill="none" stroke="#6b6a64" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+<rect x="553" y="150" width="86" height="44" rx="8" fill="#FFFFFF" stroke="#B4B2A9" stroke-width="0.7"/>
+<text x="596.0" y="172.0" font-size="14" font-weight="600" fill="#1f1e1b" text-anchor="middle" dominant-baseline="central">下一阶段</text>
+<path d="M596 106 L596 147" fill="none" stroke="#6b6a64" stroke-width="1.2" marker-end="url(#arrow)"/>
+<path d="M530 106 L530 244 L106 244 L106 109" fill="none" stroke="#6b6a64" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+<text x="232" y="228" font-size="12" font-weight="400" fill="#6b6a64" text-anchor="middle" dominant-baseline="central">未通过：调参数、改定义，或停下报告阻塞</text>
+<text x="340" y="270" font-size="12" font-weight="400" fill="#6b6a64" text-anchor="middle" dominant-baseline="central">青：agent 写入的决定　珊瑚：需要人决定的事项　虚线：回到本阶段或等待</text>
 </svg>

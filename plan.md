@@ -1,6 +1,6 @@
 # Plan
 
-Plan Status: approved
+Plan Status: completed
 
 # Problem
 
@@ -239,7 +239,7 @@ lists every dataset version, decision and coverage finding.
 
 ## Phase 5
 
-Phase Status: active
+Phase Status: completed
 
 Round: 4
 
