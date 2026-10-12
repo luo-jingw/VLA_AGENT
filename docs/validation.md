@@ -38,4 +38,6 @@ equivalent to `integrations/openpi/patches`.
 - the `settle` and referenced `threshold_cross` detectors on real data;
 - `diversity` cluster cuts on a second dataset;
 - a full training run started from `vla_openpi.launch`, and closed-loop robot results of any model
-  trained through this harness.
+  trained through this harness;
+- the integration in a clean upstream openpi environment with the patches applied (every check above
+  ran on a fork with equivalent changes).

@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 806" width="680" height="806" role="img" aria-label="VLA 流程的推进与回环" font-family="-apple-system, 'Segoe UI', 'Noto Sans CJK SC', 'PingFang SC', 'Microsoft YaHei', 'Noto Serif CJK SC', sans-serif">
+<defs><marker id='arrow' viewBox='0 0 10 10' refX='8' refY='5' markerWidth='6' markerHeight='6' orient='auto-start-reverse'><path d='M2 1L8 5L2 9' fill='none' stroke='#a3a29b' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></marker></defs>
+<rect x="0.5" y="0.5" width="679" height="805" rx="12" fill="#232321" stroke="#3a3936"/>
+<rect x="170" y="30" width="340" height="56" rx="8" fill="#232321" stroke="#5F5E5A" stroke-width="0.7"/>
+<text x="340.0" y="49" font-size="14" font-weight="600" fill="#ecebe6" text-anchor="middle" dominant-baseline="central">S0 范围</text>
+<text x="340.0" y="68" font-size="12" font-weight="400" fill="#a3a29b" text-anchor="middle" dominant-baseline="central">vla-pipeline · 布局与约束</text>
+<path d="M340.0 86 L340.0 109" fill="none" stroke="#a3a29b" stroke-width="1.2" marker-end="url(#arrow)"/>
+<rect x="170" y="112" width="340" height="56" rx="8" fill="#085041" stroke="#5DCAA5" stroke-width="0.7"/>
+<text x="340.0" y="131" font-size="14" font-weight="600" fill="#E1F5EE" text-anchor="middle" dominant-baseline="central">S1–S2 体检与清洗</text>
+<text x="340.0" y="150" font-size="12" font-weight="400" fill="#9FE1CB" text-anchor="middle" dominant-baseline="central">vla-data-cleaning</text>
+<path d="M340.0 168 L340.0 191" fill="none" stroke="#a3a29b" stroke-width="1.2" marker-end="url(#arrow)"/>
+<rect x="170" y="194" width="340" height="56" rx="8" fill="#085041" stroke="#5DCAA5" stroke-width="0.7"/>
+<text x="340.0" y="213" font-size="14" font-weight="600" fill="#E1F5EE" text-anchor="middle" dominant-baseline="central">S3–S5 关键帧 · 静止帧与补帧</text>
+<text x="340.0" y="232" font-size="12" font-weight="400" fill="#9FE1CB" text-anchor="middle" dominant-baseline="central">vla-keyframes · vla-episode-timing</text>
+<path d="M340.0 250 L340.0 273" fill="none" stroke="#a3a29b" stroke-width="1.2" marker-end="url(#arrow)"/>
+<rect x="170" y="276" width="340" height="56" rx="8" fill="#085041" stroke="#5DCAA5" stroke-width="0.7"/>
+<text x="340.0" y="295" font-size="14" font-weight="600" fill="#E1F5EE" text-anchor="middle" dominant-baseline="central">S6 数据评估</text>
+<text x="340.0" y="314" font-size="12" font-weight="400" fill="#9FE1CB" text-anchor="middle" dominant-baseline="central">vla-data-diversity · 留出集</text>
+<path d="M340.0 332 L340.0 355" fill="none" stroke="#a3a29b" stroke-width="1.2" marker-end="url(#arrow)"/>
+<rect x="170" y="358" width="340" height="56" rx="8" fill="#3C3489" stroke="#AFA9EC" stroke-width="0.7"/>
+<text x="340.0" y="377" font-size="14" font-weight="600" fill="#EEEDFE" text-anchor="middle" dominant-baseline="central">S7 动作标签</text>
+<text x="340.0" y="396" font-size="12" font-weight="400" fill="#CECBF6" text-anchor="middle" dominant-baseline="central">vla-action-labels</text>
+<path d="M340.0 414 L340.0 437" fill="none" stroke="#a3a29b" stroke-width="1.2" marker-end="url(#arrow)"/>
+<rect x="170" y="440" width="340" height="56" rx="8" fill="#3C3489" stroke="#AFA9EC" stroke-width="0.7"/>
+<text x="340.0" y="459" font-size="14" font-weight="600" fill="#EEEDFE" text-anchor="middle" dominant-baseline="central">S8 训练</text>
+<text x="340.0" y="478" font-size="12" font-weight="400" fill="#CECBF6" text-anchor="middle" dominant-baseline="central">vla-training · openpi</text>
+<path d="M340.0 496 L340.0 519" fill="none" stroke="#a3a29b" stroke-width="1.2" marker-end="url(#arrow)"/>
+<rect x="170" y="522" width="340" height="56" rx="8" fill="#712B13" stroke="#F0997B" stroke-width="0.7"/>
+<text x="340.0" y="541" font-size="14" font-weight="600" fill="#FAECE7" text-anchor="middle" dominant-baseline="central">S9 模型评估</text>
+<text x="340.0" y="560" font-size="12" font-weight="400" fill="#F5C4B3" text-anchor="middle" dominant-baseline="central">vla-eval · 开环与闭环</text>
+<path d="M340.0 578 L340.0 601" fill="none" stroke="#a3a29b" stroke-width="1.2" marker-end="url(#arrow)"/>
+<rect x="170" y="604" width="340" height="56" rx="8" fill="#712B13" stroke="#F0997B" stroke-width="0.7"/>
+<text x="340.0" y="623" font-size="14" font-weight="600" fill="#FAECE7" text-anchor="middle" dominant-baseline="central">S10 交付</text>
+<text x="340.0" y="642" font-size="12" font-weight="400" fill="#F5C4B3" text-anchor="middle" dominant-baseline="central">vla-serving · 一致性检查</text>
+<path d="M340.0 660 L340.0 683" fill="none" stroke="#a3a29b" stroke-width="1.2" marker-end="url(#arrow)"/>
+<rect x="170" y="686" width="340" height="56" rx="8" fill="#232321" stroke="#5F5E5A" stroke-width="0.7"/>
+<text x="340.0" y="705" font-size="14" font-weight="600" fill="#ecebe6" text-anchor="middle" dominant-baseline="central">S11 收尾</text>
+<text x="340.0" y="724" font-size="12" font-weight="400" fill="#a3a29b" text-anchor="middle" dominant-baseline="central">close · docs 与 issues</text>
+<path d="M170 550.0 L130 550.0 L130 386.0 L167 386.0" fill="none" stroke="#a3a29b" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+<path d="M170 550.0 L100 550.0 L100 140.0 L167 140.0" fill="none" stroke="#a3a29b" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+<path d="M170 714.0 L70 714.0 L70 58.0 L167 58.0" fill="none" stroke="#a3a29b" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+<path d="M510 632.0 L566 632.0 L566 468.0 L513 468.0" fill="none" stroke="#a3a29b" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+<text x="116" y="468.0" font-size="12" font-weight="400" fill="#a3a29b" text-anchor="middle" dominant-baseline="central" transform="rotate(-90 116 468.0)">换候选标签</text>
+<text x="86" y="305.0" font-size="12" font-weight="400" fill="#a3a29b" text-anchor="middle" dominant-baseline="central" transform="rotate(-90 86 305.0)">数据或关键帧问题</text>
+<text x="56" y="386.0" font-size="12" font-weight="400" fill="#a3a29b" text-anchor="middle" dominant-baseline="central" transform="rotate(-90 56 386.0)">下一个任务</text>
+<text x="582" y="550.0" font-size="12" font-weight="400" fill="#a3a29b" text-anchor="middle" dominant-baseline="central" transform="rotate(-90 582 550.0)">一致性未过</text>
+<text x="340" y="776" font-size="12" font-weight="400" fill="#a3a29b" text-anchor="middle" dominant-baseline="central">中性：范围与收尾　青：数据　紫：标签与训练　珊瑚：评估与交付　虚线：回到前面的阶段</text>
+</svg>

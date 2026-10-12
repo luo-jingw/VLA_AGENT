@@ -108,3 +108,85 @@ Two trainings differing only in the normalisation.
 ## Promotion Condition
 
 A comparison where a weighted model's advantage could be a learning-rate effect.
+
+# OPT-005
+
+Status: Proposed
+
+Area: Skills
+
+## Observation
+
+The pipeline starts from a LeRobot v2.1 dataset; converting raw recordings (HDF5, ROS bags, vendor
+formats) and checking the result against `robot_spec.json` is not covered.
+
+## Opportunity
+
+A `vla-data-ingest` stage before S1: conversion recipes per source format and a schema check (features,
+shapes, fps, image or video storage, state/action layout against the robot spec).
+
+## Expected Mechanism
+
+Layout mistakes are caught before any statistic is computed on them.
+
+## Required Evidence
+
+The schema check run on two robots with different storage (parquet images, videos).
+
+## Promotion Condition
+
+A second robot enters the harness.
+
+# OPT-006
+
+Status: Proposed
+
+Area: Evaluation
+
+## Observation
+
+Closed-loop evaluation (L2) is a written protocol only.
+
+## Opportunity
+
+A trial log format and a summariser: success rate with Wilson intervals, failures by keyframe phase,
+per initial-placement bin.
+
+## Expected Mechanism
+
+Robot results enter the same comparison table as open-loop results.
+
+## Required Evidence
+
+Logs from one real comparison.
+
+## Promotion Condition
+
+The first closed-loop comparison.
+
+# OPT-007
+
+Status: Proposed
+
+Area: Examples
+
+## Observation
+
+Only one robot (dual-arm UR3, parquet images, binary gripper without feedback) has exercised the tools.
+
+## Opportunity
+
+A second example with video storage and a feedback effector (suction with vacuum, or a gripper with
+width feedback).
+
+## Expected Mechanism
+
+Exercises the video frame reader and the `settle` / referenced `threshold_cross` detectors.
+
+## Required Evidence
+
+The full S1–S7 chain on that dataset.
+
+## Promotion Condition
+
+Such a dataset becomes available.

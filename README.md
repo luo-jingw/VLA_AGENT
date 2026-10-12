@@ -28,6 +28,28 @@ keyframed, evaluated datasets → action labels → openpi π0/π0.5 training �
 每个阶段的产物只有一个写入者，凡是需要判断的处理都要写明决定和理由，缺少时工具拒绝写出。
 细节见 `.claude/skills/vla-pipeline/SKILL.md`。
 
+## 循环
+
+agent 在两层循环里工作。外层沿阶段向下推进，每个阶段过了放行条件才进入下一阶段；评估和交付发现的问题沿虚线回到产生它的阶段，收尾之后进入下一个任务。
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/figures/pipeline-loop-dark.svg">
+  <img alt="VLA 流程的推进与回环：S0 范围、S1–S2 体检与清洗、S3–S5 关键帧与补帧、S6 数据评估、S7 动作标签、S8 训练、S9 模型评估、S10 交付、S11 收尾；评估回到标签或数据，交付回到训练，收尾进入下一个任务" src="docs/figures/pipeline-loop-light.svg" width="680">
+</picture>
+
+图 1　外层循环：agent 如何沿流程推进，以及在哪里回到前面的阶段。
+
+内层是每个阶段内部的循环：运行工具得到新版本或报告，观察统计和核对图，把判断写成带理由的决定，再做放行检查；没有通过就调参数、改定义后重跑，或者停下报告阻塞。
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/figures/stage-loop-dark.svg">
+  <img alt="一个阶段内部的循环：运行工具、观察、决定、放行检查；未通过时回到运行工具，通过后进入下一阶段" src="docs/figures/stage-loop-light.svg" width="680">
+</picture>
+
+图 2　内层循环：一个阶段内部怎么推进。决定文件是唯一需要人判断的产物，也是审查 agent 行为的入口。
+
+两张图由 `docs/figures/make_figures.py` 生成（浅色和深色各一份，几何相同），修改后重新运行即可。
+
 ## 目录
 
 ```text
@@ -39,6 +61,7 @@ integrations/openpi/patches/                                                    
 integrations/openpi/vla_openpi/                                                 通用 transform、数据配置、启动函数
 examples/ur3_dual_arm/                                                          双臂 UR3 的完整配置示例
 docs/validation.md                                                              已验证的行为
+docs/figures/                                                                   README 中的循环图及其生成脚本
 ```
 
 ## 使用
