@@ -1,0 +1,82 @@
+{
+ "task": "pick up the red cube and place it on the white plate",
+ "effector": "left parallel gripper, binary close command, no feedback; right arm idle",
+ "order": [
+  "pre_grasp_stop",
+  "grasp",
+  "lift",
+  "release"
+ ],
+ "types": [
+  {
+   "name": "grasp",
+   "description": "close command issued",
+   "detector": {
+    "type": "command_edge",
+    "signal": {
+     "source": "action",
+     "dim": 6
+    },
+    "direction": "rise"
+   },
+   "window": {
+    "before": 8,
+    "after": 5
+   },
+   "expected": 1
+  },
+  {
+   "name": "pre_grasp_stop",
+   "description": "slowest frame of the final approach",
+   "detector": {
+    "type": "speed_minimum",
+    "signal": {
+     "source": "joint_speed"
+    },
+    "reference": "grasp",
+    "search_frames": 20
+   },
+   "window": {
+    "before": 0,
+    "after": 0
+   },
+   "expected": 1
+  },
+  {
+   "name": "lift",
+   "description": "arm starts moving away after the grasp",
+   "detector": {
+    "type": "motion_onset",
+    "signal": {
+     "source": "joint_speed"
+    },
+    "threshold": 0.012,
+    "hold_frames": 3,
+    "reference": "grasp",
+    "search_frames": 40
+   },
+   "window": {
+    "before": 2,
+    "after": 6
+   },
+   "expected": 1
+  },
+  {
+   "name": "release",
+   "description": "open command issued",
+   "detector": {
+    "type": "command_edge",
+    "signal": {
+     "source": "action",
+     "dim": 6
+    },
+    "direction": "fall"
+   },
+   "window": {
+    "before": 8,
+    "after": 5
+   },
+   "expected": 1
+  }
+ ]
+}

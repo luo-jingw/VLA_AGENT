@@ -1,0 +1,8 @@
+__pycache__/
+.ruff_cache/
+*.npz
+/data/
+/runs/
+/checkpoints/
+/assets/
+/wandb/

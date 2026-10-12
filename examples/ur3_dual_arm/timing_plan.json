@@ -1,0 +1,4 @@
+{"threshold": 0.004, "min_frames": 4,
+ "leading_keep": null, "pause_keep": null, "trailing_keep": null,
+ "end_padding": 20,
+ "reasons": {"end_padding": "every recording stops 1-2 frames after the open command, so no frame shows the task done; 20 frames = one full span-20 chunk of holding"}}

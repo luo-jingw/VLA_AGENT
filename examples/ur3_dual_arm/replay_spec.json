@@ -1,0 +1,2 @@
+{"images": {"observation/image": "observation.images.cam_high", "observation/left_wrist_image": "observation.images.cam_left_wrist", "observation/right_wrist_image": "observation.images.cam_right_wrist"},
+ "state": {"observation/state": "observation.state"}, "prompt_key": "prompt", "static_dims": [7, 8, 9, 10, 11, 12]}

@@ -1,0 +1,57 @@
+--- a/src/openpi/models/model.py	2026-06-15 17:14:00.000000000 -0700
++++ b/src/openpi/models/model.py	2026-10-12 13:09:15.465273389 -0700
+@@ -106,6 +106,11 @@
+     # Token loss mask (for FAST autoregressive model).
+     token_loss_mask: at.Bool[ArrayT, "*b l"] | None = None
+ 
++    # Optional per-action-frame loss multiplier in [*b, action_horizon]. compute_loss multiplies the
++    # per-frame loss by it verbatim, so the value carried here is the final multiplier, not a flag.
++    # None => uniform weighting. Absent at inference; sample_actions never reads it.
++    action_loss_weight: at.Float[ArrayT, "*b ah"] | None = None
++
+     @classmethod
+     def from_dict(cls, data: at.PyTree[ArrayT]) -> "Observation[ArrayT]":
+         """This method defines the mapping between unstructured data (i.e., nested dict) to the structured Observation format."""
+@@ -118,6 +123,11 @@
+                 data["image"][key] = data["image"][key].astype(np.float32) / 255.0 * 2.0 - 1.0
+             elif hasattr(data["image"][key], "dtype") and data["image"][key].dtype == torch.uint8:
+                 data["image"][key] = data["image"][key].to(torch.float32).permute(0, 3, 1, 2) / 255.0 * 2.0 - 1.0
++        # The per-frame loss multiplier arrives with a trailing feature dim of 1; squeeze it to
++        # [*b, ah] so it broadcasts against the per-frame loss.
++        action_loss_weight = data.get("action_loss_weight")
++        if action_loss_weight is not None and action_loss_weight.shape[-1] == 1:
++            action_loss_weight = action_loss_weight[..., 0]
+         return cls(
+             images=data["image"],
+             image_masks=data["image_mask"],
+@@ -126,6 +136,7 @@
+             tokenized_prompt_mask=data.get("tokenized_prompt_mask"),
+             token_ar_mask=data.get("token_ar_mask"),
+             token_loss_mask=data.get("token_loss_mask"),
++            action_loss_weight=action_loss_weight,
+         )
+ 
+     def to_dict(self) -> at.PyTree[ArrayT]:
+@@ -205,6 +216,7 @@
+         tokenized_prompt_mask=observation.tokenized_prompt_mask,
+         token_ar_mask=observation.token_ar_mask,
+         token_loss_mask=observation.token_loss_mask,
++        action_loss_weight=observation.action_loss_weight,
+     )
+ 
+ 
+--- a/src/openpi/models/pi0.py	2026-06-15 17:14:00.000000000 -0700
++++ b/src/openpi/models/pi0.py	2026-10-12 13:09:15.466273383 -0700
+@@ -211,7 +211,11 @@
+         )
+         v_t = self.action_out_proj(suffix_out[:, -self.action_horizon :])
+ 
+-        return jnp.mean(jnp.square(v_t - u_t), axis=-1)
++        per_frame = jnp.mean(jnp.square(v_t - u_t), axis=-1)
++        weight = observation.action_loss_weight
++        if weight is None:
++            return per_frame
++        return per_frame * weight
+ 
+     @override
+     def sample_actions(

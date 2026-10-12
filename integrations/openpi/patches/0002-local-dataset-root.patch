@@ -1,0 +1,31 @@
+--- a/src/openpi/training/config.py	2026-06-15 17:14:00.000000000 -0700
++++ b/src/openpi/training/config.py	2026-10-12 13:09:15.486273261 -0700
+@@ -87,6 +87,11 @@
+     # LeRobot dataset is using different keys to represent the action.
+     action_sequence_keys: Sequence[str] = ("actions",)
+ 
++    # When set, LeRobotDataset loads from `local_root / repo_id` instead of the HF cache, so a
++    # dataset that lives beside the repo needs no cache plumbing and only repo_id changes when
++    # switching between datasets. None keeps the default cache lookup.
++    local_root: pathlib.Path | None = None
++
+     # If true, will use the LeRobot dataset task to define the prompt.
+     prompt_from_task: bool = False
+ 
+--- a/src/openpi/training/data_loader.py	2026-06-15 17:14:00.000000000 -0700
++++ b/src/openpi/training/data_loader.py	2026-10-12 13:09:15.487273255 -0700
+@@ -137,9 +137,13 @@
+     if repo_id == "fake":
+         return FakeDataset(model_config, num_samples=1024)
+ 
+-    dataset_meta = lerobot_dataset.LeRobotDatasetMetadata(repo_id)
++    # lerobot treats `root` as the dataset directory itself, not its parent, so the full path is
++    # computed here and only repo_id changes when switching datasets.
++    dataset_root = (data_config.local_root / repo_id) if data_config.local_root is not None else None
++    dataset_meta = lerobot_dataset.LeRobotDatasetMetadata(repo_id, root=dataset_root)
+     dataset = lerobot_dataset.LeRobotDataset(
+         data_config.repo_id,
++        root=dataset_root,
+         delta_timestamps={
+             key: [t / dataset_meta.fps for t in range(action_horizon)] for key in data_config.action_sequence_keys
+         },

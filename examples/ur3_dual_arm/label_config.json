@@ -1,0 +1,1 @@
+{"metric": "time", "span_frames": 20, "action_horizon": 10, "event_density": 0.0, "key_weight": 3.0, "pad_weight": 1.0, "deadzone": 0.0, "anchor": "state"}

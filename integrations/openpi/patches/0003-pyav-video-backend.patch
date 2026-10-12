@@ -1,0 +1,12 @@
+--- a/src/openpi/training/data_loader.py	2026-10-12 13:09:15.487273255 -0700
++++ b/src/openpi/training/data_loader.py	2026-10-12 13:09:15.510273115 -0700
+@@ -147,6 +147,9 @@
+         delta_timestamps={
+             key: [t / dataset_meta.fps for t in range(action_horizon)] for key in data_config.action_sequence_keys
+         },
++        # Force the PyAV backend: LeRobot picks torchcodec whenever it is importable, even when its
++        # FFmpeg libraries fail to load at runtime. PyAV decodes with its bundled FFmpeg.
++        video_backend="pyav",
+     )
+ 
+     if data_config.prompt_from_task:

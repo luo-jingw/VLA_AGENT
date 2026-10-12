@@ -1,0 +1,8 @@
+{"jump_factor": 8.0, "repair_isolated_jumps": true, "command_pulse_frames": 3,
+ "trim_idle": {"threshold": 0.002, "margin": 5},
+ "exclude_episodes": {},
+ "jump_decisions": {
+   "3:178": "keep: wrist_1 keeps moving the same way for 2 more frames; wrist camera shows the arm swinging after release",
+   "13:102": "keep: lift onset 3 frames after grasp; motion continues for 6 frames",
+   "15:96": "keep: lift onset 6 frames after grasp; motion continues",
+   "15:97": "keep: second frame of the same lift onset"}}

@@ -1,0 +1,13 @@
+# Data, keyframe, diversity and label tools (vla_tools)
+numpy
+scipy
+pandas
+pyarrow
+matplotlib
+pillow
+av
+datasets
+# Open-loop evaluation against a served policy (vla_tools.replay_eval)
+openpi-client
+# Training, serving, LoRA conversion and parity (vla_openpi, vla_tools.lora_to_pytorch, vla_tools.policy_parity)
+# need an openpi environment with integrations/openpi/patches applied.
