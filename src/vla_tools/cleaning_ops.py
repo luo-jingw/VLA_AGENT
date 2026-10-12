@@ -20,7 +20,8 @@ JumpKind = Literal["isolated", "continuing", "discontinuity"]
 class Jump:
     """A one-frame joint change far above the dataset's typical step.
 
-    isolated       the value comes straight back on the next frame: a recording glitch, repairable
+    isolated       the value comes straight back on the next frame: a recording glitch, repairable. The
+                   change back on the next frame belongs to the same glitch and is not reported again
     continuing     the next frame keeps moving the same way: a real fast motion
     discontinuity  the value moves and then stops: a teleport-like level shift, needs a decision
     """
@@ -35,9 +36,11 @@ def find_jumps(actions: np.ndarray, spec: RobotSpec, step: float, factor: float)
     joints = list(spec.joint_dims)
     delta = np.diff(actions[:, joints], axis=0)
     size = np.abs(delta).max(axis=1)
-    out = []
+    out: list[Jump] = []
     for i in np.flatnonzero(size > factor * step):
         t = int(i) + 1
+        if out and out[-1].kind == "isolated" and out[-1].frame == t - 1:
+            continue
         j = int(np.abs(delta[i]).argmax())
         d_in = delta[i, j]
         if t + 1 >= len(actions):

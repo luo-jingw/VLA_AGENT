@@ -170,7 +170,7 @@ No skill refers to a removed skill or to S10/S11; `CLAUDE.md` imports resolve.
 
 ## Phase 3
 
-Phase Status: active
+Phase Status: completed
 
 Round: 3
 
@@ -201,7 +201,7 @@ Phase 1.
 
 ## Phase 4
 
-Phase Status: pending
+Phase Status: active
 
 Round: 3
 
