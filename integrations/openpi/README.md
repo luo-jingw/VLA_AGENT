@@ -56,7 +56,7 @@ Then, from the openpi root:
 
 ```bash
 uv run scripts/compute_norm_stats.py --config-name pi05_<robot>_<labels>
-python -m vla_tools.norm_floor ...            # static dims, see the vla-training skill
+python -m vla_tools.norm_floor ...            # static dims, see the vla-downstream skill
 WANDB_MODE=offline uv run scripts/train.py pi05_<robot>_<labels> --exp-name <run>
 cp <dataset>-train/meta/arc_resample.json checkpoints/<config>/<run>/<step>/assets/<asset_id>/
 ```

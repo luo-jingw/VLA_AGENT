@@ -35,7 +35,7 @@
 
 | 失效 | 现象 | 检测 | 处理 | 证据 |
 |---|---|---|---|---|
-| 用训练 loss 比较模型 | 加权 loss 与标签定义相关，跨数据集不可比 | — | 只用 `vla-eval` 的指标 | — |
+| 用训练 loss 比较模型 | 加权 loss 与标签定义相关，跨数据集不可比 | — | 只用 `vla-downstream` 评估中的指标 | — |
 | 在训练集上评估 | 开环误差只反映拟合程度 | 数据集报告中的留出列表为空 | `build_labels --exclude`，基线与候选共用同一留出集 | — |
 | PyTorch 训练忽略 loss 权重 | `key_weight`、`pad_weight` 不起作用 | `PI0Pytorch.forward` 的签名 | 需要权重时用 JAX 训练 | 只有 JAX 的 `Pi0.compute_loss` 乘了权重 |
 

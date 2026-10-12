@@ -25,7 +25,7 @@ python -m vla_tools.audit --dataset <src> --spec robot_spec.json --out runs/<tas
 | `action[t]` 对 `state[t+1]` 与对 `state[t]` 的最大差 | 前者应远小于后者 | 不成立时停止：标签构建与服务端放点都依赖这个约定 |
 | 时间戳缺口 | 帧间隔超过 1.5 帧 | 丢帧处动作不连续；缺口多的 episode 排除，少量缺口记录在案 |
 | 非有限值 | 任何 NaN/inf | 排除该 episode |
-| 静止维 | 某关节在所有 episode 内的变化都小于阈值 | 数据本身不改；在训练阶段用 `norm_floor` 处理（见 `vla-training`） |
+| 静止维 | 某关节在所有 episode 内的变化都小于阈值 | 数据本身不改；在训练阶段用 `norm_floor` 处理（见 `vla-downstream`） |
 | 指令取值与边沿数 | 只应有 0/1；每集边沿数应符合任务 | 非二值时停止，该维应归为关节维；边沿数异常的 episode 在关键帧阶段核对 |
 | 指令毛刺 | 持续不到 `--pulse-frames` 帧的指令段 | 一般是按键抖动，清洗时去除；若是真实的快速开合，把阈值调低并写明 |
 | 相机冻结 | 连续多帧图像字节完全相同 | 相机卡顿；冻结段长的 episode 排除 |

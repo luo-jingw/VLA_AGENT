@@ -1,6 +1,6 @@
 ---
 name: vla-data-diversity
-description: 评估示教数据的多样性与覆盖范围：起始姿态、关键帧处构型（物体与放置位置的代理）、静止维姿态（批次/装置差异）、时长与路径、首帧画面；找出聚类、近重复与离群 episode，给出覆盖各簇的留出集，并在模型评估时按"离训练数据多远"解读误差。属于 vla-pipeline 的 S6，结果也供 S9 使用。
+description: 评估示教数据的多样性与覆盖范围：起始姿态、关键帧处构型（物体与放置位置的代理）、静止维姿态（批次/装置差异）、时长与路径、首帧画面；找出聚类、近重复与离群 episode，给出覆盖各簇的留出集，并在模型评估时按"离训练数据多远"解读误差。属于 vla-pipeline 的 S6，结果也供 S8 下游评估使用。
 ---
 
 # 数据评估：多样性与覆盖
@@ -48,7 +48,7 @@ python -m vla_tools.diversity --dataset data/<src>-timed --spec robot_spec.json 
 
 ## 在模型评估中使用
 
-`vla-eval` 在留出集上得到每个模型的 `eval_<model>.json` 后：
+下游评估在留出集上得到每个模型的 `eval_<model>.json` 后：
 
 ```bash
 python -m vla_tools.coverage_eval --diversity runs/<task>/diversity.json --eval baseline=eval_a.json candidate=eval_b.json

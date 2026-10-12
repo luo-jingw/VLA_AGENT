@@ -21,9 +21,8 @@ keyframed, evaluated datasets → action labels → openpi π0/π0.5 training �
 | S4 | `vla-episode-timing` | 静止帧保留或裁掉；末尾补帧，让策略学会完成后保持 |
 | S6 | `vla-data-diversity` | 覆盖、聚类、近重复、离群；分层留出集；按覆盖解读模型误差 |
 | S7 | `vla-action-labels` | 动作块标签：按服务端实际执行的误差做网格搜索，选执行长度，构建训练/评估版 |
-| S8 | `vla-training` | openpi 配置、静止维归一化、loss 权重、基线对照 |
-| S9 | `vla-eval` | 放置误差下限、留出集开环回放、完成后保持、覆盖分层、闭环协议 |
-| S10 | `vla-serving` | 服务端插值、推理配置、LoRA 合并转 PyTorch 与一致性检查、交付 |
+| S8 | `vla-downstream` | 下游：openpi 训练、留出集评估、服务端交付 |
+| S9 | `close` | 收尾 |
 
 每个阶段的产物只有一个写入者，凡是需要判断的处理都要写明决定和理由，缺少时工具拒绝写出。
 细节见 `.claude/skills/vla-pipeline/SKILL.md`。
