@@ -50,4 +50,4 @@ class ArcOutputs(transforms.DataTransformFn):
 - 分位数归一化、差分掩码、观测键映射；
 - norm stats 从 checkpoint 的 `assets/` 读取（含 `norm_floor` 处理后的版本）。
 
-推理用不到 repack 和 loss 权重。`integrations/openpi/vla_openpi` 的配置只依赖上游 openpi（加补丁）和 `arc_interp.py`，它不能注册进 openpi 的 `config.py`（两者会互相 import），所以由 `vla_openpi.launch.serve` 直接对配置对象起服务：它把输出变换换成从 checkpoint 报告构造的 `ArcOutputs`，再用 `policy_config.create_trained_policy` 和 `WebsocketPolicyServer` 启动。
+推理用不到 repack 和 loss 权重。`vla_openpi` 的配置只依赖上游 openpi（加补丁）和 `arc_interp.py`，它不能注册进 openpi 的 `config.py`（两者会互相 import），所以由 `vla_openpi.launch.serve` 直接对配置对象起服务：它把输出变换换成从 checkpoint 报告构造的 `ArcOutputs`，再用 `policy_config.create_trained_policy` 和 `WebsocketPolicyServer` 启动。

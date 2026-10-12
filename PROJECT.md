@@ -58,9 +58,10 @@ Rules that apply only to this project, in addition to `AGENTS.md`.
 
 - The repository holds no datasets, checkpoints, credentials or machine-specific paths; examples are
   configuration files only.
-- Tools run as `PYTHONPATH=.claude/skills/vla-pipeline/tools python -m vla_tools.<module>`; the openpi
-  integration additionally needs `integrations/openpi` and `<openpi>/scripts` on `PYTHONPATH`.
-- `vla_tools/arc_interp.py` imports nothing else from the package: it is delivered to serving machines
+- Tools run as `python -m vla_tools.<module>` after `pip install -e .` (or with `src/` on `PYTHONPATH`).
+  `vla_openpi.launch` and `vla_tools.lora_to_pytorch` additionally import openpi's `scripts/` and
+  `examples/` modules, which must be on `PYTHONPATH`.
+- `src/vla_tools/arc_interp.py` imports nothing else from the package: it is delivered to serving machines
   as a single file.
 
 ## Onboarding

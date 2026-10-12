@@ -1,114 +1,118 @@
 # Plan
 
-Plan Status: proposed
+Plan Status: approved
 
 # Problem
 
 ## Current
 
-The harness has the right layers -- conventions (`AGENTS.md`), an orchestrator skill, eight stage
-skills, a tool package, an openpi integration, an example and a validation record -- and every stage
-artifact has one writer. Four things make it weaker as an agent harness than it needs to be:
+The harness is centred on data preprocessing -- audit, cleaning, keyframes, still frames and end
+padding, diversity and held-out split, action labels -- with training, evaluation and serving
+downstream of the training-ready dataset it produces. Its README, loop figures and skill set give all
+stages equal weight, and five gaps weaken it as an agent harness:
 
 1. The shared tool package lives inside one skill (`.claude/skills/vla-pipeline/tools/vla_tools`) and
-   the openpi package inside `integrations/`; neither is installable, both need `PYTHONPATH` set by hand,
-   and a project that symlinks the skills inherits that layout.
-2. Every validation in `docs/validation.md` was run once in a scratch script; nothing re-runs it, so a
-   change to a tool is not checked against the behaviour the docs claim.
-3. A run's progress (which stage, which gate passed, which decision is pending) exists only as
-   scattered files under `runs/<task>/`. An agent resuming in a new session has to reconstruct it, and
-   the gates are prose that nothing checks. `plan.md` is for engineering changes; how it relates to a
-   VLA run is not written down.
-4. Which decisions an agent may make alone (detector thresholds) and which need a person (excluding
-   episodes, accepting keyframe issues, choosing labels to train, long GPU jobs, publishing to public
-   repositories) is not defined. `PROJECT.md` is also not loaded automatically, and the VLA skills do
-   not list it among their inputs.
+   the openpi package inside `integrations/`; neither is installable.
+2. Every validation in `docs/validation.md` was run once in a scratch script; nothing re-runs it.
+3. A run's progress exists only as scattered files under `runs/<task>/`; the gates are prose, and there
+   is no single document describing the dataset the run produced.
+4. Decision authority between agent and person is not defined; `PROJECT.md` is not loaded
+   automatically and the VLA skills do not list it among their inputs.
+5. Training, evaluation and serving are three full skills, as detailed as the data stages.
 
 ## Problem
 
-Tools are not installable or regression-tested, run state is not machine-readable, and decision
-authority is implicit.
+The data-preprocessing core is not presented or tooled as the centre, tools are not installable or
+regression-tested, run state is not machine-readable, decision authority is implicit, and the downstream
+part is heavier than its role.
 
 ## Goal
 
-`pip install -e .` provides `vla_tools` and `vla_openpi`; `pytest` re-checks the documented behaviour
-on synthetic data without GPU or network; `python -m vla_tools.run_status runs/<task>` reports each
-stage's status from its artifacts; `vla-pipeline` states decision authority; agents load `PROJECT.md`.
+- README and loop figures are about data preprocessing; downstream is one short section and one box.
+- One `vla-downstream` skill replaces `vla-training`, `vla-eval`, `vla-serving`.
+- `pip install -e .` provides `vla_tools` and `vla_openpi`; `pytest` re-checks the data tools on
+  synthetic data without GPU or network.
+- `run_status` reports each stage from its artifacts; `data_report` writes the run's data report.
+- `vla-pipeline` states decision authority; agents load `PROJECT.md`.
 
 # Structure
 
 ## Modules
 
-- `src/vla_tools/` (moved from `.claude/skills/vla-pipeline/tools/vla_tools/`)
-- `src/vla_openpi/` (moved from `integrations/openpi/vla_openpi/`); patches stay in `integrations/openpi/patches/`
-- `tests/` — synthetic-data tests; tests needing openpi are marked and skipped without it
-- `vla_tools.run_status` — stage status computed from artifacts
-- `.claude/skills/vla-*` — procedures only
+- `src/vla_tools/`, `src/vla_openpi/`; patches in `integrations/openpi/patches/`
+- `.claude/skills/`: `vla-pipeline` (data preprocessing orchestrator), five data stage skills
+  (`vla-data-cleaning`, `vla-keyframes`, `vla-episode-timing`, `vla-data-diversity`,
+  `vla-action-labels`), one `vla-downstream`
+- `tests/`
+- `vla_tools.run_status`, `vla_tools.data_report`
 
 ## Responsibilities
 
-Skills describe procedure and judgment; packages hold all executable logic; tests hold the evidence
-that `docs/validation.md` cites.
+Skills hold procedure and judgment; packages hold executable logic; tests hold the evidence that
+`docs/validation.md` cites. The data stages own the dataset versions and their reports; downstream
+only reads the label dataset and its `arc_resample.json`.
 
 ## State Ownership
 
-A run's state is its artifacts. `run_status` reads them and writes nothing; `runs/<task>/decisions.md`
-(new) is the single place where pending human decisions are listed, owned by `vla-pipeline`.
+A run's state is its artifacts plus `runs/<task>/run.json` (the index of the run's dataset versions,
+written by `vla-pipeline` when a version is created) and `runs/<task>/decisions.md` (pending human
+decisions). `run_status` and `data_report` read them; `data_report` writes only `data_report.md`.
 
 # Interface
 
 ## Interfaces
 
-- `python -m vla_tools.<module>` after `pip install -e .`, unchanged module names and arguments.
-- `python -m vla_tools.run_status runs/<task> --data-root data/` → one row per stage: status
-  (`not started` / `in progress` / `passed` / `blocked`), the artifact checked, the reason.
+- `python -m vla_tools.<module>` after `pip install -e .`; module names and arguments unchanged.
+- `python -m vla_tools.run_status runs/<task>` → one row per stage: status, artifact checked, reason.
+- `python -m vla_tools.data_report runs/<task>` → `runs/<task>/data_report.md`.
 
 ## Inputs
 
-Existing artifacts and their reports (`audit.json`, `meta/*_report.json`, `keyframes.json`,
-`diversity.json`, `sweep.json`, label `arc_resample.json`, eval JSON).
+`robot_spec.json`, `run.json`, stage artifacts and the reports under each dataset's `meta/`.
 
 ## Outputs
 
-Package metadata (`pyproject.toml`), tests, the status tool, skill and README updates.
+Packages, tests, two tools, restructured skills, README and figures.
 
 ## State Changes
 
-Files move; no tool behaviour changes.
+Files move; three skills merge into one; stages S8–S11 become S8 downstream and S9 close.
 
 # Flow
 
 ## Main Flow
 
-An agent starting or resuming a run calls `run_status`, works the first stage that is not `passed`
-through its skill, lists any decision that needs a person in `runs/<task>/decisions.md` and stops on
-it, and repeats.
+An agent starting or resuming a run calls `run_status`, works the first data stage that is not
+`passed` through its skill, lists any decision needing a person in `decisions.md` and stops on it; when
+S7 passes it writes the data report and hands the label dataset downstream.
 
 # Code Mapping
 
 ## Modules
 
-`src/vla_tools/*`, `src/vla_openpi/*`, `tests/test_*.py`, `pyproject.toml`, `CLAUDE.md`.
+`src/vla_tools/*`, `src/vla_openpi/*`, `tests/*`, `pyproject.toml`, `CLAUDE.md`,
+`.claude/skills/vla-*/**`, `README.md`, `docs/figures/*`.
 
 ## Interfaces
 
-`src/vla_tools/run_status.py`.
+`src/vla_tools/run_status.py`, `src/vla_tools/data_report.py`, `src/vla_tools/run_index.py`.
 
 ## State
 
-`runs/<task>/decisions.md` in projects using the harness.
+`runs/<task>/run.json`, `runs/<task>/decisions.md`, `runs/<task>/data_report.md` in projects using
+the harness.
 
 # Implementation
 
 ## Phase 1
 
-Phase Status: pending
+Phase Status: completed
 
 Round: 1
 
 ### Goal
 
-Installable packages; skills and README point at `python -m vla_tools.<module>` after install.
+Installable packages; every command in skills, README and examples works after `pip install -e .`.
 
 ### Files
 
@@ -117,11 +121,11 @@ Installable packages; skills and README point at `python -m vla_tools.<module>` 
 
 ### Structures
 
-None new.
+`vla_tools.lora_merge` (numpy-only merge, split from `lora_to_pytorch`).
 
 ### Affected Modules
 
-Packaging only.
+Packaging.
 
 ### Dependencies
 
@@ -129,27 +133,28 @@ None.
 
 ### Observation
 
-`pip install -e .` in a fresh venv; every `python -m vla_tools.<module> --help` runs; the integration
-equivalence check from `docs/validation.md` gives the same result.
+`pip install -e .` in a fresh venv; every `python -m vla_tools.<module> --help` that does not need
+openpi runs there.
 
 ## Phase 2
 
-Phase Status: pending
+Phase Status: active
 
-Round: 1
+Round: 2
 
 ### Goal
 
-`CLAUDE.md` importing `AGENTS.md` and `PROJECT.md`; VLA skills list `PROJECT.md` in their inputs;
-decision authority table in `vla-pipeline`.
+Skill set centred on data: `vla-pipeline` rewritten as the data preprocessing orchestrator with a
+decision authority table and `PROJECT.md` among its inputs; `vla-downstream` replaces the three
+downstream skills; stage numbering S0–S9; `CLAUDE.md` importing `AGENTS.md` and `PROJECT.md`.
 
 ### Files
 
-`CLAUDE.md`, `.claude/skills/vla-*/SKILL.md`.
+`.claude/skills/vla-*/**`, `CLAUDE.md`.
 
 ### Structures
 
-Decision authority table.
+Decision authority table; downstream hand-off contract.
 
 ### Affected Modules
 
@@ -157,22 +162,22 @@ Skills.
 
 ### Dependencies
 
-None.
+Phase 1 (command paths).
 
 ### Observation
 
-A new session in the repository has `PROJECT.md` in context.
+No skill refers to a removed skill or to S10/S11; `CLAUDE.md` imports resolve.
 
 ## Phase 3
 
 Phase Status: pending
 
-Round: 2
+Round: 3
 
 ### Goal
 
-Synthetic-data tests for arc_core, arc_interp, cleaning and timing ops, keyframe detectors,
-dataset_writer round trip, LoRA delta derivation; openpi-marked tests for the integration equivalence.
+Synthetic-data tests for the data tools (cleaning, timing, keyframes, writer, labels, interpolation,
+diversity smoke, an end-to-end S1–S7 chain) and the LoRA merge; openpi-marked tests for `vla_openpi`.
 
 ### Files
 
@@ -180,7 +185,7 @@ dataset_writer round trip, LoRA delta derivation; openpi-marked tests for the in
 
 ### Structures
 
-Tiny synthetic LeRobot dataset fixture.
+A synthetic LeRobot dataset fixture.
 
 ### Affected Modules
 
@@ -192,26 +197,26 @@ Phase 1.
 
 ### Observation
 
-`pytest` passes without GPU or network; each validation row cites its test.
+`pytest` passes in the fresh venv without GPU or network; openpi-marked tests pass in the openpi env.
 
 ## Phase 4
 
 Phase Status: pending
 
-Round: 2
+Round: 3
 
 ### Goal
 
-`run_status` and `runs/<task>/decisions.md`.
+`run.json` index, `run_status`, `data_report`, `decisions.md` convention.
 
 ### Files
 
-`src/vla_tools/run_status.py`, `tests/test_run_status.py`, `.claude/skills/vla-pipeline/SKILL.md`,
-`.claude/skills/vla-pipeline/references/artifacts.md`.
+`src/vla_tools/run_index.py`, `src/vla_tools/run_status.py`, `src/vla_tools/data_report.py`,
+`tests/test_run_tools.py`, `.claude/skills/vla-pipeline/**`.
 
 ### Structures
 
-Stage table derived from the existing gates.
+Stage table derived from the gates.
 
 ### Affected Modules
 
@@ -219,8 +224,39 @@ Orchestration.
 
 ### Dependencies
 
-Phase 1.
+Phases 1–2.
 
 ### Observation
 
-On a run directory at each stage, the reported status matches the gate.
+On the synthetic end-to-end run, each stage's reported status matches its gate, and the report
+lists every dataset version, decision and coverage finding.
+
+## Phase 5
+
+Phase Status: pending
+
+Round: 4
+
+### Goal
+
+README and loop figures centred on data preprocessing; downstream as one short section and one box.
+
+### Files
+
+`README.md`, `docs/figures/make_figures.py`, `docs/figures/*.svg`, `docs/validation.md`.
+
+### Structures
+
+None.
+
+### Affected Modules
+
+Docs.
+
+### Dependencies
+
+Phases 2 and 4.
+
+### Observation
+
+Figures checked in light and dark rendering; README commands run as written.

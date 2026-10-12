@@ -20,7 +20,7 @@ git apply <VLA_AGENT>/integrations/openpi/patches/0002-local-dataset-root.patch
 
 ## Transforms and data config
 
-`vla_openpi` (this directory on `PYTHONPATH`, together with `.claude/skills/vla-pipeline/tools`):
+`vla_openpi` (installed with this repository, `pip install -e .`, into the openpi environment):
 
 | Object | Role |
 |---|---|

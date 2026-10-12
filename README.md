@@ -56,9 +56,9 @@ agent 在两层循环里工作。外层沿阶段向下推进，每个阶段过�
 AGENTS.md, PROJECT.md, plan.md, issues.md, opportunities.md, docs/, templates/   explicit-agent 约定与状态文件
 .claude/skills/{plan,work,parallelize,experiment,close,...}                     通用 skill（模板）
 .claude/skills/vla-*/                                                           VLA skill
-.claude/skills/vla-pipeline/tools/vla_tools/                                    工具包（python -m vla_tools.<module>）
+src/vla_tools/                                                                  工具包（python -m vla_tools.<module>）
 integrations/openpi/patches/                                                    上游 openpi 补丁
-integrations/openpi/vla_openpi/                                                 通用 transform、数据配置、启动函数
+src/vla_openpi/                                                                 openpi 通用 transform、数据配置、启动函数
 examples/ur3_dual_arm/                                                          双臂 UR3 的完整配置示例
 docs/validation.md                                                              已验证的行为
 docs/figures/                                                                   README 中的循环图及其生成脚本
@@ -66,7 +66,7 @@ docs/figures/                                                                   
 
 ## 使用
 
-**环境**：Python 3.11。数据处理工具只依赖 `requirements.txt`；训练、服务、转换、一致性检查需要 openpi
+**环境**：Python 3.11。`pip install -e .` 安装数据处理工具（依赖见 `pyproject.toml`）；训练、服务、转换、一致性检查需要 openpi
 的环境，并打上 `integrations/openpi/patches/` 中的补丁。
 
 **两种方式**：
@@ -76,7 +76,7 @@ docs/figures/                                                                   
 **命令链**（以 UR3 示例为例）：
 
 ```bash
-export PYTHONPATH=.claude/skills/vla-pipeline/tools
+pip install -e .
 python -m vla_tools.audit           --dataset data/<src> --spec robot_spec.json --out runs/<task>/audit.json --review-dir runs/<task>/audit_review
 python -m vla_tools.clean           --dataset data/<src> --spec robot_spec.json --plan cleaning_plan.json --out data/<src>-clean
 python -m vla_tools.keyframe_detect --dataset data/<src>-clean --spec robot_spec.json --keyframes-spec keyframes_spec.json --out runs/<task>/keyframes_pass1.json

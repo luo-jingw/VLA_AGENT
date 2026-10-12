@@ -46,7 +46,8 @@ S7 不做重采样时（直接用逐帧动作），仍按 `metric="time"`、`spa
 所有工具在 `tools/vla_tools/` 下，以模块方式运行：
 
 ```bash
-PYTHONPATH=.claude/skills/vla-pipeline/tools <openpi>/.venv/bin/python -m vla_tools.<module> --help
+pip install -e <VLA_AGENT>          # 一次；或把 <VLA_AGENT>/src 加到 PYTHONPATH
+python -m vla_tools.<module> --help
 ```
 
 只读数据的工具依赖 numpy、scipy、pandas、pyarrow、matplotlib、av；写数据集的依赖 `datasets`；`replay_eval` 依赖 `openpi_client`；`lora_to_pytorch`、`policy_parity` 需要 openpi 环境。openpi 的虚拟环境满足以上全部。`arc_interp.py` 不依赖包内其他模块，交付时单独拷贝。

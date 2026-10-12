@@ -2,7 +2,7 @@
 
 A config built from LeRobotArcDataConfig cannot be registered in openpi's config.py at import time (the
 two modules would import each other), so these functions take the config itself. They call openpi's
-own scripts; put `<openpi>/scripts` on PYTHONPATH next to this package and vla_tools.
+own scripts, so `<openpi>/scripts` must be on PYTHONPATH.
 """
 
 from __future__ import annotations
@@ -12,15 +12,15 @@ from pathlib import Path
 
 import compute_norm_stats as openpi_norm_stats
 import numpy as np
-import train as openpi_train
 import tqdm
+import train as openpi_train
 from openpi.policies import policy_config
 from openpi.serving import websocket_policy_server
 from openpi.shared import normalize
 from openpi.training import config as _config
-from vla_tools.arc_interp import ArcInterpolator
 
 from vla_openpi.arc_transforms import ArcOutputs
+from vla_tools.arc_interp import ArcInterpolator
 
 
 def norm_stats(config: _config.TrainConfig, max_frames: int | None = None) -> Path:

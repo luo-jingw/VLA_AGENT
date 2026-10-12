@@ -1,0 +1,14 @@
+numpy
+scipy
+pandas
+pyarrow
+matplotlib
+pillow
+av
+datasets
+
+[eval]
+openpi-client
+
+[test]
+pytest

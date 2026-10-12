@@ -38,7 +38,7 @@ description: 为一个任务定义、检测、核对和修正关键帧（抓取�
 
 不同末端执行器的常见定义见 [按末端执行器定义关键帧](references/effectors.md)。没有现成信号的时刻（例如需要正运动学算出的末端高度），先由单独的步骤写成数据集的一列，再用 `column` 信号读取。
 
-写成 `keyframes_spec.json`，格式见 `vla-pipeline/tools/vla_tools/keyframe_spec.py` 的文件头。
+写成 `keyframes_spec.json`，格式见 `src/vla_tools/keyframe_spec.py` 的文件头。
 
 ### 2. 检测与一致性检查
 

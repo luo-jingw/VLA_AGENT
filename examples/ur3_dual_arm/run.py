@@ -1,8 +1,9 @@
 """Norm stats, training and serving for the dual-arm UR3 example, through vla_openpi.launch.
 
-Run from the openpi root with its environment, and with the harness on PYTHONPATH:
+Run from the openpi root, in an openpi environment where the harness is installed (`pip install -e <VLA_AGENT>`),
+with openpi's scripts and this directory on PYTHONPATH:
 
-    export PYTHONPATH=<openpi>/scripts:<VLA_AGENT>/integrations/openpi:<VLA_AGENT>/.claude/skills/vla-pipeline/tools:<VLA_AGENT>/examples/ur3_dual_arm
+    export PYTHONPATH=<openpi>/scripts:<VLA_AGENT>/examples/ur3_dual_arm
     uv run python <VLA_AGENT>/examples/ur3_dual_arm/run.py norm-stats --data-root <data> --repo-id <dataset>-train
     uv run python <VLA_AGENT>/examples/ur3_dual_arm/run.py train --data-root <data> --repo-id <dataset>-train --exp-name <run>
     uv run python <VLA_AGENT>/examples/ur3_dual_arm/run.py serve --data-root <data> --repo-id <dataset>-train \

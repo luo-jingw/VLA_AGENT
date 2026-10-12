@@ -34,7 +34,7 @@ checkpoint（其 `assets/<asset_id>/` 下有 norm stats 和 `arc_resample.json`�
 LoRA 训练的 checkpoint 必须先把适配器合并进主权重，再转换。openpi 自带的转换脚本只映射主权重，并用 `strict=False` 加载，会不报错地丢掉全部适配器。合并不能简单地对每个 head 做 `lora_a @ lora_b`：openpi 的注意力输出投影把 `lora_b` 在 head 维上求和，`lora_to_pytorch` 按 openpi 的 einsum 方程推导每层的增量。
 
 ```bash
-PYTHONPATH=<openpi>/examples:.claude/skills/vla-pipeline/tools uv run python -m vla_tools.lora_to_pytorch \
+PYTHONPATH=<openpi>/examples uv run python -m vla_tools.lora_to_pytorch \
     --checkpoint-dir <run>/<step> --config-name <config> --output-path <run>/<step>_pytorch
 ```
 

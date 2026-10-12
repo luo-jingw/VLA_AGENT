@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vla-agent"
+version = "0.1.0"
+description = "Agent harness for VLA data processing, action labels, openpi training, evaluation and serving"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+    "scipy",
+    "pandas",
+    "pyarrow",
+    "matplotlib",
+    "pillow",
+    "av",
+    "datasets",
+]
+
+[project.optional-dependencies]
+# Open-loop evaluation against a served policy (vla_tools.replay_eval).
+eval = ["openpi-client"]
+# vla_openpi, vla_tools.lora_to_pytorch and vla_tools.policy_parity need openpi itself, which is not on
+# PyPI: install this package into an openpi environment with integrations/openpi/patches applied.
+test = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["openpi: needs an openpi environment; skipped when openpi is not importable"]
+
+[tool.ruff]
+line-length = 120
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "B", "UP", "I"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["vla_tools", "vla_openpi"]
+force-single-line = true
