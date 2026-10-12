@@ -44,6 +44,7 @@ package registries, model hubs, cloud APIs).
 | Service | Scope | Source | Notes |
 |---|---|---|---|
 | GitHub | push to `luo-jingw/VLA_AGENT` (public) | personal access token kept in a local file outside the repository | Never committed |
+| Git commit identity | the maintainer, GitHub `luo-jingw` (noreply address) | repository-local `user.name` / `user.email` | A machine's global git identity is not used |
 | Weights & Biases | not used | — | Training runs with `WANDB_MODE=offline` or `wandb_enabled=False` |
 
 Do not assume a global or default identity applies.
