@@ -64,7 +64,11 @@ decisions). `run_status` and `data_report` read them; `data_report` writes only 
 
 - `python -m vla_tools.<module>` after `pip install -e .`; module names and arguments unchanged.
 - `python -m vla_tools.run_status runs/<task>` → one row per stage: status, artifact checked, reason.
+- `python -m vla_tools.run_index runs/<task> --clean <dataset>` (and `--source`, `--timed`, `--labels`) → updates
+  `runs/<task>/run.json`.
 - `python -m vla_tools.data_report runs/<task>` → `runs/<task>/data_report.md`.
+- `runs/<task>/decisions.md`: one `## D-NNN` entry per decision, seven fixed fields, read by
+  `vla_tools.decision_log`.
 
 ## Inputs
 
@@ -95,7 +99,8 @@ S7 passes it writes the data report and hands the label dataset downstream.
 
 ## Interfaces
 
-`src/vla_tools/run_status.py`, `src/vla_tools/data_report.py`, `src/vla_tools/run_index.py`.
+`src/vla_tools/run_status.py`, `src/vla_tools/data_report.py`, `src/vla_tools/run_index.py`,
+`src/vla_tools/decision_log.py`.
 
 ## State
 
@@ -201,7 +206,7 @@ Phase 1.
 
 ## Phase 4
 
-Phase Status: active
+Phase Status: completed
 
 Round: 3
 
@@ -211,8 +216,9 @@ Round: 3
 
 ### Files
 
-`src/vla_tools/run_index.py`, `src/vla_tools/run_status.py`, `src/vla_tools/data_report.py`,
-`tests/test_run_tools.py`, `.claude/skills/vla-pipeline/**`.
+`src/vla_tools/run_index.py`, `src/vla_tools/decision_log.py`, `src/vla_tools/run_status.py`,
+`src/vla_tools/data_report.py`, `tests/test_run_tools.py`, `tests/pipeline_chain.py`,
+`.claude/skills/vla-pipeline/**`.
 
 ### Structures
 
@@ -233,7 +239,7 @@ lists every dataset version, decision and coverage finding.
 
 ## Phase 5
 
-Phase Status: pending
+Phase Status: active
 
 Round: 4
 

@@ -17,7 +17,7 @@ runs/<task>/                     一个任务的计划文件、报告与核对�
   diversity.json (.png)          S6
   sweep.json, label_config.json  S7
   replay_<config>.json           S7
-  data_report.md                 S7 通过后
+  data_report.md                 S0–S7 都通过后
   replay_spec.json               S8 输入
   eval_<model>.json              S8
   parity_*.npz                   S8
@@ -35,8 +35,8 @@ data/<source>-<labels>-eval      S7，全部 episode，编号与定时版一致
 | 产物 | 写入者 | 读取者 |
 |---|---|---|
 | `robot_spec.json` | S0（手写） | 所有工具 |
-| `run.json` | `vla-pipeline` | `run_status`、`data_report` |
-| `decisions.md` | `vla-pipeline` | 人；`run_status` |
+| `run.json` | `run_index` | `run_status`、`data_report` |
+| `decisions.md` | `vla-pipeline` | 人；`run_status`、`data_report` |
 | `audit.json` | `audit` | S2 决策 |
 | 清洗版数据集 + `meta/cleaning_report.json` | `clean` | S3、S4 |
 | `keyframes_pass1.json` | `keyframe_detect` | `episode_timing` |
@@ -78,7 +78,7 @@ data/<source>-<labels>-eval      S7，全部 episode，编号与定时版一致
                                       "eval": "data/ur3-test-time-s20-eval"}}}}
 ```
 
-相对路径以项目根（`runs/` 的上一级）为基准。还没生成的版本不写。
+由 `run_index` 写入。相对路径以项目根（`runs/` 的上一级）为基准；还没生成的版本不写。各工具从项目根运行，产物中记录的数据集路径也按项目根解析。
 
 ### decisions.md
 

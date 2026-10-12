@@ -13,7 +13,7 @@ description: VLA 示教数据预处理的总流程：把录制数据处理成训
 
 ## 触发与输入
 
-每次开始或恢复一个任务时，先读 `AGENTS.md` 与 `PROJECT.md`，再读 `runs/<task>/` 下的运行记录。需要的输入：
+每次开始或恢复一个任务时，先读 `AGENTS.md` 与 `PROJECT.md`，再运行 `python -m vla_tools.run_status runs/<task>`，从第一个没有通过的阶段继续。需要的输入：
 
 | 输入 | 用途 |
 |---|---|
@@ -33,11 +33,13 @@ description: VLA 示教数据预处理的总流程：把录制数据处理成训
 | S2 清洗 | `vla-data-cleaning` | 源数据 + `cleaning_plan.json` → 清洗版 | 所有非孤立跳变都有书面决定 |
 | S3 关键帧初检 | `vla-keyframes` | 清洗版 → `keyframes_pass1.json` | 检测跑通；只用于给静止段分类 |
 | S4 静止帧与末尾 | `vla-episode-timing` | 清洗版 + 初检关键帧 + `timing_plan.json` → 定时版 | 每条决定都有理由；补帧行带 `is_padding` |
-| S5 关键帧定稿 | `vla-keyframes` | 定时版 → `keyframes.json`、核对图 | 开放问题为 0；每一类都看过核对图 |
+| S5 关键帧定稿 | `vla-keyframes` | 定时版 → `keyframes.json`、核对图 | 开放问题为 0；每一类都有核对图并已看过 |
 | S6 数据评估 | `vla-data-diversity` | 定时版 + 关键帧 → `diversity.json`、留出集 | 每个簇都有解释；留出集覆盖各簇 |
-| S7 动作标签 | `vla-action-labels` | 定时版 + 关键帧 + 留出集 → 训练版、评估版、`data_report.md` | 候选清单含逐帧基线；选定执行长度；数据报告已生成 |
+| S7 动作标签 | `vla-action-labels` | 定时版 + 关键帧 + 留出集 → 训练版、评估版 | 候选清单含逐帧基线；按标签回放选定执行长度；训练版去掉的正是留出集 |
 | S8 下游 | `vla-downstream` | 训练版、评估版 → checkpoint、评估表、交付目录 | 见 `vla-downstream` |
 | S9 收尾 | `close` | 全部产物 → `docs/`、`issues.md`、`opportunities.md` | 见 `close` |
+
+S7 通过后运行 `data_report` 写出 `data_report.md`，再把训练版、评估版和数据报告交给下游。
 
 S3 和 S5 是同一个工具跑两次：S4 改变了行和帧号，人工核对与修正只在 S5 做；关键帧工具拒绝使用另一个数据集版本的关键帧文件。不做标签重采样时，S7 仍按 `metric="time"`、`span_frames = H` 构建，它与逐帧 chunk 完全相同。
 
@@ -66,9 +68,11 @@ S3 和 S5 是同一个工具跑两次：S4 改变了行和帧号，人工核对�
 
 | 文件 | 写入者 | 内容 |
 |---|---|---|
-| `runs/<task>/run.json` | 本 skill，每生成一个数据集版本时更新 | 本次运行各数据集版本的路径：`source`、`clean`、`timed`、`labels`（每个候选的 `train` / `eval`） |
+| `runs/<task>/run.json` | `run_index`，每生成一个数据集版本时运行一次 | 本次运行各数据集版本的路径：`source`、`clean`、`timed`、`labels`（每个候选的 `train` / `eval`） |
 | `runs/<task>/decisions.md` | 本 skill | 待人决定的事项；决定后标记并注明写入了哪个文件 |
-| `runs/<task>/data_report.md` | `data_report` | S7 通过后生成：数据集版本谱系、体检发现与决定、关键帧、静止帧与补帧、覆盖与留出集、标签配置 |
+| `runs/<task>/data_report.md` | `data_report`，S0–S7 都通过后 | 数据集版本谱系、体检发现与清洗决定、关键帧、静止帧与补帧、覆盖与留出集、标签候选与配置、人的决定 |
+
+`run_status` 只从这些文件和各阶段产物判断状态：`passed`（产物齐全、能由文件检查的放行条件都满足）、`open`（某项检查不满足，原因列出）、`missing`（缺产物）、`waiting`（`decisions.md` 中有该阶段的未决事项）。核对图是否看过、簇的解释是否合理，仍由 agent 和人判断。
 
 其余产物的路径、格式和读写关系见 [产物](references/artifacts.md)；已知问题与检测方法见 [已知失效模式](references/failure-modes.md)。
 
@@ -77,6 +81,13 @@ S3 和 S5 是同一个工具跑两次：S4 改变了行和帧号，人工核对�
 ```bash
 pip install -e <VLA_AGENT>          # 一次；或把 <VLA_AGENT>/src 加到 PYTHONPATH
 python -m vla_tools.<module> --help
+
+# 在项目根目录运行
+python -m vla_tools.run_status runs/<task>                                   # 各阶段状态
+python -m vla_tools.run_index runs/<task> --task <task> --spec runs/<task>/robot_spec.json --source data/<src>
+python -m vla_tools.run_index runs/<task> --clean data/<src>-clean             # 每生成一个版本登记一次
+python -m vla_tools.run_index runs/<task> --labels <labels> data/<src>-<labels>-train data/<src>-<labels>-eval
+python -m vla_tools.data_report runs/<task>                                  # S0–S7 都通过后
 ```
 
 数据工具只依赖 `pyproject.toml` 中的核心依赖；`replay_eval` 需要 `openpi-client`；`vla_openpi`、`lora_to_pytorch`、`policy_parity` 需要 openpi 环境。`arc_interp.py` 不依赖包内其他模块，可单独拷到服务端。
@@ -97,5 +108,5 @@ S6 与 S7 的网格搜索互不依赖，可以同时进行。关键帧核对图�
 
 ## 完成标准
 
-- S0–S7 的放行条件都满足，训练版、评估版和 `data_report.md` 已生成，`decisions.md` 没有未决事项；
+- `run_status` 报告 S0–S7 全部 `passed`，看图类的放行条件已确认，`data_report.md` 已生成，`decisions.md` 没有未决事项；
 - 已验证的数据事实写入 `docs/`，未解决的问题写入 `issues.md`。

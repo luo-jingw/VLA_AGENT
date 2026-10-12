@@ -1,7 +1,10 @@
 """Run data stages S0-S7 on the synthetic dataset with the commands the skills document, writing what each stage writes.
 
 Layout follows `.claude/skills/vla-pipeline/references/artifacts.md`: datasets under <project>/data/,
-plans, reports and review images under <project>/runs/<task>/.
+plans, reports and review images under <project>/runs/<task>/. Each dataset version is recorded in
+run.json when it is created. The discontinuity jump is a decision for a person: it goes into
+decisions.md as pending, run_status reports S2 waiting, and the chain continues once it is decided
+and written into the cleaning plan. The data report is written after S7.
 """
 
 from __future__ import annotations
@@ -97,6 +100,17 @@ class ChainRun:
     holdout: list[int]
     clean_refusal: str  # output of clean run without jump decisions
     timing_report_mode: str  # output of episode_timing without a plan
+    status_waiting: str  # run_status while the jump decision is pending
+    status_final: str  # run_status after S7 and the data report
+
+
+def _decision_entry(
+    stage: str, status: str, item: str, evidence: str, proposal: str, decision: str, written_to: str
+) -> str:
+    """One decisions.md entry in the format decision_log reads."""
+    fields = {"stage": stage, "status": status, "item": item, "evidence": evidence, "proposal": proposal,
+              "decision": decision, "written_to": written_to}  # fmt: skip
+    return "\n".join(f"- {k}: {v}" for k, v in fields.items())
 
 
 def _write_json(path: Path, payload: object) -> Path:
@@ -111,23 +125,32 @@ def run_chain(project: Path) -> ChainRun:
     # S0 scope
     source = write_pick_place(data / "synth", EPISODES, seed=0, faults=True)
     spec = write_spec(run / "robot_spec.json")
+    run_tool("run_index", run, "--task", TASK, "--spec", spec, "--source", source.root)
 
     # S1 audit
     run_tool("audit", "--dataset", source.root, "--spec", spec, "--out", run / "audit.json",
              "--review-dir", run / "audit_review")  # fmt: skip
     findings = json.loads((run / "audit.json").read_text(encoding="utf-8"))["findings"]
-    to_decide = [f for f in findings if f["kind"] in ("jump_continuing", "jump_discontinuity")]
+    continuing = [f"{f['episode']}:{f['frame']}" for f in findings if f["kind"] == "jump_continuing"]
+    discontinuity = next(f"{f['episode']}:{f['frame']}" for f in findings if f["kind"] == "jump_discontinuity")
 
-    # S2 clean: refused until every non-isolated jump has a decision
+    # S2 clean: continuing jumps are the agent's to keep; the discontinuity waits for a person
     plan = {"jump_factor": 8.0, "repair_isolated_jumps": True, "command_pulse_frames": 3, "exclude_episodes": {}}
+    entry = {"item": f"discontinuity jump at {discontinuity}: keep or repair", "evidence": "runs/synthetic_pick/audit_review",
+             "proposal": "keep: the end of the fast motion starting one frame earlier"}  # fmt: skip
+    decisions = run / "decisions.md"
+    decisions.write_text("## D-001\n" + _decision_entry("S2", "pending", **entry, decision="", written_to="") + "\n")
+    waiting = run_tool("run_status", run)
     clean = data / "synth-clean"
     refusal = run_tool("clean", "--dataset", source.root, "--spec", spec,
                        "--plan", _write_json(run / "cleaning_plan.json", plan), "--out", clean, expect_code=2)  # fmt: skip
-    plan["jump_decisions"] = {
-        f"{f['episode']}:{f['frame']}": "keep: fast joint 2 motion, traces checked in audit_review" for f in to_decide
-    }
+    plan["jump_decisions"] = {key: "keep: fast joint 2 motion, traces checked in audit_review" for key in continuing}
+    plan["jump_decisions"][discontinuity] = "keep: end of the fast motion (D-001)"
     run_tool("clean", "--dataset", source.root, "--spec", spec,
              "--plan", _write_json(run / "cleaning_plan.json", plan), "--out", clean)  # fmt: skip
+    decisions.write_text("## D-001\n" + _decision_entry("S2", "decided", **entry, decision="keep",
+                         written_to="runs/synthetic_pick/cleaning_plan.json") + "\n")  # fmt: skip
+    run_tool("run_index", run, "--clean", clean)
 
     # S3 first keyframe pass
     kspec = _write_json(run / "keyframes_spec.json", KEYFRAMES_SPEC)
@@ -140,12 +163,14 @@ def run_chain(project: Path) -> ChainRun:
                            "--threshold", "0.001", "--min-frames", "4")  # fmt: skip
     run_tool("episode_timing", "--dataset", clean, "--spec", spec, "--keyframes", pass1,
              "--plan", _write_json(run / "timing_plan.json", TIMING_PLAN), "--out", timed)  # fmt: skip
+    run_tool("run_index", run, "--timed", timed)
 
     # S5 final keyframes and review sheets
     keyframes = run / "keyframes.json"
     run_tool("keyframe_detect", "--dataset", timed, "--spec", spec, "--keyframes-spec", kspec, "--out", keyframes)
-    run_tool("keyframe_review", "--dataset", timed, "--spec", spec, "--keyframes", keyframes,
-             "--type", "grasp", "--camera", CAMERA, "--out", run / "kf_review")  # fmt: skip
+    for ktype in KEYFRAMES_SPEC["order"]:
+        run_tool("keyframe_review", "--dataset", timed, "--spec", spec, "--keyframes", keyframes,
+                 "--type", ktype, "--camera", CAMERA, "--out", run / "kf_review")  # fmt: skip
 
     # S6 diversity and held-out split
     run_tool("diversity", "--dataset", timed, "--spec", spec, "--keyframes", keyframes, "--holdout", str(HOLDOUT),
@@ -163,6 +188,9 @@ def run_chain(project: Path) -> ChainRun:
              "--exclude", *(str(e) for e in holdout), "--out", train)  # fmt: skip
     run_tool("build_labels", "--dataset", timed, "--spec", spec, "--keyframes", keyframes, "--config", config,
              "--out", evaluation)  # fmt: skip
+    run_tool("run_index", run, "--labels", LABELS, train, evaluation)
+    run_tool("data_report", run)
+    final = run_tool("run_status", run)
 
     return ChainRun(
         project=project,
@@ -178,4 +206,6 @@ def run_chain(project: Path) -> ChainRun:
         holdout=holdout,
         clean_refusal=refusal,
         timing_report_mode=report_mode,
+        status_waiting=waiting,
+        status_final=final,
     )
