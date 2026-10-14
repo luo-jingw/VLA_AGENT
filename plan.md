@@ -168,7 +168,7 @@ run's artifacts under `FTpi05/reports/action-sparsification-src/libero/run/`.
 
 ## Phase 1
 
-Phase Status: pending
+Phase Status: active
 
 Round: 1
 
@@ -200,7 +200,7 @@ straight line, and on circles of three radii against R^(−1/3); a recorded old-
 
 ## Phase 2
 
-Phase Status: pending
+Phase Status: active
 
 Round: 1
 
@@ -264,7 +264,7 @@ indices increase monotonically for every configuration; figures printed per exec
 
 ## Phase 4
 
-Phase Status: pending
+Phase Status: active
 
 Round: 1
 
