@@ -1,6 +1,6 @@
 # Plan
 
-Plan Status: approved
+Plan Status: completed
 
 # Problem
 
@@ -255,7 +255,7 @@ LIBERO numbers match the rebuilt artifacts; no text describes padding-stretched 
 
 ## Phase 5
 
-Phase Status: active
+Phase Status: completed
 
 Round: 4
 
