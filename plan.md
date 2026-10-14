@@ -222,7 +222,7 @@ Phases 1, 2.
 
 ## Phase 4
 
-Phase Status: active
+Phase Status: completed
 
 Round: 4
 
@@ -255,7 +255,7 @@ LIBERO numbers match the rebuilt artifacts; no text describes padding-stretched 
 
 ## Phase 5
 
-Phase Status: pending
+Phase Status: active
 
 Round: 4
 

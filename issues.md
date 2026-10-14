@@ -113,9 +113,9 @@ not affected: its demonstrations have no exactly still frames (110/110 edges kep
 
 Deck synthetic recordings (`FTpi05/reports/action-sparsification-src/deck/synthetic.js`, still frames at
 the grasp and the release), `curvature` span 40 density 0: the release edge is missed; observed frames at
-the end of recording A are 129, 130, 131, 132 (e = 10: 22 inferences, 220 executed frames for 134
-recorded; e = 40: 9 inferences, 360 frames). With density 1 or 2 nothing is missed (e = 40: 5
-inferences, 200 frames). Python `label_replay.closed_loop` and the JavaScript port give the same
+the end of recording A are 129, 130, 131, 132 (rate 1; e = 10: 18 inferences, 180 executed frames for
+134 recorded; e = 40: 8 inferences, 320 frames). With density 1 or 2 nothing is missed (e = 40: 4
+inferences, 160 frames). Python `label_replay.closed_loop` and the JavaScript port give the same
 observed frames.
 
 ## Hypotheses
