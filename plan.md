@@ -254,7 +254,7 @@ measured margins.
 
 ## Phase 2
 
-Phase Status: active
+Phase Status: completed
 
 Round: 2
 
@@ -290,7 +290,7 @@ suites pass.
 
 ## Phase 3
 
-Phase Status: pending
+Phase Status: active
 
 Round: 3
 
