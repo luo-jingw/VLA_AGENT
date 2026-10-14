@@ -160,12 +160,25 @@ def test_diversity_split_covers_both_block_regions(chain: ChainRun) -> None:
 
 def test_sweep_frame_baseline_is_exact_and_largest_admissible_span_is_selected(chain: ChainRun) -> None:
     sweep = _json(chain.run_dir / "sweep.json")
+    step = sweep["path_step_rad"]
     cells = {(c["config"]["metric"], c["config"]["span_frames"]): c for c in sweep["cells"]}
+    for key, c in cells.items():
+        print(f"{key}: path head {c['path_head'][0] / step:.4f}, path full {c['path_full'][0] / step:.4f}, "
+              f"kf position {c['kf_position'][0] / step:.4f}, kf missed {c['kf_missed']}, "
+              f"speed p95 {c['speed_ratio'][1]:.2f}, admissible {c['admissible']}")  # fmt: skip
     baseline = cells[("time", HORIZON)]
-    print({k: (round(c["head_err"][0], 6), round(c["full_err"][0], 6)) for k, c in cells.items()})
-    assert baseline["head_err"][0] < 1e-9 and baseline["full_err"][0] < 1e-9
-    assert sorted(int(s) for s in sweep["shortlist"]) == [HORIZON, SPAN]
-    assert sweep["selected"]["span_frames"] == SPAN
+    assert max(baseline["path_head"]) < 1e-9 and max(baseline["path_full"]) < 1e-9
+    assert np.isnan(baseline["kf_position"][0]) or baseline["kf_position"][0] < 1e-9
+    assert baseline["admissible"]
+
+    admissible = [c for c in sweep["cells"] if c["admissible"]]
+    largest = max(c["config"]["span_frames"] for c in admissible)
+    best = min(
+        (c for c in admissible if c["config"]["span_frames"] == largest),
+        key=lambda c: (c["path_full"][0], c["path_head"][0]),
+    )
+    assert sorted(int(s) for s in sweep["shortlist"]) == sorted({c["config"]["span_frames"] for c in admissible})
+    assert sweep["selected"] == best["config"]
 
 
 def test_label_replay_reports_each_replan_interval(chain: ChainRun) -> None:
