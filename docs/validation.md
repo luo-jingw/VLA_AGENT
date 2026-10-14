@@ -34,8 +34,10 @@ is 5.3e-5 on the accelerating straight line (`second_difference`: 10.3), and dif
 the total between three recordings of one bent path at different speeds with a fixed chord length;
 `path_metrics` reproduces constructed distances, keyframe offsets and speed ratios to within 1e-12.
 
-Measured by the curve and window tests: the rebuilt curve passes through every recorded row (difference
-0), is unchanged by 10 or 40 end-padding rows and stays at the last recorded row beyond it. On the bent
+Measured by the label, window and rebuild tests: every label point lies on the recorded polyline (8008
+points, max 1.1e-16 under `curvature` and `time`; points past the last recorded row equal it). The
+server's rebuild reproduces the chord through two knots, the parabola through three and a cubic in time
+through four or more (max 3.6e-15). On the bent
 path recorded with acceleration, slowing and a pause, every frame whose window holds no keyframe and lies
 within the recording has its H-th point at the recorded pose span frames after its state (921 windows,
 max 1.1e-16 under all three metrics; the last of them ends on the last recorded row and has no padded
@@ -57,11 +59,11 @@ Real-data observations in this table are on UR3 unless a row names LIBERO.
 | `arc_core` | `time`, span = H labels vs `action[t:t+H]`, both anchors | max difference 4.4e-9 over 3003 frames (`anchor="state"`) | `test_arc_core.py::test_time_with_span_equal_to_horizon_is_the_recorded_chunk`; `test_pipeline_chain.py::test_sweep_frame_baseline_is_exact_and_largest_admissible_span_is_selected` |
 | `arc_core` | padding and keyframe-window weights; `time` gaps of 1 and 2 rows inside and outside a density-2 window; monotone frames under `curvature` and `second_difference`; refusal of a recorded config without `anchor`, of a `curvature` config without `curvature_length` (recorded with `curvature_window`, or with none), and of the metric name `arc` | — | `test_arc_core.py` |
 | `arc_core` | per-window step: the H-th point at the window end; keyframe density independent of the rest of the window; a still window spaced in time; one recording with 10 and 40 end-padding rows under `time`, `curvature`, `second_difference`; a recorded-row count outside the episode | LIBERO reach and window ends, see [LIBERO run](#libero-run) | `test_arc_core.py::test_window_without_keyframes_ends_at_its_last_point`, `::test_keyframe_density_does_not_depend_on_the_rest_of_the_window`, `::test_still_window_is_spaced_in_time_and_keeps_its_command`, `::test_end_padding_does_not_change_labels_of_recorded_frames`, `::test_recorded_rows_must_be_within_the_episode` |
-| `trajectory_curve` | the curve at the recorded rows; 10 vs 40 padding rows; a single recorded row | LIBERO curve selection, see [LIBERO run](#libero-run) | `test_trajectory_curve.py` |
+| `arc_core` | label points on the recorded polyline, points past the last recorded row on it | LIBERO: max 4.7e-16 rad over every label point of `curvature` span 40 | `test_arc_core.py::test_label_points_lie_on_the_recorded_path` |
 | `path_curvature` | circle radius R at uniform and at 20× varying sample spacing; straight line traversed while accelerating; a stop on a circle and on a straight line | — | `test_path_curvature.py` |
 | `arc_core` (`curvature`) | progress per unit length on circles R = 0.1, 0.2, 0.4 vs R^(−1/3); accelerating straight line; one bent path recorded at steady v, steady 2v and with acceleration, slowing and a 25-frame pause | LIBERO re-timing, see [LIBERO run](#libero-run) | `test_arc_core.py::test_curvature_on_a_circle_is_the_cube_root_of_inverse_radius`, `::test_curvature_is_zero_on_a_straight_segment`, `::test_curvature_progress_per_unit_length_is_independent_of_teleop_speed` |
 | `path_metrics` | distances to an L-shaped path; a path against itself; a command switched two rows late; a doubled step; repeated frames in the step statistics | constructed values to within 1e-12 | `test_path_metrics.py` |
-| `arc_interp` | against an independently written per-robot interpolator, all 3223 chunks | difference 0 | `test_arc_interp.py::test_to_frames_passes_through_the_points_and_takes_the_nearest_command` (the interpolator's rules, not the comparison) |
+| `arc_interp` | not-a-knot cubic spline through the current pose and the points: chord, parabola and cubic from 2, 3 and ≥ 4 knots; points as knots, nearest-point commands, a straight line kept straight | LIBERO rebuild selection, see [LIBERO run](#libero-run) | `test_arc_interp.py::test_to_frames_is_the_not_a_knot_cubic_spline`, `::test_to_frames_passes_through_the_points_and_takes_the_nearest_command` |
 | `arc_interp.from_report` | outputs at the point frames vs the recording, `time` span 20 | max difference 4.4e-16 | `test_arc_interp.py::test_from_report_reproduces_the_recording_at_the_point_frames`; `test_pipeline_chain.py::test_train_and_eval_label_datasets` |
 | `arc_interp` (execution rate) | point frames at rate 2; targets at rate 2 vs rate 1 | LIBERO replay at rate 2, see [LIBERO run](#libero-run) | `test_arc_interp.py::test_point_frames_by_anchor`, `::test_rate_traverses_the_same_path_faster` |
 | `dataset_writer` | row drops, repeated rows, end padding, exclusion with renumbering, added and replaced columns | rows, image bytes, `frame_index`, `index`, `timestamp`, `episodes.jsonl` consistent; LeRobot loads the result | `test_dataset_writer.py::test_round_trip_renumbers_and_keeps_rows_consistent`; `test_openpi_integration.py::test_lerobot_loads_the_derived_datasets` |
@@ -85,7 +87,7 @@ Real-data observations in this table are on UR3 unless a row names LIBERO.
 
 ## LIBERO run
 
-Measured 2026-10-13 (S0–S6) and 2026-10-14 (curve selection, S7) on one LIBERO task, data stages only.
+Measured 2026-10-13 (S0–S6) and 2026-10-14 (rebuild selection, S7) on one LIBERO task, data stages only.
 
 **Source.** `pick_up_the_alphabet_soup_and_place_it_in_the_basket_demo.hdf5` from the Hugging Face
 dataset `yifengzhu-hf/LIBERO-datasets` (Apache-2.0; sha256
@@ -126,78 +128,88 @@ python -m vla_tools.data_report     runs/<task>
 | S3, S5 keyframes | grasp (close edge), lift (joint speed above 0.02 rad/frame for 2 frames within 30 frames after the grasp), release (open edge), counts allowed to vary; after end padding 16 consistency issues: the 5 four-edge episodes are re-grasps whose failed grasp opens over the floor (early release, short lift→release interval), 3 slow carries, 3 late releases; wrist-camera sheets of episodes 0, 1 and 29 show the can between the fingers at each grasp and dropping into the basket at the final release; all 16 accepted by a person |
 | S4 timing | no leading or pause still run; 2 trailing runs (19 frames) kept; the last release comes 3–21 frames (median 18) before the recording ends; 40 padding rows per episode |
 | S6 diversity | two combined clusters of 42 and 8 episodes, the small one the eight longest demonstrations (170–195 rows: four re-grasps, four slow demonstrations); stratified holdout [3, 5, 12, 21, 34] keeps both clusters in training, confirmed by a person |
-| S7 sweep | all 30 `time` and `curvature` cells admissible; path deviation medians ≤ 0.21 and p90 ≤ 0.45 path steps (path step 0.0306 rad); no missed command edge; 110 of 110 edges kept in every cell |
+| S7 sweep | all 30 `time` and `curvature` cells admissible; path deviation medians ≤ 0.16 and p90 ≤ 0.34 path steps (path step 0.0306 rad); no missed command edge; 110 of 110 edges kept in every cell |
 
 Shortlist, distances in path steps, speed as a ratio to the recorded p95 step (0.0517 rad):
 
 | span | cell | path head median | path full median / p90 | kf position median | speed median / p95 | reach median (frames) |
 |---|---|---|---|---|---|---|
 | 10 | `time`, density 0 | 0.00 | 0.00 / 0.00 | 0.00 | 0.64 / 1.07 | 10.0 |
-| 15 | `time`, density 0 | 0.01 | 0.01 / 0.03 | 0.03 | 0.64 / 1.07 | 15.0 |
-| 20 | `curvature`, density 2 | 0.01 | 0.02 / 0.06 | 0.00 | 0.63 / 1.01 | 20.0 |
-| 30 | `curvature`, density 2 | 0.03 | 0.05 / 0.12 | 0.22 | 0.65 / 1.02 | 27.0 |
-| 40 | `curvature`, density 2 | 0.05 | 0.11 / 0.23 | 0.30 | 0.66 / 1.03 | 33.6 |
+| 15 | `curvature`, density 2 | 0.01 | 0.01 / 0.03 | 0.08 | 0.62 / 1.01 | 15.0 |
+| 20 | `curvature`, density 1 | 0.01 | 0.02 / 0.07 | 0.22 | 0.69 / 1.09 | 20.0 |
+| 30 | `curvature`, density 2 | 0.02 | 0.04 / 0.11 | 0.22 | 0.65 / 1.03 | 27.0 |
+| 40 | `curvature`, density 2 | 0.05 | 0.08 / 0.20 | 0.29 | 0.67 / 1.04 | 33.6 |
 
-Selected: `curvature`, span 40, density 2, the same cell as with the episode-wide step. At density 0 every
-frame of `curvature` span 40 reaches exactly 40 recorded frames; density 2 places more points inside
-keyframe windows (`time`, span 40, density 2: 34.0). Keyframe position medians at span 40: 0.30 at density
-2, 0.88 at density 0. With `second_difference` added (45 cells, all admissible), span 40 selects
-`second_difference`, density 2: path full median 0.0947 against 0.1053 for `curvature`. For the selected
-cell the time-indexed full-chunk error, kept in `sweep.json` for information, has a median of 5.42 frames
-of motion with the server's point times and 0.16 with the true ones.
+Selected: `curvature`, span 40, density 2. At density 0 every frame of `curvature` span 40 reaches exactly
+40 recorded frames; density 2 places more points inside keyframe windows (`time`, span 40, density 2:
+34.0). Keyframe position medians at span 40: 0.29 at density 2, 0.79 at density 0. With
+`second_difference` added (45 cells, all admissible), span 40 selects `second_difference`, density 2: path
+full median 0.0799 against 0.0824 for `curvature`. For the selected cell the time-indexed full-chunk error,
+kept in `sweep.json` for information, has a median of 5.44 frames of motion with the server's point times
+and 0.10 with the true ones.
 
 Closed-loop replay, distances in path steps:
 
 | labels | e | path median / p90 / max | seam median / max | kf position median / max | missed | hold median | speed median / max | executed / recorded frames |
 |---|---|---|---|---|---|---|---|---|
-| `curvature`-s40-d2, rate 1 | 2 | 0.06 / 0.13 / 0.60 | 0.84 / 3.05 | 0.66 / 3.08 | 0 | 2 | 1.14 / 1.80 | 9272 / 7758 |
-| | 5 | 0.03 / 0.09 / 0.63 | 0.79 / 2.95 | 0.27 / 2.51 | 0 | 3 | 1.11 / 1.74 | 9945 / 7758 |
-| | 10 | 0.03 / 0.08 / 0.50 | 0.86 / 2.84 | 0.26 / 2.88 | 0 | 3 | 1.05 / 1.68 | 9690 / 7758 |
-| | 20 | 0.02 / 0.07 / 0.55 | 0.84 / 2.33 | 0.26 / 1.11 | 0 | 3 | 0.98 / 1.45 | 9920 / 7758 |
-| | 40 | 0.02 / 0.06 / 0.54 | 1.07 / 2.42 | 0.23 / 2.10 | 0 | 3 | 0.98 / 1.72 | 10200 / 7758 |
-| `curvature`-s40-d2, rate 2 | 2 | 0.01 / 0.08 / 0.46 | 1.70 / 5.68 | 0.12 / 1.41 | 0 | 1 | 2.10 / 3.36 | 4792 / 7758 |
-| | 5 | 0.02 / 0.08 / 0.50 | 1.72 / 5.41 | 0.20 / 1.83 | 0 | 1 | 2.01 / 3.20 | 4845 / 7758 |
-| | 10 | 0.01 / 0.07 / 0.55 | 1.69 / 4.58 | 0.19 / 1.56 | 0 | 1 | 1.90 / 2.83 | 4960 / 7758 |
-| | 20 | 0.01 / 0.06 / 0.54 | 2.08 / 4.61 | 0.24 / 2.13 | 0 | 1 | 1.90 / 3.36 | 5100 / 7758 |
-| `curvature`-s40-d0, rate 1 | 10 | 0.03 / 0.12 / 0.85 | 0.98 / 2.59 | 0.54 / 1.84 | 0 | 1 | 1.08 / 1.53 | 8380 / 7758 |
-| `curvature`-s40-d0, rate 2 | 10 | 0.02 / 0.09 / 0.76 | 2.00 / 5.24 | 0.73 / 4.44 | 0 | 1 | 2.00 / 3.10 | 4170 / 7758 |
+| `curvature`-s40-d2, rate 1 | 2 | 0.05 / 0.12 / 0.57 | 0.82 / 3.21 | 0.70 / 3.13 | 0 | 2 | 1.16 / 1.90 | 9460 / 7758 |
+| | 5 | 0.02 / 0.08 / 0.49 | 0.78 / 2.99 | 0.29 / 2.47 | 0 | 3 | 1.10 / 1.77 | 9780 / 7758 |
+| | 10 | 0.02 / 0.07 / 0.43 | 0.85 / 3.04 | 0.29 / 2.93 | 0 | 3 | 1.04 / 1.80 | 9670 / 7758 |
+| | 20 | 0.01 / 0.05 / 0.47 | 0.83 / 2.33 | 0.26 / 1.12 | 0 | 3 | 0.96 / 1.42 | 9900 / 7758 |
+| | 40 | 0.01 / 0.05 / 0.50 | 1.05 / 2.55 | 0.23 / 2.09 | 0 | 3 | 1.00 / 1.67 | 10200 / 7758 |
+| `curvature`-s40-d2, rate 2 | 2 | 0.00 / 0.08 / 0.46 | 1.67 / 5.74 | 0.14 / 1.45 | 0 | 1 | 2.14 / 3.40 | 4792 / 7758 |
+| | 5 | 0.01 / 0.07 / 0.42 | 1.71 / 5.59 | 0.23 / 1.87 | 0 | 1 | 1.99 / 3.30 | 4835 / 7758 |
+| | 10 | 0.00 / 0.05 / 0.47 | 1.66 / 4.25 | 0.20 / 1.56 | 0 | 1 | 1.89 / 2.82 | 4950 / 7758 |
+| | 20 | 0.00 / 0.05 / 0.50 | 2.06 / 4.72 | 0.24 / 2.16 | 0 | 1 | 1.91 / 3.33 | 5100 / 7758 |
+| `curvature`-s40-d0, rate 1 | 10 | 0.02 / 0.10 / 0.57 | 0.94 / 2.60 | 0.50 / 1.89 | 0 | 1 | 1.06 / 1.54 | 8410 / 7758 |
+| `curvature`-s40-d0, rate 2 | 10 | 0.00 / 0.07 / 0.65 | 1.98 / 5.16 | 0.72 / 4.46 | 0 | 1 | 1.98 / 3.05 | 4170 / 7758 |
 | `time`-s10, rate 1 | 2–10 | 0.00 / 0.00 / 0.00 | 1.00–1.01 / 2.93–3.31 | 0.00 / 0.00 | 0 | 1 | 1.08 / 1.98 | 7734–7930 / 7758 |
 
 Path deviation and keyframe position of the selected labels do not grow from e = 2 to e = 40 at either
 rate; the full tables (e = 1, 2, 4, 5, 8, 10, 15, 20, 30, 40) are in the run's
 `replay_curvature-s40-d2.json`, `replay_curvature-s40-d2_r2.json` and data report. At rate 2 a chunk has
-20 targets, so e = 30 and 40 repeat e = 20. At rate 1 the selected labels execute 1.20–1.31× the
+20 targets, so e = 30 and 40 repeat e = 20. At rate 1 the selected labels execute 1.22–1.31× the
 recorded frames; the extra time is spent in the keyframe windows that density 2 fills with more points
 (density 0: 1.08× at e = 10). At rate 2 they execute 0.62–0.66× the recorded frames, with the largest
-per-frame step 1.90–2.10× (median) and 2.76–3.36× (max) the recorded p95 step. The e = 1 rows overstate
-the error at rate 1 (path max 2.35 path steps; ISSUE-004). 23–31% of `curvature` points fall past the
+per-frame step 1.89–2.14× (median) and 2.82–3.40× (max) the recorded p95 step. The e = 1 rows overstate
+the error at rate 1 (path max 1.97 path steps; ISSUE-004). 23–31% of `curvature` points fall past the
 episode end against 2–11% for `time`: labels taken on the 40 padding rows hold the final target and count
 as padded.
 
-**Curve selection.** Measured with a script outside this repository (50 episodes, recorded rows):
-candidates are a parameter (row index, chord length, or its square root) and an interpolant through every
-distinct row (PCHIP or not-a-knot cubic spline). Keeping every k-th row and rebuilding, distance of the
-dropped rows to the rebuilt curve, and of the rebuilt curve to the full recorded polyline, p95 in path
-steps:
+**Rebuild from the label points.** Measured with a script outside this repository
+(`sparse_rebuild_check.py`, 50 episodes, every recorded frame whose label has no padded point): the
+current pose and the 10 label points are the nodes, rebuilt with a polyline or with PCHIP or a not-a-knot
+cubic spline over a node parameter (uniform k, i.e. the server's knots; chord length; its square root; the
+points' true recorded rows, which the server does not know). Error per frame: the larger of the distance
+of the recorded rows of the window to the rebuilt curve and of the rebuilt curve to the recorded path,
+path steps, median / p90 / max over frames:
 
-| curve | dropped rows to curve, k = 2 / 4 | curve to recording, k = 2 / 4 |
+| rebuild from the 10 points | `curvature` s40 d2 (6313 frames) | `curvature` s40 d0 (5808 frames) |
 |---|---|---|
-| row index / PCHIP | 0.046 / 0.186 | 0.030 / 0.134 |
-| row index / cubic spline | 0.024 / 0.105 | 0.021 / 0.081 |
-| chord / PCHIP | 0.050 / 0.201 | 0.031 / 0.153 |
-| chord / cubic spline | 0.046 / 0.219 | 0.028 / 0.183 |
-| centripetal / PCHIP | 0.047 / 0.191 | 0.031 / 0.141 |
-| centripetal / cubic spline | 0.029 / 0.134 | 0.022 / 0.099 |
+| polyline | 0.22 / 0.37 / 0.99 | 0.34 / 0.74 / 1.36 |
+| PCHIP, uniform | 0.12 / 0.25 / 0.78 | 0.24 / 0.62 / 1.24 |
+| cubic spline, uniform | 0.09 / 0.21 / 0.72 | 0.17 / 0.45 / 0.76 |
+| PCHIP, chord | 0.12 / 0.26 / 0.82 | 0.25 / 0.65 / 1.28 |
+| cubic spline, chord | 0.11 / 0.30 / 1.41 | 0.22 / 0.73 / 2.40 |
+| cubic spline, centripetal | 0.09 / 0.21 / 0.71 | 0.19 / 0.56 / 1.13 |
+| PCHIP, true rows | 0.12 / 0.25 / 0.76 | 0.24 / 0.60 / 1.22 |
+| cubic spline, true rows | 0.08 / 0.18 / 2.67 | 0.16 / 0.42 / 4.42 |
 
-On a constructed path (straight, arc R 0.25 over π, straight) sampled at steady, 2× steady and varying
-speed with a pause, every candidate stays within 0.05–0.78 mrad of the true curve and the
-parameterizations differ by ≤ 0.002 mrad. `trajectory_curve` uses the row-index cubic spline.
+The interpolant matters more than the parameter: uniform knots and the true rows give nearly the same
+error, chord-length parameters the largest tails. `arc_interp` uses the cubic spline over uniform knots
+(the server's point times); `time` labels at span 40 give 0.13 / 0.28 / 1.02 (density 0) against 0.18 /
+0.35 / 0.80 for PCHIP. A joint of the spline leaves the range of its two neighbouring nodes by up to 0.06
+/ 0.13 / 0.53 path steps (density 2) and 0.09 / 0.20 / 0.51 (density 0); the recorded rows between the
+same nodes leave it by 0.06 / 0.15 / 0.66 and 0.12 / 0.42 / 0.85, so the excursion follows the recorded
+path's own bends; PCHIP has none by construction. Label points are read linearly between the two
+neighbouring recorded rows: max 4.7e-16 rad from the recorded polyline, and the 10 points of a label are
+the only knots of the rebuild.
 
 **Curvature chord.** Spread of the normalized `curvature` progress between the three constructed-path
 recordings: 0.0577 with chords of 4 × each recording's median step, 0.0067 with a fixed chord, 0.010–0.018
-with the fixed chord applied to the densely sampled reconstructions. Re-timing each LIBERO joint path
-(PCHIP over arc length) at uniform speed, at uniform 2× speed with half the frames, and with a 0.4×–1.6×
-sinusoidal speed; largest difference of the normalized progress to the recording along arc length,
+with the fixed chord on dense resamplings of interpolations through every recorded row. Re-timing each
+LIBERO joint path (PCHIP over arc length) at uniform speed, at uniform 2× speed with half the frames, and
+with a 0.4×–1.6× sinusoidal speed; largest difference of the normalized progress to the recording along arc length,
 median / max over episodes:
 
 | metric | uniform | 2× | sine |
@@ -212,17 +224,16 @@ targets (rate 1) of the labels of frames t and t + d over the frames both cover,
 
 | density | step | reach p05 / median / p95 (frames) | window end − span, median / max (1685 windows) | jitter d = 1 | jitter d = 10 |
 |---|---|---|---|---|---|
-| 0 | episode-wide | 30.0 / 37.6 / 45.0 | 2.43 / 16.05 | 0.40 / 0.80 / 2.19 | 2.06 / 5.20 / 13.24 |
-| 0 | per window | 40.0 / 40.0 / 40.0 | 0 / 1.4e-14 | 0.47 / 0.74 / 2.02 | 2.46 / 4.65 / 8.80 |
-| 2 | episode-wide | 22.0 / 32.8 / 42.9 | 1.85 / 16.26 | 0.38 / 1.31 / 2.09 | 2.37 / 10.11 / 16.95 |
-| 2 | per window | 22.9 / 33.6 / 40.0 | 0 / 4.3e-14 | 0.41 / 1.33 / 2.99 | 2.24 / 9.55 / 22.35 |
+| 0 | episode-wide | 30.0 / 37.6 / 45.0 | 2.43 / 16.05 | 0.36 / 0.78 / 2.15 | 2.04 / 5.20 / 13.26 |
+| 0 | per window | 40.0 / 40.0 / 40.0 | 0 / 1.4e-14 | 0.43 / 0.72 / 1.90 | 2.45 / 4.64 / 8.84 |
+| 2 | episode-wide | 22.0 / 32.8 / 42.9 | 1.85 / 16.26 | 0.36 / 1.31 / 2.16 | 2.34 / 10.13 / 16.91 |
+| 2 | per window | 22.9 / 33.6 / 40.0 | 0 / 4.3e-14 | 0.39 / 1.31 / 2.89 | 2.21 / 9.57 / 22.30 |
 
-In the sweep the path full medians change by at most 0.03 path steps (span 40, density 0: 0.18 → 0.21)
-and the keyframe position median at span 40 rises from 0.65 to 0.88 at density 0 (density 2: 0.30 both).
-The closed-loop replay at e = 10 executes 8020 → 8380 frames at density 0 and 9530 → 9690 at density 2
-(rate 1), 4090 → 4170 and 4800 → 4960 at rate 2: with the episode-wide step the straighter final
-stretches were traversed faster than recorded, while every window now takes span frames at rate 1
-(inferences with the state in the last 40 recorded frames, density 0: 183 → 249).
+The episode-wide rows are the labels of one step per episode (chord 4 × each recording's median step,
+PCHIP over the rows), deployed with the same spline rebuild. The closed-loop replay at e = 10 executes
+8040 (episode-wide) and 8410 (per window) frames at density 0 and 9510 and 9670 at density 2 (rate 1),
+4090 / 4170 and 4800 / 4950 at rate 2: with one step per episode the straighter final stretches are
+traversed faster than recorded, while every window takes span frames at rate 1.
 
 ## integrations/openpi
 

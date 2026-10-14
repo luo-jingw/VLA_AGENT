@@ -161,9 +161,9 @@ observation runs ahead of the executed pose.
 
 ## Impact
 
-LIBERO, `curvature-s40-d2`, rate 1: at e = 1 the replay executes 6993 frames for 7758 recorded, with path
-deviation max 2.35 and keyframe position max 4.95 path steps, against max 0.47–0.63 and 1.11–3.08 for
-e = 2–40; at rate 2, e = 1 gives max 0.51 and 1.94. The e = 1, rate 1 row overstates the error of the
+LIBERO, `curvature-s40-d2`, rate 1: at e = 1 the replay executes 7074 frames for 7758 recorded, with path
+deviation max 1.97 and keyframe position max 4.73 path steps, against max 0.42–0.57 and 1.12–3.13 for
+e = 2–40; at rate 2, e = 1 gives max 0.53 and 1.97. The e = 1, rate 1 row overstates the error of the
 labels.
 
 ## Evidence

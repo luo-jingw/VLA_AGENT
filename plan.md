@@ -185,7 +185,7 @@ against the spline lookup; `time` s10 labels unchanged.
 
 ## Phase 3
 
-Phase Status: active
+Phase Status: completed
 
 Round: 2
 
@@ -217,7 +217,7 @@ rebuild check, run_status S0–S7, data report; before / after table.
 
 ## Phase 4
 
-Phase Status: pending
+Phase Status: completed
 
 Round: 3
 
@@ -249,7 +249,7 @@ No text describes the every-row curve or PCHIP as the rebuild; the tables match 
 
 ## Phase 5
 
-Phase Status: pending
+Phase Status: active
 
 Round: 3
 
