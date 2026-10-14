@@ -23,10 +23,12 @@ split → action labels → a training-ready dataset with a data report, handed 
 | S3、S5 关键帧 | `vla-keyframes` | 按任务与末端执行器定义关键帧；检测、一致性检查、逐类看图核对、记录修正 | `keyframes.json`、核对图 |
 | S4 静止帧与补帧 | `vla-episode-timing` | 静止帧保留或裁掉；末尾补帧，让策略学会完成后保持 | 定时版 |
 | S6 数据评估 | `vla-data-diversity` | 覆盖、聚类、近重复、离群；覆盖各簇的留出集 | `diversity.json` |
-| S7 动作标签 | `vla-action-labels` | 按服务端实际执行的误差做网格搜索，用标签回放选执行长度，构建训练版与评估版 | 标签数据集、`arc_resample.json` |
+| S7 动作标签 | `vla-action-labels` | 按服务端执行的目标与录制路径的几何差异做网格搜索，用闭环标签回放选执行长度，构建训练版与评估版 | 标签数据集、`arc_resample.json` |
 | — | `data_report` | S0–S7 都通过后写出数据报告 | `data_report.md` |
 | S8 下游 | `vla-downstream` | 训练、留出集评估、服务端交付 | 见下文 |
 | S9 收尾 | `close` | 已验证的结论写入 `docs/`，未解决的问题写入 `issues.md` | — |
+
+动作标签让模型的 H 个输出点覆盖 span 个录制帧。点可以按时间等间隔取（`time`），也可以按轨迹进度取：`curvature` 以关节路径几何曲率的立方根乘以路径长度作为进度，转弯处密、直线处稀，每单位路径长度的进度由路径形状决定，不随示教速度变化。服务端只能按均匀时间展开这些点；静态任务里沿路径的快慢不影响结果，所以网格搜索和标签回放比较的是执行目标走过的路径与指令切换的位置，而不是逐帧时间。
 
 每个阶段的产物只有一个写入者。凡是需要判断的处理都要写明决定和理由，缺少时工具拒绝写出；需要人做的决定写进 `decisions.md`，未决时流程停在该阶段。细节见 `.claude/skills/vla-pipeline/SKILL.md`。
 
@@ -111,6 +113,8 @@ pytest
 ```
 
 测试用合成的 LeRobot 数据集（含已知关键帧和人为注入的录制故障）检查各数据工具、整条 S0–S7 链路、`run_status` 对每一类放行条件的判断，以及 LoRA 合并。不需要 GPU 和网络。在 openpi 环境中运行时，还会检查 openpi 相关部分。每项已验证行为对应哪个测试，见 `docs/validation.md`。
+
+真实数据上的观测来自两份数据：一份双臂 UR3 数据，以及一个 LIBERO 仿真抓放任务（50 条 Franka Panda 示教，S0–S7 全部通过，含网格搜索与闭环标签回放的结果），见 `docs/validation.md`。
 
 ## 下游
 

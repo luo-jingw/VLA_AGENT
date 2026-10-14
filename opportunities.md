@@ -6,8 +6,12 @@ Area: Action labels
 
 ## Observation
 
-Progress-spaced labels (`arc`, `curvature`) lose the time of each point, and the server has to assume
-it; that assumption is the dominant deployment error of those metrics.
+Progress-spaced labels (`curvature`, `second_difference`) lose the time of each point; the server
+spreads the H points evenly over span frames. On the LIBERO run the selected `curvature`, span 40,
+density 2 labels follow the recorded path (path full median 0.06 path steps), while their time-indexed
+full-chunk error is 12.2 frames of motion against 0.08 with the true point times, and the closed-loop
+replay executes 1.45–1.58× the recorded frames (ISSUE-002). For static tasks the path criteria are what
+matters; the timing shows up as cycle time and as how long the arm stays at each command switch.
 
 ## Opportunity
 
@@ -16,16 +20,20 @@ predicted times.
 
 ## Expected Mechanism
 
-Placement error falls to the true-time reconstruction error that `sweep` reports in its `true` column.
+The executed timing approaches the recording: the time-indexed error falls towards the true-time figure
+that `sweep.json` records as `true_err`, and the executed frame count towards the recorded one, with the
+path figures unchanged.
 
 ## Required Evidence
 
-A trained model whose predicted offsets match the label offsets on held-out episodes, and a lower
-stitched error than uniform stride at the same span.
+A trained model whose predicted offsets match the label offsets on held-out episodes, and a closed-loop
+replay with predicted times whose executed/recorded frame ratio and time-indexed error are closer to the
+recording than with assumed times, at no loss in path deviation or keyframe position.
 
 ## Promotion Condition
 
-A dataset where a progress metric beats uniform stride even with true times by a clear margin.
+A task where timing along the path matters (contact timing, moving objects, a cycle-time limit), and a
+progress metric that beats `time` on the path criteria at the same reach by a clear margin.
 
 # OPT-002
 
