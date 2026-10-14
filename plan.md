@@ -167,7 +167,7 @@ executed joint trajectories on the Franka Panda model.
 ## State
 
 `sweep.json`, `replay_<labels>.json` and `arc_resample.json` in projects using the harness; the LIBERO
-run's artifacts under `FTpi05/reports/action-sparsification-src/libero/run/`.
+run's artifacts under `FTpi05/runs/libero_alphabet_soup/` (project root `FTpi05/`).
 
 # Implementation
 
@@ -304,7 +304,7 @@ from the recorded end-effector position is reported; one rendered frame inspecte
 
 ## Phase 5
 
-Phase Status: active
+Phase Status: completed
 
 Round: 3
 
@@ -317,7 +317,8 @@ report.
 ### Files
 
 `FTpi05/reports/action-sparsification-src/libero/convert_libero.py`,
-`FTpi05/reports/action-sparsification-src/libero/run/**` (specs, plans, reports), `FTpi05/data/libero-<task>*`.
+`FTpi05/reports/action-sparsification-src/libero/retime_check.py`, `FTpi05/runs/libero_alphabet_soup/**`
+(specs, plans, reports), `FTpi05/data/libero-alphabet-soup*`.
 
 ### Structures
 
@@ -337,7 +338,7 @@ Phases 1–4.
 
 ## Phase 6
 
-Phase Status: pending
+Phase Status: active
 
 Round: 4
 
