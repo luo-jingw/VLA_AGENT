@@ -37,8 +37,9 @@ the total between three recordings of one bent path at different speeds with a f
 Measured by the curve and window tests: the rebuilt curve passes through every recorded row (difference
 0), is unchanged by 10 or 40 end-padding rows and stays at the last recorded row beyond it. On the bent
 path recorded with acceleration, slowing and a pause, every frame whose window holds no keyframe and lies
-within the recording has its H-th point at the recorded pose span frames after its state (920 windows,
-max 5.6e-17 under `curvature`, 0 under `time`); inside a keyframe window at density 2 consecutive points
+within the recording has its H-th point at the recorded pose span frames after its state (921 windows,
+max 1.1e-16 under all three metrics; the last of them ends on the last recorded row and has no padded
+point); inside a keyframe window at density 2 consecutive points
 are (span/H) / 2 rows apart whatever the rest of the window holds (max deviation 5.7e-14), and windows
 touching it reach at most span; a window that is still throughout is spaced in time and carries the
 command edge inside it; 10 and 40 padding rows give identical progress, per-frame steps and labels of
@@ -135,7 +136,7 @@ Shortlist, distances in path steps, speed as a ratio to the recorded p95 step (0
 | 15 | `time`, density 0 | 0.01 | 0.01 / 0.03 | 0.03 | 0.64 / 1.07 | 15.0 |
 | 20 | `curvature`, density 2 | 0.01 | 0.02 / 0.06 | 0.00 | 0.63 / 1.01 | 20.0 |
 | 30 | `curvature`, density 2 | 0.03 | 0.05 / 0.12 | 0.22 | 0.65 / 1.02 | 27.0 |
-| 40 | `curvature`, density 2 | 0.05 | 0.11 / 0.23 | 0.30 | 0.66 / 1.03 | 33.7 |
+| 40 | `curvature`, density 2 | 0.05 | 0.11 / 0.23 | 0.30 | 0.66 / 1.03 | 33.6 |
 
 Selected: `curvature`, span 40, density 2, the same cell as with the episode-wide step. At density 0 every
 frame of `curvature` span 40 reaches exactly 40 recorded frames; density 2 places more points inside
@@ -212,9 +213,9 @@ targets (rate 1) of the labels of frames t and t + d over the frames both cover,
 | density | step | reach p05 / median / p95 (frames) | window end − span, median / max (1685 windows) | jitter d = 1 | jitter d = 10 |
 |---|---|---|---|---|---|
 | 0 | episode-wide | 30.0 / 37.6 / 45.0 | 2.43 / 16.05 | 0.40 / 0.80 / 2.19 | 2.06 / 5.20 / 13.24 |
-| 0 | per window | 40.0 / 40.0 / 40.0 | 0 / 0 | 0.47 / 0.74 / 2.02 | 2.46 / 4.65 / 8.80 |
+| 0 | per window | 40.0 / 40.0 / 40.0 | 0 / 1.4e-14 | 0.47 / 0.74 / 2.02 | 2.46 / 4.65 / 8.80 |
 | 2 | episode-wide | 22.0 / 32.8 / 42.9 | 1.85 / 16.26 | 0.38 / 1.31 / 2.09 | 2.37 / 10.11 / 16.95 |
-| 2 | per window | 22.9 / 33.6 / 40.0 | 0 / 0 | 0.41 / 1.33 / 2.99 | 2.24 / 9.55 / 22.35 |
+| 2 | per window | 22.9 / 33.6 / 40.0 | 0 / 4.3e-14 | 0.41 / 1.33 / 2.99 | 2.24 / 9.55 / 22.35 |
 
 In the sweep the path full medians change by at most 0.03 path steps (span 40, density 0: 0.18 → 0.21)
 and the keyframe position median at span 40 rises from 0.65 to 0.88 at density 0 (density 2: 0.30 both).

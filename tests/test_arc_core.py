@@ -256,13 +256,16 @@ def test_window_without_keyframes_ends_at_its_last_point(metric: str) -> None:
     actions = _padded(_record(_bent_path(sigma)), 40)
     n, span = len(sigma), 40
     _, chunks = arc_core.chunks(actions, SPEC, _config(metric, span, 0.0), [], recorded=n)
-    frames = np.arange(1, n - span)  # state row t-1 >= 0, window end t-1+span <= n-1
+    frames = np.arange(1, n - span + 1)  # state row t-1 >= 0, window end t-1+span <= n-1
     end = actions[frames - 1 + span, :3]
     worst = float(np.abs(chunks.points[frames, -1, :3] - end).max())
     reach = chunks.frames[frames, -1] - (frames - 1)
+    padded = int(chunks.padded[frames].sum())
     print(f"{metric}: {len(frames)} windows, H-th point vs the recorded row span frames after the state: max {worst:.1e}; "
-          f"reach in rows p05 {np.percentile(reach, 5):.2f} p50 {np.median(reach):.2f} max {reach.max():.2f}")  # fmt: skip
+          f"reach in rows p05 {np.percentile(reach, 5):.2f} p50 {np.median(reach):.2f} max {reach.max():.2f}; "
+          f"padded points {padded}")  # fmt: skip
     assert worst <= 1e-9
+    assert padded == 0  # the last of these windows ends on the last recorded row, not past it
 
 
 @pytest.mark.parametrize("metric", ["time", "curvature"])

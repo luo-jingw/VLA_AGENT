@@ -29,8 +29,8 @@ A label is built in three stages:
 
 Point k (k = 1..H) sits at the frame's cumulative progress s_t(anchor) + k * step(t), mapped back to a
 fractional action index (linear inside a segment; a target on a plateau, i.e. still segments, resolves to
-the plateau's first row) and read from the curve (joints) and the nearest row (commands). A point past the episode's last progress is padded and lands on the last
-row. A window without keyframe segments inside the recorded rows ends exactly at its H-th point.
+the plateau's first row) and read from the curve (joints) and the nearest row (commands). A point more than 1e-12 of the total past the episode's last progress is
+padded and lands on the last row. A window without keyframe segments inside the recorded rows ends exactly at its H-th point.
 Index convention: actions[i] is the target for frame i+1, i.e. state[i+1].
 """
 
@@ -170,7 +170,7 @@ def chunks(
             step[t] = per_step
             s = time_progress + config.event_density * keyframe_count
         targets = s[a] + k * step[t]
-        padded[t] = targets > s[-1]
+        padded[t] = targets > s[-1] + max(float(s[-1]), 1.0) * 1e-12  # on the last row within rounding is not past it
         frames[t] = np.maximum(invert(s, np.minimum(targets, s[-1])) - 1.0, 0.0)
 
     points = np.zeros((n, horizon, actions.shape[1]), dtype=np.float64)
