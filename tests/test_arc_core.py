@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from vla_tools import arc_core
+from vla_tools.path_metrics import distance_to_path
 from vla_tools.resample_config import ResampleConfig
 from vla_tools.robot_spec import RobotSpec
 
@@ -300,6 +301,24 @@ def test_still_window_is_spaced_in_time_and_keeps_its_command() -> None:
     )
     np.testing.assert_allclose(chunks.frames[t], 35.0 + np.arange(1, H + 1) * 2.0, atol=1e-9)
     assert chunks.points[t, :, 3].max() == 1.0
+
+
+@pytest.mark.parametrize("metric", ["time", "curvature"])
+def test_label_points_lie_on_the_recorded_path(metric: str) -> None:
+    sigma = _speed_profiles()["accelerating, slowing, paused"]
+    recorded = _record(_bent_path(sigma))
+    actions = _padded(recorded, 40)
+    n = len(recorded)
+    _, chunks = arc_core.chunks(actions, SPEC, _config(metric, 40, 2.0), [(300, 320)], recorded=n)
+    joints = chunks.points[..., :3].reshape(-1, 3)
+    distance = float(distance_to_path(joints, recorded[:, :3]).max())
+    fractional = int((np.abs(chunks.frames - np.round(chunks.frames)) > 1e-6).sum())
+    past = chunks.frames > n - 1
+    beyond = float(np.abs(chunks.points[past][:, :3] - recorded[-1, :3]).max()) if past.any() else 0.0
+    print(f"{metric}: {joints.shape[0]} points ({fractional} between rows): largest distance to the recorded polyline "
+          f"{distance:.1e}; {int(past.sum())} points past the last recorded row differ from it by {beyond:.1e}")  # fmt: skip
+    assert distance <= 1e-12
+    assert beyond == 0.0
 
 
 def test_recorded_rows_must_be_within_the_episode() -> None:

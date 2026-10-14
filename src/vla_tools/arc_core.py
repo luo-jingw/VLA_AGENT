@@ -1,13 +1,11 @@
 """Resampled action labels for one episode. Pure functions, no IO.
 
-A label is built in three stages:
+A label is built in two stages; the deployed system rebuilds the trajectory from its H points (arc_interp):
 
-1. Curve. The recorded joints are rebuilt as a continuous curve (`trajectory_curve`: a not-a-knot cubic
-   spline over the row index through every recorded row).
-2. Window. Frame t's window is the `span_frames` segments that follow its state. Segment i joins action
+1. Window. Frame t's window is the `span_frames` segments that follow its state. Segment i joins action
    rows i and i+1; the state of frame t is action row t-1 under anchor "state" (a virtual segment repeating
    segment 0 precedes row 0) and row t under "action".
-3. Sparsify. The H points are placed inside the window by the metric's progress:
+2. Sparsify. The H points are placed inside the window by the metric's progress:
 
     free(i)    progress of segment i outside keyframe windows (everywhere when event_density is 0):
                time               1
@@ -29,8 +27,10 @@ A label is built in three stages:
 
 Point k (k = 1..H) sits at the frame's cumulative progress s_t(anchor) + k * step(t), mapped back to a
 fractional action index (linear inside a segment; a target on a plateau, i.e. still segments, resolves to
-the plateau's first row) and read from the curve (joints) and the nearest row (commands). A point more than 1e-12 of the total past the episode's last progress is
-padded and lands on the last row. A window without keyframe segments inside the recorded rows ends exactly at its H-th point.
+the plateau's first row) and read from the recorded rows: joints linear between the two neighbouring rows,
+so every point lies on the recorded path, commands from the nearest row. Past the last recorded row the
+joints are that row's. A point more than 1e-12 of the total past the episode's last progress is padded and
+lands on the last row. A window without keyframe segments inside the recorded rows ends exactly at its H-th point.
 Index convention: actions[i] is the target for frame i+1, i.e. state[i+1].
 """
 
@@ -42,7 +42,6 @@ import typing
 import numpy as np
 
 from vla_tools import path_curvature
-from vla_tools import trajectory_curve
 from vla_tools.resample_config import Metric
 from vla_tools.resample_config import ResampleConfig
 from vla_tools.robot_spec import RobotSpec
@@ -130,6 +129,16 @@ def invert(s: np.ndarray, targets: np.ndarray) -> np.ndarray:
     return row - 1 + np.clip(fraction, 0.0, 1.0)
 
 
+def _between_rows(rows: np.ndarray, frames: np.ndarray) -> np.ndarray:
+    """(R, J) recorded rows, (N,) fractional row indices -> (N, J) joints linear between the two neighbouring
+    rows; indices are clamped to the recorded rows."""
+    frames = np.clip(frames, 0.0, len(rows) - 1.0)
+    low = np.floor(frames).astype(int)
+    high = np.minimum(low + 1, len(rows) - 1)
+    fraction = (frames - low)[:, None]
+    return rows[low] + fraction * (rows[high] - rows[low])
+
+
 def _cumulative(values: np.ndarray) -> np.ndarray:
     return np.concatenate([[0.0], np.cumsum(values)])
 
@@ -139,7 +148,6 @@ def chunks(
 ) -> tuple[ProgressCurve, Chunks]:
     curve = progress_curve(actions, spec, config, windows, recorded)
     joints, commands = list(spec.joint_dims), list(spec.command_dims)
-    path = trajectory_curve.build(actions[:, joints], recorded)
     n, horizon, per_step = len(actions), config.action_horizon, config.frames_per_step
     k = np.arange(1, horizon + 1, dtype=np.float64)
 
@@ -175,7 +183,7 @@ def chunks(
 
     points = np.zeros((n, horizon, actions.shape[1]), dtype=np.float64)
     flat = frames.ravel()
-    points.reshape(-1, actions.shape[1])[:, joints] = path.joints(flat)
+    points.reshape(-1, actions.shape[1])[:, joints] = _between_rows(actions[:recorded, joints].astype(np.float64), flat)
     nearest = np.clip(np.round(flat).astype(int), 0, n - 1)
     points.reshape(-1, actions.shape[1])[:, commands] = np.round(actions[nearest][:, commands])
     index = np.clip(np.rint(frames).astype(int), 0, max(len(curve.window_mask) - 1, 0))

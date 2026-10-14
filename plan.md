@@ -153,7 +153,7 @@ target j equals the rate-1 target 2j+1.
 
 ## Phase 2
 
-Phase Status: active
+Phase Status: completed
 
 Round: 1
 
@@ -185,7 +185,7 @@ against the spline lookup; `time` s10 labels unchanged.
 
 ## Phase 3
 
-Phase Status: pending
+Phase Status: active
 
 Round: 2
 
