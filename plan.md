@@ -321,7 +321,7 @@ Phase 2.
 
 ## Phase 4
 
-Phase Status: active
+Phase Status: completed
 
 Round: 4
 
@@ -335,7 +335,7 @@ opportunities.
 
 `.claude/skills/vla-action-labels/SKILL.md`, `.claude/skills/vla-action-labels/references/method.md`,
 `.claude/skills/vla-pipeline/references/failure-modes.md`, `docs/validation.md`, `issues.md`,
-`opportunities.md`, `README.md`.
+`opportunities.md`, `README.md`, `integrations/openpi/README.md`.
 
 ### Structures
 
@@ -356,7 +356,7 @@ current.
 
 ## Phase 5
 
-Phase Status: pending
+Phase Status: active
 
 Round: 4
 

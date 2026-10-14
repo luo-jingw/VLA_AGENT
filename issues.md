@@ -1,6 +1,6 @@
 # ISSUE-001
 
-Status: Open
+Status: Resolved
 
 Area: Action labels (`curvature` metric)
 
@@ -50,6 +50,15 @@ moves a span-40 label point by ≈ 0.6 frames; whether that matters to a trained
 
 ## Resolution
 
+The chord is a fixed length for the whole dataset: `ResampleConfig.curvature_length` (rad) replaces the
+multiple of each episode's median step, `sweep --curvature-length` defaults to 4 path steps (LIBERO
+0.1224 rad), and a recorded config with `curvature_window` is refused. Spread of the normalized progress
+across speed profiles: constructed path (80 / 40 / 97 frames, `curve_check.py`) 0.0577 → 0.0067; the
+test's bent path 0.0072 → 0.0027; LIBERO re-timing median / max uniform 0.0036 / 0.0093, 2× 0.0082 /
+0.0310 (was 0.0162 / 0.0450), sine 0.0036 / 0.0077. The remaining 2× figure comes from half as many
+frames. Computing the curvature on the densely sampled reconstruction instead of the recorded rows gave
+0.010–0.018 on the constructed path and was not adopted.
+
 # ISSUE-002
 
 Status: Resolved
@@ -78,18 +87,17 @@ LIBERO, `curvature` span 40 density 2: reach median 26.5 recorded frames; the cl
 
 ## Resolution
 
-`arc_core.chunks` and `progress_curve` take the number of recorded rows and compute the step over the
-segments between them (commit e3f93cb); still frames inside the recording still count. One recording
-with 10 and 40 padding rows gives the same step, identical progress over the recorded rows and
-labels within 5.6e-11 on unpadded frames. LIBERO re-run: `curvature` span 40 reaches 37.6 (density 0)
-and 32.8 (density 2) recorded frames; at e = 10 the replay executes 1.03× (density 0) and 1.23×
-(density 2) the recorded frames, the remainder being the keyframe windows (`time` density 2: 1.21×). The
-`pad` column stays at 25–34% for geometric metrics: labels taken on padding rows hold the final target
-and count as padded.
+`arc_core.chunks` takes the number of recorded rows; each frame's step is computed from the segments of
+its own window that lie between recorded rows, so padding rows never enter a step. One recording with 10
+and 40 padding rows gives identical progress over the recorded rows, identical per-frame steps and
+identical labels on unpadded frames. LIBERO: `curvature` span 40 reaches exactly 40 recorded frames on
+every frame at density 0 and a median of 33.6 at density 2; at e = 10 the replay executes 1.08×
+(density 0) and 1.25× (density 2) the recorded frames. The `pad` column is 23–31% for `curvature`: labels
+taken on padding rows hold the final target and count as padded.
 
 # ISSUE-003
 
-Status: Open
+Status: Resolved
 
 Area: Action labels (geometric metrics with `event_density` 0), `label_replay` re-observation
 
@@ -130,6 +138,14 @@ point reaches the final target, before and after such a stop rule.
 
 ## Resolution
 
+A window without free progress is spaced in time (per-window step, `arc_core.chunks`): labels of frames
+whose window lies in the final still stretch walk through it at one point per span/H frames and carry
+the command edge. Deck synthetic recordings, `curvature` span 40 density 0, rate 1: both edges kept in
+the labels and switched in the replay for recordings A and B; A executes 170 frames in 17 inferences
+at e = 10 (was 180 / 18 with the release missed) and 200 frames in 5 inferences at e = 40 (was 320 / 8);
+the last observations are 118, 123, 127, 129. Frames whose window also moves still skip a still stretch;
+their labels switch the command at the first point after it, at the same position.
+
 # ISSUE-004
 
 Status: Open
@@ -145,15 +161,15 @@ observation runs ahead of the executed pose.
 
 ## Impact
 
-LIBERO, `curvature-s40-d2`, rate 1: at e = 1 the replay executes 6980 frames for 7758 recorded, with path
-deviation max 2.41 and keyframe position max 5.04 path steps, against max 0.45–0.77 and 1.14–3.07 for
-e = 2–40; at rate 2, e = 1 gives max 0.51 and 1.93. The e = 1, rate 1 row overstates the error of the
+LIBERO, `curvature-s40-d2`, rate 1: at e = 1 the replay executes 6993 frames for 7758 recorded, with path
+deviation max 2.35 and keyframe position max 4.95 path steps, against max 0.47–0.63 and 1.11–3.08 for
+e = 2–40; at rate 2, e = 1 gives max 0.51 and 1.94. The e = 1, rate 1 row overstates the error of the
 labels.
 
 ## Evidence
 
 `FTpi05/runs/libero_alphabet_soup/replay_curvature-s40-d2.json` and `replay_curvature-s40-d2_r2.json`
-(2026-10-13).
+(2026-10-14).
 
 ## Hypotheses
 

@@ -8,10 +8,10 @@ Area: Action labels
 
 Progress-spaced labels (`curvature`, `second_difference`) lose the time of each point; the server
 spreads the H points evenly over span frames. On the LIBERO run the selected `curvature`, span 40,
-density 2 labels follow the recorded path (path full median 0.10 path steps), while their time-indexed
-full-chunk error is 6.65 frames of motion against 0.14 with the true point times. The closed-loop replay
-at execution rate 1 executes 1.23× the recorded frames (e = 10), the excess coming from the slow-down in
-keyframe windows; the deployment rate sets the overall pace (0.62× at rate 2). For static tasks the path
+density 2 labels follow the recorded path (path full median 0.11 path steps), while their time-indexed
+full-chunk error is 5.42 frames of motion against 0.16 with the true point times. The closed-loop replay
+at execution rate 1 executes 1.25× the recorded frames (e = 10), the excess coming from the slow-down in
+keyframe windows (1.08× at density 0); the deployment rate sets the overall pace (0.64× at rate 2). For static tasks the path
 criteria are what matters; the timing shows up as cycle time and as how long the arm stays at each
 command switch.
 
