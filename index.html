@@ -169,10 +169,18 @@ html.paged .pbar{display:block;position:fixed;left:0;right:0;bottom:0;height:3px
 .pbar b{display:block;height:100%;width:0;background:var(--accent);opacity:.7;transition:width .45s ease}
 @media (prefers-reduced-motion:reduce){html.paged .slide,html.paged .slide.active{transition:none}html{scroll-snap-type:none}}
 
-.strip-wrap{border:1px solid var(--line);border-radius:12px;padding:10px 12px 4px}
-.strip-wrap svg{width:100%;height:auto;display:block}
 .c-time{--c:var(--teal-s)}
 .lbl3d.note3d{color:var(--muted)}
+.steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.steps figure{padding:8px 10px;display:flex;flex-direction:column;gap:4px}
+.steps .step-h{font-size:13px;font-weight:600;color:var(--fg);margin:0}
+.steps .step-h b{color:var(--accent);margin-right:4px;font-family:var(--f-mono)}
+.steps .note{font-size:12px;line-height:1.45}
+@media (max-width:899px){html:not(.paged) .steps{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:520px){html:not(.paged) .steps{grid-template-columns:minmax(0,1fr)}}
+.wide{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:16px;align-items:start}
+.wide>*{min-width:0}
+@media (max-width:899px){html:not(.paged) .wide{grid-template-columns:minmax(0,1fr)}}
 </style>
 <script>if(innerWidth>=700)document.documentElement.classList.add('paged','no-tr')</script>
 </head>
@@ -182,22 +190,22 @@ html.paged .pbar{display:block;position:fixed;left:0;right:0;bottom:0;height:3px
 <main class="deck">
 
 <section class="slide" id="cover">
-<header><span class="kicker">VLA_AGENT · 动作标签</span><span class="pg mono">01 / 07</span></header>
-<h2>动作稀疏化：每一帧观测的动作标签，用同样 H 个点覆盖更长的轨迹</h2>
+<header><span class="kicker">VLA_AGENT · 动作标签</span><span class="pg mono">01 / 08</span></header>
+<h2>动作稀疏化：让每一帧的 H 个动作点覆盖更长的轨迹，用重建误差决定能稀疏到什么程度</h2>
 <p class="subtitle mono">2026-10-13</p>
-<p class="lede">机器人的执行速度受两件事限制：推理有多快，一次推理能覆盖多长的轨迹。遥操数据按时间均匀记录，每一帧观测的标签是接下来的 H 帧，覆盖范围和执行快慢都跟着遥操速度走。动作稀疏化对每一帧观测单独重采样：从当前位置出发，沿着按曲率累积的进度等距取 H 个点，直线上一步跨得远，弯道和关键帧附近点密。模型学的是稀疏点，推理时输出的也是稀疏点，再由运控算法插值重建轨迹、规划速度。</p>
+<p class="lede">机器人的执行速度受两件事限制：推理有多快，一次推理能覆盖多长的轨迹。遥操数据按时间均匀记录，每一帧观测的标签原本是接下来的 H 帧。动作稀疏化对每一帧单独重采样：从当前位置出发，沿进度等距取 H 个点，让它们平均覆盖 span 帧（span &gt; H）。进度可以按时间累积（等步长），也可以按曲率累积（弯道和速度变化处点密）。部署时服务端把模型输出的 H 个点插值成逐帧目标；稀疏到什么程度、用哪种进度，按这种插值后的重建误差在离线网格里选。</p>
 <div class="stats" id="cover-stats"></div>
 <div class="agenda">
   <div><span class="mono">1</span>为什么要拉长覆盖</div>
-  <div><span class="mono">2</span>每一帧的标签：按时间与按曲率</div>
-  <div><span class="mono">3</span>推理输出稀疏点，运控插值</div>
+  <div><span class="mono">2</span>稀疏化怎么做</div>
+  <div><span class="mono">3</span>推理后怎么插值</div>
   <div><span class="mono">4</span>真实数据上的离线验证</div>
   <div><span class="mono">5</span>数据预处理 agent</div>
 </div>
 </section>
 
 <section class="slide" id="speed">
-<header><span class="kicker">1 · 为什么要拉长覆盖</span><span class="pg mono">02 / 07</span></header>
+<header><span class="kicker">1 · 为什么要拉长覆盖</span><span class="pg mono">02 / 08</span></header>
 <h2>机器人能走多快，取决于推理多久一次、一次推理覆盖多长的轨迹</h2>
 <div class="split">
  <div class="ctrls">
@@ -219,58 +227,72 @@ html.paged .pbar{display:block;position:fixed;left:0;right:0;bottom:0;height:3px
 <figcaption>示意模型：每轮执行覆盖范围的前 60%（逐帧标签 6 帧，稀疏标签 24 帧），录制 15 Hz，不计通信和插值开销。延迟是可调的示意值，不是实测。</figcaption></figure>
 </section>
 
-<section class="slide" id="labels">
-<header><span class="kicker">2 · 每一帧的标签</span><span class="pg mono">03 / 07</span></header>
-<h2>对每一帧观测单独重采样：按时间是接下来 10 帧，按曲率是沿进度等距的 10 个点</h2>
-<div class="split">
- <div><div class="viz3d" id="l-3d" style="height:360px"><span class="hint">拖动旋转 · 播放看标签随每一帧重新计算</span></div>
- <div class="legend" style="margin-top:6px"><span class="c-time"><i class="dot"></i>按时间的标签：接下来 10 帧</span><span class="c-pt"><i class="dot"></i>按曲率重采样的标签：10 个点（抬高显示）</span><span class="c-kf"><i class="dot"></i>落在关键帧窗口的点</span><span class="c-mut"><i class="dot"></i>当前观测</span></div></div>
+<section class="slide" id="sparsify">
+<header><span class="kicker">2 · 稀疏化怎么做</span><span class="pg mono">03 / 08</span></header>
+<h2>每一帧从当前位置出发，沿进度等距取 10 个点；稀疏到什么程度，看部署时重建的误差</h2>
+<div class="steps">
+ <figure><p class="step-h"><b>①</b>整集算一条进度曲线</p><svg id="s1" viewBox="0 0 260 180" role="img" aria-label="整集的进度曲线"></svg><p class="note">按曲率：每帧进度 = ‖Δ²x‖^(1/3)，弯道和加减速处涨得快；关键帧窗口内固定为平均速率。</p></figure>
+ <figure><p class="step-h"><b>②</b>从当前帧等距走 10 个台阶</p><svg id="s2" viewBox="0 0 260 180" role="img" aria-label="当前帧的 10 个进度台阶"></svg><p class="note">台阶大小 = 平均每 span / 10 帧的进度；每个台阶落到的帧就是一个点。青色刻度是按时间等步长的取法。</p></figure>
+ <figure><p class="step-h"><b>③</b>得到这一帧的 10 个标签点</p><svg id="s3" viewBox="0 0 260 180" role="img" aria-label="标签点在轨迹上的位置"></svg><p class="note">紫色：按曲率；青色圆圈：按时间等步长（同一 span）；小点：录制帧。每一帧都单独算一次。</p></figure>
+ <figure><p class="step-h"><b>④</b>按部署方式重建，和录制比</p><svg id="s4" viewBox="0 0 260 180" role="img" aria-label="重建的逐帧目标与录制的偏差"></svg><p class="note">服务端把第 k 个点放在 k · span / 10 帧后插值出逐帧目标；红线连到同一帧的录制位置，按真实比例。</p></figure>
+</div>
+<div class="wide">
+ <figure><svg id="s-chart" viewBox="0 0 700 170" role="img" aria-label="稀疏程度与部署重建误差"></svg>
+ <div class="legend"><span class="c-time"><i></i>按时间等步长</span><span class="c-pt"><i></i>按曲率</span><span class="c-mut"><i class="dash"></i>可接受线：1 帧运动量</span></div></figure>
  <div class="ctrls">
-  <p class="lede">两种标签都从当前观测出发，用 agent 的同一套代码生成，只差度量和覆盖帧数。按曲率时，进度在弯道和速度变化处增长快、在直线和停顿处几乎不增长，所以等距的 10 个点会集中在弯道，直线上一步跨过去。</p>
-  <div class="ctrl"><label for="l-t">当前帧 t</label><input type="range" id="l-t" min="0" max="238" step="1" value="40"><button type="button" class="btn" id="l-play">播放</button></div>
-  <div class="ctrl"><label for="l-span">稀疏程度</label><input type="range" id="l-span" data-bind="span" min="10" max="60" step="5"><output data-out="span"></output></div>
-  <div class="read" id="l-read"></div>
+  <div class="ctrl"><label for="s-span">稀疏程度</label><input type="range" id="s-span" data-bind="span" min="10" max="60" step="5"><output data-out="span"></output></div>
+  <div class="read" id="s-read"></div>
  </div>
 </div>
-<div class="strip-wrap"><svg id="l-prog" viewBox="0 0 1000 190" role="img" aria-label="进度曲线：当前帧的 10 个点如何取出"></svg></div>
 </section>
 
-<section class="slide" id="control">
-<header><span class="kicker">3 · 推理输出稀疏点，运控插值</span><span class="pg mono">04 / 07</span></header>
-<h2>每次推理输出 10 个稀疏点：运控插值出轨迹、规划速度，执行一段后重新推理</h2>
+<section class="slide" id="interp">
+<header><span class="kicker">3 · 推理后怎么插值</span><span class="pg mono">04 / 08</span></header>
+<h2>模型输出 10 个点，服务端按假设时刻放点、用 PCHIP 插出逐帧目标，执行一段后重新推理</h2>
+<div class="steps">
+ <figure><p class="step-h"><b>①</b>模型输出 10 个点，没有时间</p><svg id="k1" viewBox="0 0 260 180" role="img" aria-label="模型输出的 10 个点"></svg><p class="note">每个点是一个完整动作（各关节 + 夹爪指令）。这里用第 3 页的按曲率标签代替模型输出。</p></figure>
+ <figure><p class="step-h"><b>②</b>给每个点安排时刻</p><svg id="k2" viewBox="0 0 260 180" role="img" aria-label="点的真实时刻与假设时刻"></svg><p class="note">服务端假设第 k 个点在 k · span / 10 帧（空心）；实心是它在录制里的真实时刻。纵轴是沿轨迹走过的距离。</p></figure>
+ <figure><p class="step-h"><b>③</b>PCHIP 插值出逐帧目标</p><svg id="k3" viewBox="0 0 260 180" role="img" aria-label="插值得到的逐帧目标"></svg><p class="note">每个关节从当前姿态出发各自做保形插值，每个控制周期取一个目标；夹爪取时间上最近的点。青线是录制。</p></figure>
+ <figure><p class="step-h"><b>④</b>执行前一段，重新推理</p><svg id="k4" viewBox="0 0 260 180" role="img" aria-label="执行与下一次推理"></svg><p class="note">执行前 60% 的目标（实心），其余丢弃（浅色）；到新位置取观测，模型输出下一组点（虚线圈）。</p></figure>
+</div>
+<div class="read" id="k-read" style="grid-template-columns:repeat(4,minmax(0,1fr))"></div>
+<p class="src">示例轨迹为人工构造，标签和插值与 agent 的 <code>arc_core.py</code>、<code>arc_interp.py</code> 逐行一致（示例中对末端位置做，agent 对关节角做）。按时间等步长时假设时刻就是真实时刻，第 ② 步没有偏差。</p>
+</section>
+
+<section class="slide" id="execute">
+<header><span class="kicker">3 · 推理后怎么插值</span><span class="pg mono">05 / 08</span></header>
+<h2>整段执行：稀疏标签少推理 3/4；按时间等步长跟得上录制，按曲率会快慢走样</h2>
 <div class="split">
- <div><div class="viz3d" id="c-3d" style="height:360px"><span class="hint">拖动旋转</span></div>
- <div class="legend" style="margin-top:6px"><span class="c-path"><i></i>示教轨迹</span><span class="c-pt"><i class="dot"></i>本次推理输出的 10 个点</span><span class="c-pt"><i></i>运控插值的轨迹</span><span class="c-pt"><i class="ring"></i>运控执行</span><span class="c-time"><i class="dot"></i>按遥操时间回放</span></div></div>
+ <div><div class="viz3d" id="e-3d" style="height:400px"><span class="hint">拖动旋转</span></div>
+ <div class="legend" style="margin-top:6px"><span class="c-path"><i></i>示教轨迹</span><span class="c-mut"><i class="dot"></i>录制在这一时刻的位置</span><span class="c-time"><i class="dot"></i>稀疏标签 · 按时间</span><span class="c-pt"><i class="ring"></i>稀疏标签 · 按曲率</span></div></div>
  <div class="ctrls">
-  <p class="lede">这里用当前帧的按曲率标签代替模型输出。运控从当前位置出发，用样条穿过 10 个点，在速度和加速度上限内规划时间：直线加速，弯道按曲率限速，夹爪指令变化处停下执行夹爪动作。执行完这段的前一半，在新位置取观测、再次推理。</p>
-  <div class="ctrl"><label>动画</label><button type="button" class="btn" id="c-play">播放</button><span></span></div>
-  <div class="read" id="c-read"></div>
+  <p class="lede">三种标签都按同一流程执行：每次推理得到一组点，服务端插值，执行一段后重新推理；按录制的 15 Hz 回放。稀疏程度与第 3 页相同。</p>
+  <div class="ctrl"><label>动画</label><button type="button" class="btn" id="e-play">播放</button><span></span></div>
+  <div class="read" id="e-read"></div>
  </div>
 </div>
-<figure><svg id="c-svg" viewBox="0 0 1000 170" role="img" aria-label="速度随时间变化"></svg>
-<figcaption>速度曲线：青色为按遥操记录的时间回放，紫色为运控执行；灰色竖线是每次推理的时刻。运控参数为示意值：最大速度 0.35 m/s，加速度上限 1 m/s²（也用作弯道向心加速度上限），夹爪动作 0.5 s，稀疏程度与上一页相同。</figcaption></figure>
 </section>
 
 <section class="slide" id="grid">
-<header><span class="kicker">4 · 真实数据上的离线验证</span><span class="pg mono">05 / 07</span></header>
-<h2>UR3 示教上：曲率标签描述路径更准；按均匀时刻插值部署会损失这部分优势</h2>
+<header><span class="kicker">4 · 真实数据上的离线验证</span><span class="pg mono">06 / 08</span></header>
+<h2>UR3 示教上：曲率标签描述路径更准，但按均匀时刻插值部署后误差更大，网格选中了按时间等步长</h2>
 <div class="split">
  <div class="tw"><table id="grid-table"></table></div>
  <div class="ctrls">
   <dl class="kv">
    <dt>覆盖</dt><dd>H = 10 个点覆盖的录制帧数（中位数）</dd>
    <dt>几何</dt><dd>点放在真实时刻时的误差：H 个点描述路径有多准</dd>
-   <dt>部署前段</dt><dd>当前服务端把第 k 个点放在 k · span / H 帧（均匀时刻）后插值，前 6 帧的误差</dd>
+   <dt>部署前段</dt><dd>服务端把第 k 个点放在 k · span / H 帧后插值，前 6 帧的误差（第 3 页 ④ 的口径）</dd>
    <dt>可接受</dt><dd>部署前段误差中位 ≤ 1 帧运动量，夹爪时机偏移 ≤ 1 帧</dd>
   </dl>
   <p class="note" id="grid-note"></p>
  </div>
 </div>
-<p class="src">数据：UR3 双臂抓放（LGG100/ur3-test），22 集 3223 帧，15 Hz；agent 清洗与补帧后的版本。<code>vla_tools.sweep</code>，H = 10，不加关键帧保护，2026-10-13 18:22（UTC−7）运行。误差为各推理帧逐帧最大关节误差的中位数，单位为帧运动量（数据集中一帧关节变化的中位数，0.0136 rad）。第 4 页的运控规划是部署设想，当前服务端按均匀时刻插值。</p>
+<p class="src">数据：UR3 双臂抓放（LGG100/ur3-test），22 集 3223 帧，15 Hz；agent 清洗与补帧后的版本。<code>vla_tools.sweep</code>，H = 10，不加关键帧保护，2026-10-13 18:22（UTC−7）运行。误差为各推理帧逐帧最大关节误差的中位数，单位为帧运动量（数据集中一帧关节变化的中位数，0.0136 rad）。</p>
 </section>
 
 <section class="slide" id="agent">
-<header><span class="kicker">5 · 数据预处理 agent</span><span class="pg mono">06 / 07</span></header>
+<header><span class="kicker">5 · 数据预处理 agent</span><span class="pg mono">07 / 08</span></header>
 <h2>动作稀疏化是数据预处理的最后一步，前面几步决定标签建在什么数据上</h2>
 <div class="split" style="grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr)">
  <div class="flow" id="flow" role="group" aria-label="流程阶段"></div>
@@ -287,23 +309,23 @@ html.paged .pbar{display:block;position:fixed;left:0;right:0;bottom:0;height:3px
 </section>
 
 <section class="slide" id="next">
-<header><span class="kicker">下一步</span><span class="pg mono">07 / 07</span></header>
+<header><span class="kicker">下一步</span><span class="pg mono">08 / 08</span></header>
 <h2>已验证到哪一步，还缺什么</h2>
 <div class="two">
  <div><h3>已在 UR3 数据上离线验证</h3>
  <ul class="big-list">
-  <li>10 个点按时间等步长覆盖 40 帧仍可接受，是逐帧标签的 4 倍。</li>
-  <li>按曲率重采样，点在真实时刻时几何误差最小（span 20：0.30，按时间 0.43）。</li>
-  <li>当前服务端按均匀时刻插值，曲率标签部署后误差反而更大：需要运控按点的位置重新规划时间。</li>
+  <li>10 个点按时间等步长覆盖 40 帧仍可接受，是逐帧标签的 4 倍，推理次数少 3/4。</li>
+  <li>按曲率取点，点在真实时刻时描述路径更准（span 20：0.30，按时间 0.43）。</li>
+  <li>但服务端按均匀时刻放点，曲率标签部署后误差更大（0.95，按时间 0.29），网格选中按时间等步长。</li>
  </ul></div>
  <div><h3>接下来要做</h3>
  <ul class="big-list">
-  <li>服务端换成运控插值加限速规划，在 UR3 数据上重新离线评估。</li>
-  <li>RoboTwin 仿真上只训两次：逐帧标签与稀疏标签，其余完全相同，比较成功率和执行用时。</li>
+  <li>让曲率标签可部署：标签里带上每个点的时刻由模型一并预测，或由运控按路径重新规划时间。</li>
+  <li>RoboTwin 仿真上只训两次：逐帧标签与网格选中的稀疏标签，其余完全相同，比较成功率和执行用时。</li>
   <li>不训练也能先测：在仿真里直接执行标签，看任务能否完成。</li>
  </ul></div>
 </div>
-<p class="src">离线数字来自第 5 页的网格；第 3–4 页的轨迹为人工构造，标签由 agent 的算法生成。</p>
+<p class="src">离线数字来自第 6 页的网格；第 3–5 页的轨迹为人工构造，标签和插值由 agent 的算法生成。</p>
 </section>
 
 </main>
@@ -1446,6 +1468,7 @@ function readCards(host,cards){host.innerHTML=cards.map(function(c){return '<div
 function segLocal(id,cb){var g=document.getElementById(id);g.addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;
  [].forEach.call(g.querySelectorAll('button'),function(x){x.setAttribute('aria-pressed',String(x===b))});cb(b.getAttribute('data-v'))})}
 function dist(a,b){return Math.hypot(a[0]-b[0],a[1]-b[1],a[2]-b[2])}
+function path(pts){return 'M'+pts.map(function(p){return p[0].toFixed(1)+','+p[1].toFixed(1)}).join('L')}
 
 
 /* ---------- 示例轨迹：直线与圆弧依次相接，圆弧两端 3 cm 内曲率渐变，抬起段高度平滑起止（单位：米）；曲率由三维路径数值计算 ---------- */
@@ -1508,6 +1531,22 @@ function cfgCurv(span){return {metric:'curvature',span:span,H:H,density:1,keyWei
 function label(c,t){return Core.chunk(SAMP,curveOf(c),c,t)}
 function sOfFrame(f){f=Math.max(0,Math.min(REC.F-1,f));var i=Math.min(Math.floor(f),REC.F-2),u=f-i;return TM.frames[i]+(TM.frames[i+1]-TM.frames[i])*u}
 
+
+
+/* ---------- 部署：服务端插值（arc_interp）与误差 ---------- */
+function cfgTimeSpan(span){return {metric:'time',span:span,H:H,density:0,keyWeight:1,padWeight:1,deadzone:0,anchor:'state'}}
+function deploy(c,t){var lb=label(c,t),as=Core.pointFrames(c.span,H,'state'),rec=Core.toFrames(lb.points,REC.ST[t],as,CD);return {lb:lb,as:as,rec:rec}}
+function depErr(d,t,lim){var n=Math.min(lim,d.rec.length,REC.F-t),m=0;for(var j=0;j<n;j++)m=Math.max(m,dist(d.rec[j],REC.A[t+j]));return m*1000}
+var FOM=(function(){var a=[];for(var i=1;i<REC.F;i++)a.push(dist(REC.A[i],REC.A[i-1]));a.sort(function(x,y){return x-y});return a[a.length>>1]*1000})();
+var EH={};function episodeHead(metric,span){var k=metric+span;if(EH[k]!==undefined)return EH[k];var c=metric==='time'?cfgTimeSpan(span):cfgCurv(span),v=[];
+ for(var t=0;t<REC.F-1;t++){var d=deploy(c,t);if(d.lb.padded.some(Boolean))continue;v.push(depErr(d,t,6))}v.sort(function(x,y){return x-y});return EH[k]=v[v.length>>1]}
+function arcAt(p){var best=Infinity,bs=0;for(var i=0;i<NP;i+=2){var q=PATH.p[i],d=(q[0]-p[0])*(q[0]-p[0])+(q[1]-p[1])*(q[1]-p[1])+(q[2]-p[2])*(q[2]-p[2]);if(d<best){best=d;bs=PATH.s[i]}}return bs}
+function EXE(span){return Math.max(1,Math.round(span*0.6))}
+/* 俯视投影：把一组点框进面板 */
+function topDown(pts,W,Hh,m){var x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity;pts.forEach(function(p){x0=Math.min(x0,p[0]);x1=Math.max(x1,p[0]);y0=Math.min(y0,p[1]);y1=Math.max(y1,p[1])});
+ var sc=Math.min((W-2*m)/Math.max(x1-x0,1e-3),(Hh-2*m)/Math.max(y1-y0,1e-3)),cx=(x0+x1)/2,cy=(y0+y1)/2;return function(p){return [W/2+(p[0]-cx)*sc,Hh/2-(p[1]-cy)*sc]}}
+function scaleBar(svg,proj,W,Hh){var a=proj([0,0,0]),b=proj([0.05,0,0]),L=Math.abs(b[0]-a[0]);el('line',{x1:W-12-L,x2:W-12,y1:Hh-10,y2:Hh-10,style:'stroke:var(--muted);stroke-width:1.5'},svg);txt(svg,W-12-L/2,Hh-14,'5 cm','tk')}
+
 /* ---------- 共享参数：稀疏程度 span（10 个点平均覆盖的帧数） ---------- */
 var S={span:40},subs=[];
 function setS(patch){for(var k in patch)S[k]=patch[k];syncControls();subs.forEach(function(f){f()})}
@@ -1547,6 +1586,8 @@ function base(view,M){var gr=new THREE.GridHelper(4,20,M.grid,M.grid);gr.positio
  SEGS.forEach(function(sg,gi){if(sg.t!=='arc')return;var b=PATH.bounds[gi];view.label(segName(sg),'below note3d').pos.copy(v3(posAt((b[0]+b[1])/2)))})}
 function rebase(view,M){view.tube.material=M.path;view.kg.children.forEach(function(b){b.material=M.kf});view.scene.remove(view.grid);var gr=new THREE.GridHelper(4,20,M.grid,M.grid);gr.position.y=-0.03;view.scene.add(gr);view.grid=gr}
 
+
+
 function cell(m,s,d){return GRID.rows.filter(function(r){return r[0]===m&&r[1]===s&&r[2]===d})[0]}
 function g(v){return (v/GRID.step).toFixed(2)}
 
@@ -1570,104 +1611,124 @@ function g(v){return (v/GRID.step).toFixed(2)}
 
 
 
-/* ---------- 第 3 页：当前帧的两种标签 ---------- */
-(function(){var host=document.getElementById('l-3d'),view=new View3D(host),M=mats();base(view,M);var dyn=new THREE.Group();view.scene.add(dyn);
- var tIn=document.getElementById('l-t'),btn=document.getElementById('l-play'),timer=null,LIFT=0.08,obs=view.label('当前观测','note3d'),prog=document.getElementById('l-prog');
- tIn.max=REC.F-2;
- function draw(){disposeAll(dyn);var t=+tIn.value,lt=label(cfgTime(),t),lc=label(cfgCurv(S.span),t),s0=TM.frames[t];
-  var sT=sOfFrame(lt.frames[H-1]+1),sC=sOfFrame(lc.frames[H-1]+1);
-  var a=tube(stretch(s0,Math.max(sT,s0+0.002),0),0.02,M.time);if(a)dyn.add(a);
-  var b=tube(stretch(s0,Math.max(sC,s0+0.002),LIFT),0.02,M.pt);if(b)dyn.add(b);
-  lt.points.forEach(function(p){dyn.add(ball(v3(p),0.02,M.time))});
-  lc.points.forEach(function(p,i){var o=ball(v3(p).add(new THREE.Vector3(0,LIFT,0)),0.034,lc.padded[i]?M.ring:lc.inWindow[i]?M.kf:M.pt);dyn.add(o)});
-  var here=v3(REC.ST[t]);dyn.add(ball(here,0.038,M.fg));obs.pos.copy(here);view.render();
-  var reach=lc.frames[H-1]-t+1,lenT=(sT-s0)*100,lenC=(sC-s0)*100;
-  readCards(document.getElementById('l-read'),[{v:lenT.toFixed(0)+' cm',l:'按时间：10 帧，覆盖 '+(H/15).toFixed(2)+' s 的示教',c:'c-teal'},
-   {v:lenC.toFixed(0)+' cm',l:'按曲率：10 个点，覆盖 '+reach.toFixed(0)+' 帧（'+(reach/15).toFixed(1)+' s）',c:'c-purple'},
-   {v:(lenT>0.3?(lenC/lenT).toFixed(1)+'×':'—'),l:'覆盖长度之比',c:'c-purple'},{v:lc.inWindow.filter(Boolean).length+' / 10',l:'落在关键帧窗口的点'+(lc.padded.some(Boolean)?'；越过终点的点按最后一帧补齐':''),c:'c-coral'}]);
-  drawProgress(t,lt,lc)}
- function drawProgress(t,lt,lc){clear(prog);var c=cfgCurv(S.span),cv=curveOf(c),W=1000,x0=150,x1=985,y0=170,y1=12,F=REC.F,xs=function(f){return x0+(x1-x0)*f/(F-1)},ys=function(v){return y0+(y1-y0)*v/cv.total};
-  REC.windows.forEach(function(w,k){el('rect',{x:xs(w[0]),y:y1,width:xs(w[1])-xs(w[0]),height:y0-y1,style:'fill:var(--coral-f);opacity:.8'},prog);txt(prog,(xs(w[0])+xs(w[1]))/2,y1+12,k?'释放窗口':'抓取窗口','an','middle',{style:'fill:var(--coral-t2)'})});
-  var d0=REC.dwell[0],d1=REC.dwell[REC.dwell.length-1];txt(prog,xs((d0+d1)/2),y0-6,'停顿','tk');
-  [0,.5,1].forEach(function(v){el('line',{x1:x0,x2:x1,y1:ys(v*cv.total),y2:ys(v*cv.total),'class':'gl'},prog)});
-  el('path',{d:'M'+Array.prototype.map.call(cv.s,function(v,i){return xs(i).toFixed(1)+','+ys(v).toFixed(1)}).join('L'),style:'fill:none;stroke:var(--purple-s);stroke-width:2.2'},prog);
-  txt(prog,8,30,'按曲率累积的进度','an','start',{style:'fill:var(--fg)'});txt(prog,8,46,'斜率 = ‖Δ²x‖^(1/3)','an','start');txt(prog,8,62,'窗口内固定为平均密度','an','start');
-  var first=cv.s[0]-cv.ds[0],anc=t===0?first:cv.s[t-1];
-  el('line',{x1:x0,x2:xs(t),y1:ys(Math.max(anc,0)),y2:ys(Math.max(anc,0)),style:'stroke:var(--fg);stroke-width:1;stroke-dasharray:2 3'},prog);
-  lc.frames.forEach(function(f,k){var v=Math.min(anc+(k+1)*cv.step,cv.total),x=xs(f),y=ys(v);
-   el('line',{x1:x0,x2:x,y1:y,y2:y,style:'stroke:var(--purple-s);stroke-width:1;opacity:.35'},prog);el('line',{x1:x,x2:x,y1:y,y2:y0,style:'stroke:var(--purple-s);stroke-width:1;opacity:.45'},prog);
-   el('circle',{cx:x,cy:y,r:3.6,style:lc.padded[k]?'fill:var(--panel);stroke:var(--purple-s);stroke-width:1.6':'fill:'+(lc.inWindow[k]?'var(--coral-s)':'var(--purple-s)')},prog)});
-  el('rect',{x:xs(t),y:y0+2,width:Math.max(xs(lt.frames[H-1])-xs(t),2),height:7,style:'fill:var(--teal-s)'},prog);
-  el('line',{x1:xs(t),x2:xs(t),y1:y1,y2:y0+10,style:'stroke:var(--fg);stroke-width:1'},prog);txt(prog,xs(t),y0+20,'t','an','middle',{style:'fill:var(--fg)'});
-  el('line',{x1:x0,x2:x1,y1:y0,y2:y0,'class':'ax'},prog);for(var f=0;f<F;f+=30)txt(prog,xs(f),y0+20,String(f),'tk');txt(prog,x1,y0+20,'帧','an','end');
-  txt(prog,8,y0+8,'青色：按时间的 10 帧','an','start',{style:'fill:var(--teal-t2)'})}
- tIn.addEventListener('input',draw);
- btn.addEventListener('click',function(){if(timer){clearInterval(timer);timer=null;btn.textContent='播放';return}btn.textContent='暂停';
-  timer=setInterval(function(){tIn.value=(+tIn.value>=REC.F-2?0:+tIn.value+1);draw()},1000/15)});
- view.retheme=function(){M=mats();rebase(view,M);draw()};subs.push(draw)})();
+/* ---------- 第 3 页：稀疏化四步 + 用重建误差选稀疏程度 ---------- */
+var T0=75;
+(function(){var W=260,Hh=180;
+ function draw(){var cC=cfgCurv(S.span),cT=cfgTimeSpan(S.span),cv=curveOf(cC),dC=deploy(cC,T0),dT=deploy(cT,T0),lc=dC.lb,lt=dT.lb,F=REC.F;
+  var first=cv.s[0]-cv.ds[0],anc=T0===0?first:cv.s[T0-1],reach=lc.frames[H-1]-T0+1;
+  /* ① 整集进度 */
+  var s1=document.getElementById('s1');clear(s1);var xa=function(f){return 24+(W-34)*f/(F-1)},ya=function(v){return 160-(160-12)*v/cv.total};
+  REC.windows.forEach(function(w){el('rect',{x:xa(w[0]),y:12,width:xa(w[1])-xa(w[0]),height:148,style:'fill:var(--coral-f)'},s1)});
+  el('rect',{x:xa(T0),y:12,width:Math.max(xa(T0+reach)-xa(T0),2),height:148,style:'fill:none;stroke:var(--fg);stroke-dasharray:3 3;stroke-width:1'},s1);
+  el('path',{d:path(Array.prototype.map.call(cv.s,function(v,i){return [xa(i),ya(v)]})),style:'fill:none;stroke:var(--purple-s);stroke-width:2'},s1);
+  el('line',{x1:24,x2:W-10,y1:160,y2:160,'class':'ax'},s1);[0,100,200].forEach(function(f){txt(s1,xa(f),174,String(f),'tk')});txt(s1,W-10,174,'帧','tk','end');
+  txt(s1,26,22,'进度','tk','start');txt(s1,(xa(REC.windows[0][0])+xa(REC.windows[0][1]))/2,26,'抓取窗口','tk','middle',{style:'fill:var(--coral-t2)'});txt(s1,xa(T0)+4,150,'当前帧','tk','start');
+  /* ② 等距台阶 */
+  var s2=document.getElementById('s2');clear(s2);var f0=T0-1,f1=Math.min(F-1,Math.ceil(T0+reach)+2),v0=Math.max(anc-0.3*cv.step,0),v1=Math.min(anc+(H+0.4)*cv.step,cv.total+0.3*cv.step);
+  var xb=function(f){return 30+(W-40)*(f-f0)/(f1-f0)},yb=function(v){return 160-(160-12)*(v-v0)/(v1-v0)};
+  REC.windows.forEach(function(w){var a=Math.max(w[0],f0),b=Math.min(w[1],f1);if(b>a)el('rect',{x:xb(a),y:12,width:xb(b)-xb(a),height:148,style:'fill:var(--coral-f)'},s2)});
+  var seg=[];for(var i=Math.max(f0,0);i<=f1;i++)seg.push([xb(i),yb(Math.min(Math.max(cv.s[i],v0),v1))]);el('path',{d:path(seg),style:'fill:none;stroke:var(--purple-s);stroke-width:2'},s2);
+  el('line',{x1:30,x2:xb(T0),y1:yb(anc),y2:yb(anc),style:'stroke:var(--fg);stroke-dasharray:2 3;stroke-width:1'},s2);
+  lc.frames.forEach(function(f,k){var v=Math.min(anc+(k+1)*cv.step,cv.total),x=xb(f),y=yb(v);
+   el('line',{x1:30,x2:x,y1:y,y2:y,style:'stroke:var(--purple-s);stroke-width:1;opacity:.35'},s2);el('line',{x1:x,x2:x,y1:y,y2:160,style:'stroke:var(--purple-s);stroke-width:1;opacity:.5'},s2);
+   el('circle',{cx:x,cy:y,r:3.4,style:'fill:'+(lc.inWindow[k]?'var(--coral-s)':'var(--purple-s)')},s2)});
+  lt.frames.forEach(function(f){if(f<=f1)el('line',{x1:xb(f),x2:xb(f),y1:160,y2:168,style:'stroke:var(--teal-s);stroke-width:2'},s2)});
+  el('line',{x1:30,x2:W-10,y1:160,y2:160,'class':'ax'},s2);el('line',{x1:xb(T0),x2:xb(T0),y1:12,y2:160,style:'stroke:var(--fg);stroke-width:1'},s2);
+  txt(s2,xb(T0)+3,22,'t','tk','start',{style:'fill:var(--fg)'});txt(s2,30,176,String(f0+1),'tk','start');txt(s2,W-10,176,String(f1)+' 帧','tk','end');
+  /* ③ 标签点 */
+  var fEnd=Math.min(F-1,Math.ceil(Math.max(lc.frames[H-1],lt.frames[H-1]))+2),win=REC.X.slice(T0,fEnd+1),proj=topDown(win.concat(dC.rec),W,Hh,16);
+  var s3=document.getElementById('s3');clear(s3);
+  el('path',{d:path(REC.X.slice(Math.max(T0-6,0),Math.min(F,fEnd+7)).map(proj)),style:'fill:none;stroke:var(--path);stroke-width:5;stroke-linecap:round;opacity:.6'},s3);
+  win.forEach(function(p){var q=proj(p);el('circle',{cx:q[0],cy:q[1],r:1.6,style:'fill:var(--teal-s);opacity:.7'},s3)});
+  lt.points.forEach(function(p){var q=proj(p);el('circle',{cx:q[0],cy:q[1],r:4.6,style:'fill:none;stroke:var(--teal-s);stroke-width:1.6'},s3)});
+  lc.points.forEach(function(p,k){var q=proj(p);el('circle',{cx:q[0],cy:q[1],r:4.2,style:'fill:'+(lc.inWindow[k]?'var(--coral-s)':'var(--purple-s)')+';stroke:var(--panel);stroke-width:1'},s3)});
+  var q0=proj(REC.ST[T0]);el('circle',{cx:q0[0],cy:q0[1],r:4.5,style:'fill:var(--fg)'},s3);txt(s3,q0[0],q0[1]-8,'当前','tk');scaleBar(s3,proj,W,Hh);
+  /* ④ 部署重建 */
+  var s4=document.getElementById('s4');clear(s4);
+  el('path',{d:path(REC.X.slice(Math.max(T0-6,0),Math.min(F,fEnd+7)).map(proj)),style:'fill:none;stroke:var(--path);stroke-width:5;stroke-linecap:round;opacity:.6'},s4);
+  var n=Math.min(dC.rec.length,F-T0);for(var j=0;j<n;j++){var a=proj(REC.A[T0+j]),b=proj(dC.rec[j]);el('line',{x1:a[0],y1:a[1],x2:b[0],y2:b[1],style:'stroke:var(--no);stroke-width:1.2'},s4)}
+  el('path',{d:path([q0].concat(dC.rec.slice(0,n).map(proj))),style:'fill:none;stroke:var(--purple-s);stroke-width:1.2;stroke-dasharray:3 2'},s4);
+  for(j=0;j<n;j++){var r=proj(dC.rec[j]),o=proj(REC.A[T0+j]);el('circle',{cx:o[0],cy:o[1],r:1.8,style:'fill:var(--teal-s)'},s4);el('circle',{cx:r[0],cy:r[1],r:1.8,style:'fill:var(--purple-s)'},s4)}
+  el('circle',{cx:q0[0],cy:q0[1],r:4.5,style:'fill:var(--fg)'},s4);scaleBar(s4,proj,W,Hh);
+  readCards(document.getElementById('s-read'),[
+   {v:depErr(dC,T0,6).toFixed(1)+' mm',l:'这一帧，按曲率：部署前 6 帧误差（覆盖 '+reach.toFixed(0)+' 帧）',c:'c-purple'},
+   {v:depErr(dT,T0,6).toFixed(1)+' mm',l:'这一帧，按时间等步长：部署前 6 帧误差（覆盖 '+S.span+' 帧）',c:'c-teal'},
+   {v:FOM.toFixed(1)+' mm',l:'可接受线：1 帧运动量（示例中一帧移动距离的中位数）',c:''},
+   {v:selText(),l:'按 agent 的规则选中：误差中位不超过可接受线的最大 span',c:'c-teal'}]);
+  drawChart()}
+ function selText(){var best=null;for(var s=10;s<=60;s+=5)if(episodeHead('time',s)<=FOM)best=s;var bc=null;for(s=10;s<=60;s+=5)if(episodeHead('curvature',s)<=FOM)bc=s;
+  return (best?'按时间 · span '+best:'无')+(bc?'；按曲率 · span '+bc:'')}
+ function drawChart(){var svg=document.getElementById('s-chart');clear(svg);var W2=700,H2=170,L=58,Rr=12,Tt=12,B=30,ymax=14,xs=function(s){return L+(W2-L-Rr)*(s-10)/50},ys=function(v){return H2-B-(H2-B-Tt)*Math.min(v,ymax)/ymax};
+  [0,4,8,12].forEach(function(v){el('line',{x1:L,x2:W2-Rr,y1:ys(v),y2:ys(v),'class':'gl'},svg);txt(svg,L-6,ys(v)+4,String(v),'tk','end')});
+  for(var s=10;s<=60;s+=10)txt(svg,xs(s),H2-B+16,String(s),'tk');txt(svg,W2-Rr,H2-4,'span（10 个点平均覆盖的帧数）','an','end');txt(svg,L,Tt-2,'部署前 6 帧误差，中位（mm）','an','start');
+  el('line',{x1:L,x2:W2-Rr,y1:ys(FOM),y2:ys(FOM),style:'stroke:var(--muted);stroke-width:1;stroke-dasharray:5 4'},svg);
+  ['time','curvature'].forEach(function(m){var pts=[];for(var s=10;s<=60;s+=5)pts.push([xs(s),ys(episodeHead(m,s))]);el('path',{d:path(pts),style:'fill:none;stroke-width:2;stroke:'+(m==='time'?'var(--teal-s)':'var(--purple-s)')},svg);
+   pts.forEach(function(p){el('circle',{cx:p[0],cy:p[1],r:2.5,style:'fill:'+(m==='time'?'var(--teal-s)':'var(--purple-s)')},svg)})});
+  el('line',{x1:xs(S.span),x2:xs(S.span),y1:Tt,y2:H2-B,style:'stroke:var(--fg);stroke-width:1;stroke-dasharray:2 3'},svg);el('line',{x1:L,x2:W2-Rr,y1:H2-B,y2:H2-B,'class':'ax'},svg)}
+ subs.push(draw)})();
 
-/* ---------- 第 4 页：分段推理 + 运控插值执行 ---------- */
-var VMAX=0.35,AMAX=1.0,EXEC=0.5,PATHPOLY=PATH.p.filter(function(p,i){return i%3===0});
-function planChunk(pose,v0,pts,grip){var P=[vec(pose)];pts.forEach(function(p){var q=vec(p);if(q.distanceTo(P[P.length-1])>1e-6)P.push(q)});if(P.length<2)return null;
- var poly=new THREE.CatmullRomCurve3(P,false,'centripetal').getSpacedPoints(160).map(function(v){return [v.x,v.y,v.z]}),n=poly.length,Sx=new Float64Array(n),i,w=3;
- for(i=1;i<n;i++)Sx[i]=Sx[i-1]+dist(poly[i],poly[i-1]);
- var kap=new Float64Array(n);for(i=w;i<n-w;i++){var p=poly[i-w],q=poly[i],r=poly[i+w],A=dist(q,p),B=dist(r,q),C=dist(r,p),u=[q[0]-p[0],q[1]-p[1],q[2]-p[2]],v=[r[0]-p[0],r[1]-p[1],r[2]-p[2]],
-  cr=Math.hypot(u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]);kap[i]=A*B*C>1e-12?2*cr/(A*B*C):0}
- for(i=0;i<w;i++){kap[i]=kap[w];kap[n-1-i]=kap[n-1-w]}
- var vl=new Float64Array(n);for(i=0;i<n;i++)vl[i]=Math.min(VMAX,kap[i]>1e-9?Math.sqrt(AMAX/kap[i]):VMAX);
- var stop=-1;for(var k=0;k<pts.length;k++){if(Math.round(pts[k][3])!==grip){var bd=Infinity;for(i=0;i<n;i++){var d=dist(poly[i],pts[k]);if(d<bd){bd=d;stop=i}}break}}
- var vv=Float64Array.from(vl);vv[0]=Math.min(vv[0],v0);if(stop>=0)vv[stop]=0;vv[n-1]=0;
- for(i=1;i<n;i++)vv[i]=Math.min(vv[i],Math.sqrt(vv[i-1]*vv[i-1]+2*AMAX*(Sx[i]-Sx[i-1])));
- for(i=n-2;i>=1;i--)vv[i]=Math.min(vv[i],Math.sqrt(vv[i+1]*vv[i+1]+2*AMAX*(Sx[i+1]-Sx[i])));
- var t=timeOf(vv,Sx,stop,stop>=0?0.5:0);return {poly:poly,S:Sx,v:vv,t:t,stop:stop,L:Sx[n-1]}}
-function simulate(span){var c=cfgCurv(span),pose=REC.ST[0].slice(0,3),grip=0,v0=0,tObs=0,clock=0,log=[{t:0,p:pose,v:0}],chunks=[],guard=0;
- while(guard++<400){var lb=label(c,tObs),pl=planChunk(pose,v0,lb.points,grip);if(!pl)break;
-  var final=lb.padded[H-1],cut=final?pl.L:pl.L*EXEC,ci=0;
-  while(ci<pl.S.length-1&&pl.S[ci+1]<=cut+1e-9)ci++;if(pl.stop>=0&&ci===pl.stop)ci=Math.min(pl.stop+1,pl.S.length-1);
-  var t0=clock;for(var i=1;i<=ci;i++)log.push({t:clock+pl.t[i],p:pl.poly[i],v:pl.v[i]});
-  if(pl.stop>=0&&ci>pl.stop)grip=1-grip;
-  clock+=pl.t[ci];chunks.push({t0:t0,t1:clock,obs:tObs,pts:lb.points.map(function(p){return [p[0],p[1],p[2]]}),poly:pl.poly});
-  pose=pl.poly[ci];v0=pl.v[ci];if(pl.stop===pl.S.length-1&&ci===pl.stop){clock+=0.5;chunks[chunks.length-1].t1=clock;log.push({t:clock,p:pose,v:0});grip=1-grip}
-  if(final||dist(pose,REC.X[REC.F-1])<0.002)break;
-  var lo=Math.max(tObs+1,grip===1?REC.g+1:0),best=lo,bd=Infinity;for(var j=lo;j<REC.F-1;j++){var d=dist(REC.X[j],pose);if(d<bd){bd=d;best=j}}tObs=best}
- var dev=0;log.forEach(function(e){dev=Math.max(dev,distToPoly(e.p,PATHPOLY))});return {log:log,chunks:chunks,T:clock,dev:dev*1000}}
+/* ---------- 第 4 页：一次推理后的插值四步 ---------- */
+(function(){var W=260,Hh=180;
+ function draw(){var c=cfgCurv(S.span),d=deploy(c,T0),lb=d.lb,F=REC.F,N=EXE(S.span),nxt=Math.min(T0+N,F-2),dn=deploy(c,nxt),s0=TM.frames[T0];
+  var tt=lb.frames.map(function(f){return f-T0+1}),Xmax=Math.ceil(Math.max(d.as[H-1],tt[H-1]))+1;
+  var fEnd=Math.min(F-1,T0+Xmax+1),win=REC.X.slice(T0,fEnd+1),proj=topDown(win.concat(lb.points,dn.lb.points),W,Hh,16);
+  function pathBg(svg){el('path',{d:path(REC.X.slice(Math.max(T0-6,0),Math.min(F,fEnd+7)).map(proj)),style:'fill:none;stroke:var(--path);stroke-width:5;stroke-linecap:round;opacity:.6'},svg)}
+  var q0=proj(REC.ST[T0]);
+  /* ① 模型输出 */
+  var k1=document.getElementById('k1');clear(k1);pathBg(k1);
+  lb.points.forEach(function(p,k){var q=proj(p);el('circle',{cx:q[0],cy:q[1],r:5,style:'fill:'+(p[3]>0.5?'var(--coral-s)':'var(--purple-s)')+';stroke:var(--panel);stroke-width:1'},k1);txt(k1,q[0]+7,q[1]-5,String(k+1),'tk','start',{style:'fill:var(--purple-t2)'})});
+  el('circle',{cx:q0[0],cy:q0[1],r:4.5,style:'fill:var(--fg)'},k1);txt(k1,q0[0],q0[1]+14,'当前','tk');txt(k1,8,14,'珊瑚色：夹爪闭合','tk','start',{style:'fill:var(--coral-t2)'});scaleBar(k1,proj,W,Hh);
+  /* ②③ 时间轴：横轴为距观测的帧数，纵轴为沿轨迹的距离 */
+  var yMax=Math.max(arcAt(lb.points[H-1])-s0,TM.frames[Math.min(F-1,T0+Xmax)]-s0,0.01)*100*1.08;
+  function axes(svg){var xs=function(x){return 30+(W-40)*x/Xmax},ys=function(cm){return 160-(160-14)*cm/yMax};
+   el('line',{x1:30,x2:W-10,y1:160,y2:160,'class':'ax'},svg);el('line',{x1:30,x2:30,y1:14,y2:160,'class':'ax'},svg);
+   var st=Xmax>30?10:5;for(var x=0;x<=Xmax;x+=st)txt(svg,xs(x),174,'+'+x,'tk');txt(svg,W-10,174,'帧','tk','end');txt(svg,34,22,'沿轨迹 '+yMax.toFixed(0)+' cm','tk','start');
+   var rec=[];for(var j=0;j<=Xmax&&T0+j<F;j++)rec.push([xs(j),ys((TM.frames[T0+j]-s0)*100)]);el('path',{d:path(rec),style:'fill:none;stroke:var(--teal-s);stroke-width:1.6'},svg);return {xs:xs,ys:ys}}
+  var k2=document.getElementById('k2');clear(k2);var A2=axes(k2);
+  lb.points.forEach(function(p,k){var y=A2.ys((arcAt(p)-s0)*100);el('line',{x1:A2.xs(tt[k]),x2:A2.xs(d.as[k]),y1:y,y2:y,style:'stroke:var(--purple-s);stroke-width:1;opacity:.6'},k2);
+   el('circle',{cx:A2.xs(d.as[k]),cy:y,r:3.6,style:'fill:var(--panel);stroke:var(--purple-s);stroke-width:1.6'},k2);el('circle',{cx:A2.xs(tt[k]),cy:y,r:3.2,style:'fill:var(--purple-s)'},k2)});
+  var k3=document.getElementById('k3');clear(k3);var A3=axes(k3),curve=[[A3.xs(0),A3.ys(0)]];
+  d.rec.forEach(function(r,j){curve.push([A3.xs(j+1),A3.ys((arcAt(r)-s0)*100)])});el('path',{d:path(curve),style:'fill:none;stroke:var(--purple-s);stroke-width:1.6'},k3);
+  curve.slice(1).forEach(function(p){el('circle',{cx:p[0],cy:p[1],r:1.9,style:'fill:var(--purple-s)'},k3)});
+  lb.points.forEach(function(p,k){el('circle',{cx:A3.xs(d.as[k]),cy:A3.ys((arcAt(p)-s0)*100),r:3.6,style:'fill:var(--panel);stroke:var(--purple-s);stroke-width:1.6'},k3)});
+  d.rec.forEach(function(r,j){if(r[3]>0.5)el('rect',{x:A3.xs(j+0.5),y:150,width:Math.max(A3.xs(1)-A3.xs(0),1),height:6,style:'fill:var(--coral-s)'},k3)});
+  /* ④ 执行与下一次推理 */
+  var k4=document.getElementById('k4');clear(k4);pathBg(k4);
+  d.rec.forEach(function(r,j){var q=proj(r);el('circle',{cx:q[0],cy:q[1],r:2.2,style:'fill:var(--purple-s);opacity:'+(j<N?1:0.25)},k4)});
+  dn.lb.points.forEach(function(p){var q=proj(p);el('circle',{cx:q[0],cy:q[1],r:4.6,style:'fill:none;stroke:var(--purple-s);stroke-width:1.4;stroke-dasharray:2 2'},k4)});
+  el('circle',{cx:q0[0],cy:q0[1],r:4,style:'fill:var(--fg)'},k4);var qn=proj(d.rec[Math.min(N,d.rec.length)-1]);el('circle',{cx:qn[0],cy:qn[1],r:4.5,style:'fill:none;stroke:var(--fg);stroke-width:2'},k4);txt(k4,qn[0],qn[1]-9,'下一次推理','tk');scaleBar(k4,proj,W,Hh);
+  var shift=0;tt.forEach(function(x,k){shift=Math.max(shift,Math.abs(x-d.as[k]))});
+  readCards(document.getElementById('k-read'),[{v:shift.toFixed(1)+' 帧',l:'点的真实时刻与假设时刻最多相差',c:'c-purple'},{v:depErr(d,T0,6).toFixed(1)+' mm',l:'逐帧目标与录制的偏差，前 6 帧',c:'c-purple'},
+   {v:depErr(d,T0,Math.floor(d.as[H-1])).toFixed(1)+' mm',l:'同上，整个覆盖范围',c:'c-purple'},{v:'执行 '+N+' 帧',l:'之后在第 '+nxt+' 帧重新推理（本次观测在第 '+T0+' 帧）',c:''}])}
+ subs.push(draw)})();
 
-var CTRL=null;
-(function(){var host=document.getElementById('c-3d'),view=new View3D(host),M=mats();base(view,M);var dyn=new THREE.Group(),act=new THREE.Group();view.scene.add(dyn);view.scene.add(act);
- var svg=document.getElementById('c-svg'),btn=document.getElementById('c-play');
- var mTele=ball(new THREE.Vector3(),0.05,M.time),mCtl=new THREE.Mesh(new THREE.SphereGeometry(1,12,8),M.ring);mCtl.scale.setScalar(0.065);view.scene.add(mTele);view.scene.add(mCtl);
- var sim=null,tau=0,playing=false,last=0,cursor=null,shown=-1;
- function exPos(tm){var L=sim.log,lo=0,hi=L.length-1;if(tm>=L[hi].t)return L[hi].p;while(hi-lo>1){var m=(lo+hi)>>1;if(L[m].t<=tm)lo=m;else hi=m}var u=(tm-L[lo].t)/((L[hi].t-L[lo].t)||1),a=L[lo].p,b=L[hi].p;return [a[0]+(b[0]-a[0])*u,a[1]+(b[1]-a[1])*u,a[2]+(b[2]-a[2])*u]}
- function showChunk(k){if(k===shown)return;shown=k;disposeAll(act);var ch=sim.chunks[k];if(!ch)return;act.add(polyLine(ch.poly,M.lineP,0.002));ch.pts.forEach(function(p){act.add(ball(v3(p),0.032,M.pt))})}
- function place(){mTele.position.copy(v3(posAt(sAtTime(tau,TM))));mCtl.position.copy(v3(exPos(tau)));var k=0;while(k<sim.chunks.length-1&&sim.chunks[k].t1<=tau)k++;showChunk(k);view.render();
-  if(cursor){var x=cursor.xs(tau);cursor.el.setAttribute('x1',x);cursor.el.setAttribute('x2',x)}}
- function draw(){sim=simulate(S.span);CTRL=sim;shown=-1;disposeAll(dyn);
-  dyn.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(sim.log.map(function(e){return v3(e.p)})),new THREE.LineDashedMaterial({color:css('--purple-s'),dashSize:0.04,gapSize:0.03})));dyn.children[0].computeLineDistances();
-  readCards(document.getElementById('c-read'),[{v:TM.T.toFixed(1)+' s',l:'按遥操时间回放用时',c:'c-teal'},{v:sim.T.toFixed(1)+' s',l:'运控执行用时，共 '+sim.chunks.length+' 次推理',c:'c-purple'},
-   {v:(TM.T/sim.T).toFixed(1)+'×',l:'提速倍数',c:'c-purple'},{v:sim.dev.toFixed(1)+' mm',l:'执行轨迹与示教轨迹的最大偏差',c:''}]);
-  drawPlot();tau=Math.min(tau,Math.max(TM.T,sim.T));place()}
- function drawPlot(){clear(svg);var W=1000,Hh=170,Mg={l:60,r:14,t:12,b:30},iw=W-Mg.l-Mg.r,ih=Hh-Mg.t-Mg.b,T=Math.max(TM.T,sim.T)*1.02,vmax=0.4;
-  var xs=function(t){return Mg.l+iw*t/T},ys=function(v){return Mg.t+ih*(1-v/vmax)};
-  for(var s=0;s<=T;s+=2){el('line',{x1:xs(s),x2:xs(s),y1:Mg.t,y2:Hh-Mg.b,'class':'gl'},svg);txt(svg,xs(s),Hh-Mg.b+16,s+' s','tk')}
-  [0,0.1,0.2,0.3,0.4].forEach(function(v){txt(svg,Mg.l-6,ys(v)+4,v.toFixed(1),'tk','end')});txt(svg,Mg.l,Mg.t-2,'m/s','an','start');
-  sim.chunks.forEach(function(c){el('line',{x1:xs(c.t0),x2:xs(c.t0),y1:Mg.t,y2:Hh-Mg.b,style:'stroke:var(--gray-s);stroke-width:1;opacity:.6'},svg)});
-  var tp=[];for(var i=0;i<TM.v.length;i+=4){tp.push([TM.t[i],TM.v[i]]);if(i<=TM.stop&&i+4>TM.stop){tp.push([TM.t[TM.stop],0]);tp.push([TM.t[TM.stop]+TM.dwell,0])}}
-  el('path',{d:'M'+tp.map(function(p){return xs(p[0]).toFixed(1)+','+ys(p[1]).toFixed(1)}).join('L'),style:'fill:none;stroke:var(--teal-s);stroke-width:2'},svg);
-  el('path',{d:'M'+sim.log.map(function(e){return xs(e.t).toFixed(1)+','+ys(e.v).toFixed(1)}).join('L'),style:'fill:none;stroke:var(--purple-s);stroke-width:2'},svg);
-  el('line',{x1:Mg.l,x2:W-Mg.r,y1:Hh-Mg.b,y2:Hh-Mg.b,'class':'ax'},svg);
-  cursor={xs:xs,el:el('line',{x1:xs(tau),x2:xs(tau),y1:Mg.t,y2:Hh-Mg.b,style:'stroke:var(--fg);stroke-width:1;stroke-dasharray:2 3'},svg)}}
- function tick(now){if(!playing)return;var dt=last?(now-last)/1000:0;last=now;tau+=dt;if(tau>Math.max(TM.T,sim.T)+0.6)tau=0;place();requestAnimationFrame(tick)}
+/* ---------- 第 5 页：整段执行 ---------- */
+function stitch(c,E){var pos=[],starts=[],err=[];for(var t=0;t<REC.F-1;t+=E){starts.push(t);var d=deploy(c,t);for(var j=0;j<E&&t+j<REC.F-1;j++){var r=d.rec[Math.min(j,d.rec.length-1)];pos[t+j]=[r[0],r[1],r[2]];err.push(dist(pos[t+j],REC.A[t+j])*1000)}}
+ err.sort(function(a,b){return a-b});return {pos:pos,starts:starts,med:err[err.length>>1],max:err[err.length-1]}}
+(function(){var host=document.getElementById('e-3d'),view=new View3D(host),M=mats();base(view,M);var dyn=new THREE.Group();view.scene.add(dyn);
+ var btn=document.getElementById('e-play'),mRec=ball(new THREE.Vector3(),0.04,M.path),mT=ball(new THREE.Vector3(),0.05,M.time),mC=new THREE.Mesh(new THREE.SphereGeometry(1,12,8),M.ring);mC.scale.setScalar(0.065);
+ view.scene.add(mRec);view.scene.add(mT);view.scene.add(mC);var ST_=null,SC_=null,tau=0,playing=false,last=0;
+ function place(){var f=Math.min(REC.F-2,Math.floor(tau*15));mRec.position.copy(v3(REC.A[f]));mT.position.copy(v3(ST_.pos[f]));mC.position.copy(v3(SC_.pos[f]));view.render()}
+ function draw(){var E=EXE(S.span);ST_=stitch(cfgTimeSpan(S.span),E);SC_=stitch(cfgCurv(S.span),E);var base0=stitch(cfgTimeSpan(H),EXE(H));disposeAll(dyn);
+  [[ST_,M.time],[SC_,M.pt]].forEach(function(x){dyn.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(x[0].pos.map(function(p){return v3(p)})),new THREE.LineBasicMaterial({color:x[1].color})))});
+  readCards(document.getElementById('e-read'),[{v:base0.starts.length+' 次',l:'逐帧标签（10 点覆盖 10 帧，每 6 帧推理）',c:''},
+   {v:ST_.starts.length+' 次',l:'稀疏标签 · 按时间：推理次数；执行偏差中位 '+ST_.med.toFixed(1)+' mm，最大 '+ST_.max.toFixed(1)+' mm',c:'c-teal'},
+   {v:SC_.starts.length+' 次',l:'稀疏标签 · 按曲率：推理次数；执行偏差中位 '+SC_.med.toFixed(1)+' mm，最大 '+SC_.max.toFixed(1)+' mm',c:'c-purple'},
+   {v:'每 '+E+' 帧',l:'稀疏标签的推理间隔（span '+S.span+' 的 60%）',c:''}]);place()}
+ function tick(now){if(!playing)return;var dt=last?(now-last)/1000:0;last=now;tau+=dt;if(tau>(REC.F-1)/15+0.5)tau=0;place();requestAnimationFrame(tick)}
  btn.addEventListener('click',function(){playing=!playing;btn.textContent=playing?'暂停':'播放';if(playing){last=0;requestAnimationFrame(tick)}});
- view.retheme=function(){M=mats();rebase(view,M);mTele.material=M.time;mCtl.material=M.ring;draw()};subs.push(draw)})();
+ view.retheme=function(){M=mats();rebase(view,M);mRec.material=M.path;mT.material=M.time;mC.material=M.ring;draw()};subs.push(draw)})();
 
-/* ---------- 第 5 页：UR3 网格（时间 / 曲率，不保护） ---------- */
+/* ---------- 第 6 页：UR3 网格（时间 / 曲率，不保护） ---------- */
 (function(){var NAME={time:'按时间',curvature:'按曲率'},rows=GRID.rows.filter(function(r){return r[2]===0&&(r[0]==='time'||r[0]==='curvature')});
  document.getElementById('grid-table').innerHTML='<thead><tr><th>标签</th><th class="num">span</th><th class="num">覆盖</th><th class="num">几何</th><th class="num">部署前段</th><th>可接受</th></tr></thead><tbody>'+
   rows.map(function(r){return '<tr><td class="name">'+NAME[r[0]]+'</td><td class="num mono">'+r[1]+'</td><td class="num mono">'+r[3].toFixed(1)+'</td><td class="num mono">'+g(r[4])+'</td><td class="num mono">'+g(r[6])+'</td><td>'+(r[13]?'<span class="pill ok">满足</span>':'<span class="pill no">不满足</span>')+'</td></tr>'}).join('')+'</tbody>';
  var t20=cell('time',20,0),c20=cell('curvature',20,0);
- document.getElementById('grid-note').textContent='span 20：几何误差 按曲率 '+g(c20[4])+'、按时间 '+g(t20[4])+'，曲率标签描述路径更准；部署前段误差 按曲率 '+g(c20[6])+'、按时间 '+g(t20[6])+'。差距来自部署时把点放在均匀时刻，第 4 页的运控规划正是为了去掉这个假设。'})();
+ document.getElementById('grid-note').textContent='span 20：几何误差 按曲率 '+g(c20[4])+'、按时间 '+g(t20[4])+'，曲率标签描述路径更准；部署前段误差 按曲率 '+g(c20[6])+'、按时间 '+g(t20[6])+'。差距来自部署时把点放在均匀时刻（第 4 页 ②）；网格按部署误差打分，选中按时间等步长 span 40。'})();
 
-/* ---------- 第 6 页：agent 流程 ---------- */
+
+
+/* ---------- 第 7 页：agent 流程 ---------- */
 (function(){var STG=[
  {k:'S0',n:'范围',s:'机器人布局与约束',c:'',what:'写 robot_spec.json：哪些维是关节、哪些是夹爪指令、状态与动作的对应、帧率；登记源数据集。',out:'robot_spec.json、run.json',who:'—',check:'关节维与指令维恰好覆盖全部动作维'},
  {k:'S1–S2',n:'体检与清洗',s:'vla-data-cleaning',c:'teal',what:'确认 action[t] 对应 state[t+1]；找静止维、时间戳缺口、指令毛刺、相机冻结、重复 episode、关节跳变；区分录制故障和真实快速动作，按书面决定修复或排除。',out:'audit.json、跳变核对图、清洗版数据集',who:'断点跳变修复还是保留、排除哪些 episode',check:'索引约定已确认；所有非孤立跳变都有书面决定'},
@@ -1687,12 +1748,11 @@ var CTRL=null;
 
 /* ---------- 初始化、封面、主题切换 ---------- */
 syncControls();subs.forEach(function(f){f()});
-(function(){var ratios=[],c=cfgCurv(40);for(var t=0;t<REC.F-H-1;t++){var lt=label(cfgTime(),t),lc=label(c,t);if(lc.padded.some(Boolean))continue;var a=TM.frames[t],lT=sOfFrame(lt.frames[H-1]+1)-a,lC=sOfFrame(lc.frames[H-1]+1)-a;if(lT>0.003)ratios.push(lC/lT)}
- ratios.sort(function(x,y){return x-y});var med=ratios[ratios.length>>1],t40=cell('time',40,0),c20=cell('curvature',20,0),t20=cell('time',20,0);
+(function(){var t40=cell('time',40,0),c20=cell('curvature',20,0),t20=cell('time',20,0),E=EXE(40),a=stitch(cfgTimeSpan(H),EXE(H)).starts.length,b=stitch(cfgTimeSpan(40),E).starts.length;
  document.getElementById('cover-stats').innerHTML=
-  '<div><span class="big">'+med.toFixed(1)+'×</span><span>示例轨迹：每一帧同样 10 个点，按曲率（span 40）覆盖的路径长度是按时间的倍数（各帧中位数）</span></div>'+
-  '<div><span class="big">'+g(c20[4])+' / '+g(t20[4])+'</span><span>UR3 实测（span 20）：曲率标签与时间标签的几何误差，曲率描述路径更准</span></div>'+
-  '<div><span class="big">4×</span><span>UR3 实测：10 个点按时间等步长覆盖 40 帧仍可接受（部署前段误差中位 '+g(t40[6])+' 帧运动量）</span></div>'})();
+  '<div><span class="big">4×</span><span>UR3 实测：10 个点按时间等步长覆盖 40 帧仍可接受（部署前段误差中位 '+g(t40[6])+' 帧运动量）</span></div>'+
+  '<div><span class="big">'+a+' → '+b+'</span><span>示例轨迹：整段执行的推理次数，逐帧标签 → span 40 的稀疏标签</span></div>'+
+  '<div><span class="big">'+g(c20[4])+' / '+g(t20[4])+'</span><span>UR3 实测（span 20）：曲率与时间标签的几何误差；部署后为 '+g(c20[6])+' / '+g(t20[6])+'，曲率需要时刻信息</span></div>'})();
 function retheme(){VIEWS.forEach(function(v){if(v.retheme)v.retheme()})}
 if(window.matchMedia)matchMedia('(prefers-color-scheme: dark)').addEventListener('change',retheme);
 new MutationObserver(retheme).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
