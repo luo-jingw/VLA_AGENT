@@ -31,6 +31,7 @@ def main() -> None:
     parser.add_argument("--exp-name", default="run")
     parser.add_argument("--checkpoint", type=Path, default=None)
     parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--rate", type=float, default=1.0, help="execution rate relative to the recording's pace")
     args = parser.parse_args()
 
     config = train_config(args.name, args.data_root, args.repo_id, args.exp_name)
@@ -41,7 +42,7 @@ def main() -> None:
     else:
         if args.checkpoint is None:
             raise SystemExit("serve needs --checkpoint")
-        launch.serve(config, args.checkpoint, args.port)
+        launch.serve(config, args.checkpoint, args.port, args.rate)
 
 
 if __name__ == "__main__":

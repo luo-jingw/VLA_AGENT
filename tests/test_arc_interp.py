@@ -19,14 +19,15 @@ SPEC = RobotSpec(action_dim=3, joint_dims=(0, 1), command_dims=(2,), state_dims=
 
 
 def test_point_frames_by_anchor() -> None:
-    np.testing.assert_allclose(point_frames(20, 10, "state"), np.arange(2, 21, 2))
-    np.testing.assert_allclose(point_frames(20, 10, "action"), np.arange(3, 22, 2))
+    np.testing.assert_allclose(point_frames(20, 10, "state", 1.0), np.arange(2, 21, 2))
+    np.testing.assert_allclose(point_frames(20, 10, "action", 1.0), np.arange(3, 22, 2))
+    np.testing.assert_allclose(point_frames(20, 10, "state", 2.0), np.arange(1, 11, 1))
     with pytest.raises(ValueError, match="anchor"):
-        point_frames(20, 10, "observation")
+        point_frames(20, 10, "observation", 1.0)
 
 
 def test_to_frames_passes_through_the_points_and_takes_the_nearest_command() -> None:
-    times = point_frames(8, 4, "state")  # 2, 4, 6, 8
+    times = point_frames(8, 4, "state", 1.0)  # 2, 4, 6, 8
     points = np.array([[0.2, -0.2, 0.0], [0.4, -0.4, 1.0], [0.6, -0.6, 1.0], [0.8, -0.8, 0.0]])
     out = to_frames(points, current=np.array([0.0, 0.0, 1.0]), times=times, command_dims=(2,))
     assert out.shape == (8, 3)
@@ -75,3 +76,21 @@ def test_report_without_anchor_is_refused(tmp_path: Path) -> None:
     path.write_text(json.dumps({"robot": {}, "config": {"span_frames": 20, "action_horizon": 10}}), encoding="utf-8")
     with pytest.raises(ValueError, match="anchor"):
         ArcInterpolator.from_report(path)
+
+
+def test_rate_traverses_the_same_path_faster(tmp_path: Path) -> None:
+    rng = np.random.default_rng(7)
+    points = np.zeros((10, 3))
+    points[:, :2] = np.cumsum(rng.normal(0.0, 0.05, (10, 2)), axis=0)
+    points[6:, 2] = 1.0
+    state = np.array([0.01, -0.02, 0.0])
+    config = ResampleConfig(metric="curvature", span_frames=20, action_horizon=10, anchor="state")
+    report = _report(tmp_path / "arc_resample.json", config)
+    slow = ArcInterpolator.from_report(report, 1.0)(points, state)
+    fast = ArcInterpolator.from_report(report, 2.0)(points, state)
+    difference = float(np.abs(fast - slow[1::2]).max())
+    print(
+        f"rate 1: {len(slow)} targets, rate 2: {len(fast)} targets; rate-2 target j vs rate-1 target 2j+1: {difference:.1e}"
+    )
+    assert len(fast) == len(slow) // 2
+    assert difference <= 1e-12

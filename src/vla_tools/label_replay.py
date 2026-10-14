@@ -1,11 +1,12 @@
 """Execute the LABELS closed loop, the way the deployment executes model output, for several execution lengths.
 
 Per episode, starting at frame 0: take the label of the observed frame, place and interpolate it as the
-server does (arc_interp.to_frames), execute the first e targets, then observe again at the recorded
+server does at execution rate r (arc_interp.point_frames, to_frames), execute the first e targets, then
+observe again at the recorded
 frame nearest to the executed pose. The search runs forward from the last observation, up to three frames
 past the label's last point, among frames whose recorded command state equals the executed one, so a
 gripper that has closed is not observed again before its recorded close; frames at the same distance (a
-still stretch) are resolved towards the frame e steps after the last observation. The executed targets are what a
+still stretch) are resolved towards the frame r * e steps after the last observation. The executed targets are what a
 perfect model would make the robot do; for static tasks they are judged by geometry, not timing:
 
   path         distance of every executed target to the recorded path segment its chunk covers
@@ -25,7 +26,7 @@ deviation is 0.
 
 Usage:
     python -m vla_tools.label_replay --dataset <dir> --spec robot_spec.json --keyframes keyframes.json \
-        --config config.json --execute 2 4 6 8 10 [--out replay.json]
+        --config config.json --execute 2 4 6 8 10 [--rate 1] [--out replay.json]
 """
 
 from __future__ import annotations
@@ -100,13 +101,13 @@ def _observe(
 
 
 def closed_loop(
-    e: Episode, spec: RobotSpec, record: KeyframeRecord, config: ResampleConfig, execute: int
+    e: Episode, spec: RobotSpec, record: KeyframeRecord, config: ResampleConfig, execute: int, rate: float
 ) -> EpisodeReplay:
     joints, commands = list(spec.joint_dims), list(spec.command_dims)
     actions = e.actions
     poses = np.stack([spec.current_pose(s) for s in e.states])
     _, ch = arc_core.chunks(actions, spec, config, record.windows(e.index), e.real)
-    times = point_frames(config.span_frames, config.action_horizon, config.anchor)
+    times = point_frames(config.span_frames, config.action_horizon, config.anchor, rate)
     last_frame = e.real - 1
     t, pose = 0, poses[0]
     executed, observations, distances, seams = [], [], [], []
@@ -120,7 +121,7 @@ def closed_loop(
         distances.append(distance_to_path(targets[:, joints], segment))
         executed.extend(targets)
         pose = targets[-1].copy()
-        t = _observe(pose, poses, joints, commands, t, min(last_frame, end), t + len(targets))
+        t = _observe(pose, poses, joints, commands, t, min(last_frame, end), t + round(rate * len(targets)))
     return EpisodeReplay(
         executed=np.array(executed),
         observations=observations,
@@ -147,13 +148,13 @@ def _hold(executed: np.ndarray, joints: list[int], index: int, tolerance: float)
 
 def replay(
     episodes: list[Episode], spec: RobotSpec, record: KeyframeRecord, config: ResampleConfig, execute: int,
-    path_step: float, reference_step: float,
+    rate: float, path_step: float, reference_step: float,
 ) -> ReplayRow:  # fmt: skip
     joints = list(spec.joint_dims)
     distances, seams, kf, holds, speeds = [], [], [], [], []
     missed = inferences = executed_frames = recorded_frames = 0
     for e in episodes:
-        run = closed_loop(e, spec, record, config, execute)
+        run = closed_loop(e, spec, record, config, execute, rate)
         distances.append(run.distances)
         seams += [s / path_step for s in run.seams]
         inferences += len(run.observations)
@@ -194,6 +195,7 @@ def main() -> None:
     parser.add_argument("--keyframes", type=Path, required=True)
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--execute", nargs="+", type=int, default=[2, 4, 6, 8, 10])
+    parser.add_argument("--rate", type=float, default=1.0, help="execution rate relative to the recording's pace")
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args()
 
@@ -204,13 +206,13 @@ def main() -> None:
     episodes = load_episodes(args.dataset, spec, only=sorted(record.episodes))
     joints = list(spec.joint_dims)
     path_step, reference_step = step_statistics([e.actions[: e.real, joints] for e in episodes])
-    print(f"{len(episodes)} episodes, {config.to_dict()}")
+    print(f"{len(episodes)} episodes, {config.to_dict()}, execution rate {args.rate}")
     print(f"path step {path_step:.4f} rad, reference step (p95) {reference_step:.4f} rad; path and kf in path steps")
     print(f"{'execute':>7} {'path med/p90/max':>17} {'seam med/max':>13} {'kf med/max':>11} {'missed':>6} "
           f"{'hold':>5} {'speed':>11} {'infer':>6} {'frames':>12}")  # fmt: skip
     rows = []
     for execute in args.execute:
-        r = replay(episodes, spec, record, config, execute, path_step, reference_step)
+        r = replay(episodes, spec, record, config, execute, args.rate, path_step, reference_step)
         rows.append(r)
         print(f"{r.execute:>7} {r.path[0] / path_step:5.2f}/{r.path[1] / path_step:5.2f}/{r.path[2] / path_step:5.2f} "
               f"{r.seam[0]:6.2f}/{r.seam[1]:6.2f} {r.kf_position[0] / path_step:5.2f}/{r.kf_position[1] / path_step:5.2f} "
@@ -219,6 +221,7 @@ def main() -> None:
     if args.out is not None:
         payload = {
             "config": config.to_dict(),
+            "rate": args.rate,
             "path_step_rad": path_step,
             "reference_step_rad": reference_step,
             "rows": [dataclasses.asdict(r) for r in rows],

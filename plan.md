@@ -73,7 +73,7 @@ artifacts are owned by the run directory and rewritten by S7.
   keep their own progress (1 under `time`, 0 under geometric metrics).
 - `arc_interp.point_frames(span_frames, action_horizon, anchor, rate: float)`: (offset + k·span/H) / rate.
   `ArcInterpolator.rate: float = 1.0`; `ArcInterpolator.from_report(path, rate: float = 1.0)`.
-  `vla_openpi.launch` gains `--rate`.
+  `vla_openpi.launch.serving_config` and `serve` take `rate`; the example launcher has `--rate`.
 - `label_replay.closed_loop(e, spec, record, config, execute, rate: float)`; `replay(..., rate)`;
   CLI `--rate` (default 1); the payload records the rate. The tie-break for re-observation moves to
   t + round(r · executed targets).
@@ -159,7 +159,7 @@ of `curvature` labels on a synthetic episode printed against span.
 
 ## Phase 2
 
-Phase Status: active
+Phase Status: completed
 
 Round: 2
 
@@ -191,7 +191,7 @@ rate 2 observes every 2e frames with path deviation 0; executed frames printed f
 
 ## Phase 3
 
-Phase Status: pending
+Phase Status: active
 
 Round: 3
 

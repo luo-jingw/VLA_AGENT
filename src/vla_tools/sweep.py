@@ -161,7 +161,7 @@ def evaluate(
     scale: PathScale,
 ) -> CellResult:
     joints = list(spec.joint_dims)
-    assumed = point_frames(config.span_frames, config.action_horizon, config.anchor)
+    assumed = point_frames(config.span_frames, config.action_horizon, config.anchor, 1.0)  # path geometry: rate-free
     reach: list[float] = []
     path_head: list[float] = []
     path_full: list[float] = []

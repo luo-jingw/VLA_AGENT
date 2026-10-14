@@ -201,7 +201,7 @@ def test_closed_loop_replay_of_frame_labels_is_the_recording(chain: ChainRun) ->
     config = ResampleConfig(metric="time", span_frames=HORIZON, action_horizon=HORIZON, anchor="state")
     execute = 4
     for e in episodes:
-        run = closed_loop(e, SPEC, record, config, execute)
+        run = closed_loop(e, SPEC, record, config, execute, 1.0)
         assert float(run.distances.max()) < 1e-9
         assert run.observations == list(range(0, e.real - 1, execute))
 
@@ -213,7 +213,7 @@ def test_closed_loop_observations_move_forward_for_progress_labels(chain: ChainR
     )
     counts = []
     for e in episodes:
-        run = closed_loop(e, SPEC, record, config, 8)
+        run = closed_loop(e, SPEC, record, config, 8, 1.0)
         assert all(b > a for a, b in zip(run.observations, run.observations[1:], strict=False))
         counts.append((len(run.observations), len(run.executed), e.real))
     print("curvature span", SPAN, "execute 8: (inferences, executed frames, recorded frames) per episode", counts)
@@ -252,3 +252,15 @@ def test_train_and_eval_label_datasets(chain: ChainRun) -> None:
         worst = max(worst, float(np.abs(targets[at_points][:, JOINTS] - actions[t + at_points][:, JOINTS]).max()))
     print(f"targets at the point frames vs recording: max {worst:.2e}")
     assert worst < 1e-6
+
+
+def test_closed_loop_at_rate_two_skips_every_other_recorded_frame(chain: ChainRun) -> None:
+    episodes, record = _replay_inputs(chain)
+    config = ResampleConfig(metric="time", span_frames=HORIZON, action_horizon=HORIZON, anchor="state")
+    execute, executed, recorded = 4, 0, 0
+    for e in episodes:
+        run = closed_loop(e, SPEC, record, config, execute, 2.0)
+        assert float(run.distances.max()) < 1e-9
+        assert run.observations == list(range(0, e.real - 1, 2 * execute))
+        executed, recorded = executed + len(run.executed), recorded + e.real
+    print(f"rate 2, time span {HORIZON}, execute {execute}: {executed} executed frames for {recorded} recorded")

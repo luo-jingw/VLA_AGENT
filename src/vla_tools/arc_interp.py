@@ -8,9 +8,12 @@ serving machine. It runs the label builder's sampling backwards:
               value is the previous command echoed back, and letting it decide the frames before the
               first point re-opens a gripper the model already closed whenever the echo lags
 
-Point k is placed at offset + k * span / H frames after the observation, offset 0 for anchor "state"
-and 1 for "action". Under metric "time" that is exact; under a progress metric it is an assumption
-whose cost the label replay measures.
+Point k is placed at (offset + k * span / H) / rate frames after the observation, offset 0 for anchor
+"state" and 1 for "action". The execution rate is a deployment choice: at rate 1 a chunk that covers span
+recorded frames is executed over span frames, the recording's average pace; at rate r the same PCHIP
+path is traversed r times faster. Under metric "time" at rate 1 the placement is exact; otherwise the
+timing differs from the recording, which for static tasks costs nothing but speed, measured by the label
+replay.
 
 Output: out[j] is the target for frame t + j + 1, the meaning a per-frame policy's actions have.
 """
@@ -25,11 +28,15 @@ import numpy as np
 import scipy.interpolate
 
 
-def point_frames(span_frames: int, action_horizon: int, anchor: str) -> np.ndarray:
+def point_frames(span_frames: int, action_horizon: int, anchor: str, rate: float) -> np.ndarray:
     offsets = {"state": 0.0, "action": 1.0}
+    if rate <= 0.0:
+        raise ValueError(f"rate must be positive, got {rate}")
     if anchor not in offsets:
         raise ValueError(f"anchor must be one of {sorted(offsets)}, got {anchor!r}")
-    return offsets[anchor] + np.arange(1, action_horizon + 1, dtype=np.float64) * (span_frames / action_horizon)
+    return (
+        offsets[anchor] + np.arange(1, action_horizon + 1, dtype=np.float64) * (span_frames / action_horizon)
+    ) / rate
 
 
 def to_frames(points: np.ndarray, current: np.ndarray, times: np.ndarray, command_dims: tuple[int, ...]) -> np.ndarray:
@@ -57,10 +64,11 @@ class ArcInterpolator:
     action_dim: int
     command_dims: tuple[int, ...]
     state_dims: tuple[int, ...]  # state index of each action dim, -1 when none
+    rate: float = 1.0  # execution rate, chosen at deployment; the label report does not record it
 
     @staticmethod
-    def from_report(path: Path) -> ArcInterpolator:
-        """Everything from the arc_resample.json the label builder wrote, nothing restated by hand."""
+    def from_report(path: Path, rate: float = 1.0) -> ArcInterpolator:
+        """Everything from the arc_resample.json the label builder wrote, nothing restated by hand, and the rate."""
         report = json.loads(Path(path).read_text(encoding="utf-8"))
         config, robot = report["config"], report["robot"]
         if "anchor" not in config:
@@ -72,10 +80,11 @@ class ArcInterpolator:
             action_dim=int(robot["action_dim"]),
             command_dims=tuple(int(d) for d in robot["command_dims"]),
             state_dims=tuple(int(d) for d in robot["state_dims"]),
+            rate=float(rate),
         )
 
     def frames(self) -> np.ndarray:
-        return point_frames(self.span_frames, self.action_horizon, self.anchor)
+        return point_frames(self.span_frames, self.action_horizon, self.anchor, self.rate)
 
     def current_pose(self, state: np.ndarray) -> np.ndarray:
         """The state expressed in the action layout; command dims without a state counterpart are 0."""

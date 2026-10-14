@@ -42,16 +42,17 @@ def train(config: _config.TrainConfig) -> None:
     openpi_train.main(config)
 
 
-def serving_config(config: _config.TrainConfig, checkpoint: Path) -> _config.TrainConfig:
-    """The training config with its outputs replaced by per-frame interpolation from the checkpoint's report."""
+def serving_config(config: _config.TrainConfig, checkpoint: Path, rate: float = 1.0) -> _config.TrainConfig:
+    """The training config with its outputs replaced by per-frame interpolation from the checkpoint's report,
+    executed at `rate` times the recording's average pace."""
     data_config = config.data.create(config.assets_dirs, config.model)
     report = Path(checkpoint) / "assets" / str(data_config.asset_id) / "arc_resample.json"
-    interp = ArcInterpolator.from_report(report)
+    interp = ArcInterpolator.from_report(report, rate)
     return dataclasses.replace(config, data=dataclasses.replace(config.data, outputs=ArcOutputs(interp)))
 
 
-def serve(config: _config.TrainConfig, checkpoint: Path, port: int) -> None:
-    policy = policy_config.create_trained_policy(serving_config(config, checkpoint), str(checkpoint))
+def serve(config: _config.TrainConfig, checkpoint: Path, port: int, rate: float = 1.0) -> None:
+    policy = policy_config.create_trained_policy(serving_config(config, checkpoint, rate), str(checkpoint))
     websocket_policy_server.WebsocketPolicyServer(
         policy=policy, host="0.0.0.0", port=port, metadata=policy.metadata
     ).serve_forever()
