@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import dataclasses
+import typing
 from typing import Literal
 
-Metric = Literal["time", "arc", "curvature"]
+Metric = Literal["time", "curvature", "second_difference"]
 Anchor = Literal["state", "action"]
 
 
@@ -13,7 +14,9 @@ Anchor = Literal["state", "action"]
 class ResampleConfig:
     """
     metric          progress per frame outside keyframe windows: time = 1 (uniform stride, exact timing at
-                    deployment), arc = ||dq||, curvature = |d2q|^(1/3)
+                    deployment); curvature = kappa^(1/3) * ||dq||, kappa the joint path's geometric
+                    curvature, independent of teleop speed; second_difference = |d2q|^(1/3), the
+                    acceleration per frame, kept to reproduce datasets built with it
     span_frames     recorded frames one chunk of `action_horizon` points reaches across
     action_horizon  points per chunk; must equal the model's action_horizon
     event_density   point density inside keyframe windows relative to outside, spread evenly in time;
@@ -25,6 +28,10 @@ class ResampleConfig:
     anchor          state: a chunk starts at the current state's progress; point k sits k*span/H frames
                     after the observation, and time with span = H is exactly actions[t : t+H].
                     action: one frame later (1 + k*span/H); datasets built before the field existed
+    curvature_window  curvature: arc length each chord spans on either side of a sample, in multiples of
+                    the episode's median per-frame joint step (still frames excluded)
+    curvature_floor   curvature: minimum kappa^(1/3) as a fraction of its length-weighted episode mean;
+                    0 gives straight segments no progress
     """
 
     metric: Metric
@@ -35,6 +42,8 @@ class ResampleConfig:
     pad_weight: float = 1.0
     deadzone: float = 0.0
     anchor: Anchor = "state"
+    curvature_window: float = 4.0
+    curvature_floor: float = 0.0
 
     @property
     def frames_per_step(self) -> float:
@@ -45,8 +54,17 @@ class ResampleConfig:
 
     @staticmethod
     def from_dict(raw: dict[str, float | int | str]) -> ResampleConfig:
-        """Read a recorded config. `anchor` is required: a default would silently shift every point."""
+        """Read a recorded config. `anchor` is required: a default would silently shift every point.
+        A `curvature` config without `curvature_window` was recorded with the second-difference metric."""
         if "anchor" not in raw:
             raise ValueError("config has no 'anchor'; datasets built before the field existed used 'action'")
+        allowed = typing.get_args(Metric)
+        if raw.get("metric") not in allowed:
+            raise ValueError(f"unknown metric {raw.get('metric')!r}; allowed: {', '.join(allowed)}")
+        if raw["metric"] == "curvature" and "curvature_window" not in raw:
+            raise ValueError(
+                "config has metric 'curvature' but no 'curvature_window': it was recorded with the previous "
+                "second-difference metric, now named 'second_difference'"
+            )
         names = {field.name for field in dataclasses.fields(ResampleConfig)}
         return ResampleConfig(**{k: v for k, v in raw.items() if k in names})  # type: ignore[arg-type]
