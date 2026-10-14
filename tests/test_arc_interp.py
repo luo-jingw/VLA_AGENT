@@ -38,6 +38,31 @@ def test_to_frames_passes_through_the_points_and_takes_the_nearest_command() -> 
     )  # nearest point; the current command is not a knot
 
 
+def test_to_frames_is_the_not_a_knot_cubic_spline() -> None:
+    """A cubic in time is rebuilt exactly from four or more knots; two knots give the chord, three the parabola."""
+
+    def cubic(t: np.ndarray) -> np.ndarray:
+        return np.stack([0.3 * t - 0.02 * t**2 + 0.001 * t**3, -0.1 * t + 0.004 * t**3], axis=1)
+
+    worst = {}
+    for horizon in (1, 2, 3, 10):
+        times = point_frames(2 * horizon, horizon, "state", 1.0)
+        frames = np.arange(1, int(times[-1]) + 1, dtype=np.float64)
+        points = np.concatenate([cubic(times), np.zeros((horizon, 1))], axis=1)
+        out = to_frames(points, current=np.zeros(3), times=times, command_dims=(2,))
+        knots = np.concatenate([[0.0], times])
+        values = np.concatenate([np.zeros((1, 2)), cubic(times)])
+        if horizon == 1:
+            expected = values[0] + (values[1] - values[0]) * (frames / knots[1])[:, None]
+        elif horizon == 2:
+            expected = np.stack([np.polyval(np.polyfit(knots, values[:, j], 2), frames) for j in range(2)], axis=1)
+        else:
+            expected = cubic(frames)
+        worst[horizon] = float(np.abs(out[:, :2] - expected).max())
+    print("largest difference to the chord / parabola / cubic by horizon:", {h: f"{w:.1e}" for h, w in worst.items()})
+    assert max(worst.values()) < 1e-12
+
+
 def _report(path: Path, config: ResampleConfig) -> Path:
     payload = {"robot": {"action_dim": 3, "command_dims": [2], "state_dims": [0, 1, -1]}, "config": config.to_dict()}
     path.write_text(json.dumps(payload), encoding="utf-8")

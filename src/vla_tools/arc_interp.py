@@ -3,14 +3,15 @@
 Standalone on purpose: it imports nothing from the rest of vla_tools, so this one file can be copied to a
 serving machine. It runs the label builder's sampling backwards:
 
-    joints    PCHIP through the current pose at frame 0 and the points
+    joints    not-a-knot cubic spline through the current pose at frame 0 and the points (two knots: the
+              chord; three: the parabola through them)
     commands  the nearest point in time, re-binarised. The current state is not a knot: its command
               value is the previous command echoed back, and letting it decide the frames before the
               first point re-opens a gripper the model already closed whenever the echo lags
 
 Point k is placed at (offset + k * span / H) / rate frames after the observation, offset 0 for anchor
 "state" and 1 for "action". The execution rate is a deployment choice: at rate 1 a chunk that covers span
-recorded frames is executed over span frames, the recording's average pace; at rate r the same PCHIP
+recorded frames is executed over span frames, the recording's average pace; at rate r the same spline
 path is traversed r times faster. Under metric "time" at rate 1 the placement is exact; otherwise the
 timing differs from the recording, which for static tasks costs nothing but speed, measured by the label
 replay.
@@ -48,7 +49,7 @@ def to_frames(points: np.ndarray, current: np.ndarray, times: np.ndarray, comman
     out = np.zeros((len(frames), dim), dtype=np.float64)
     knots = np.concatenate([[0.0], times])
     values = np.concatenate([current[None, joints], points[:, joints]], axis=0)
-    out[:, joints] = scipy.interpolate.PchipInterpolator(knots, values, axis=0)(frames)
+    out[:, joints] = scipy.interpolate.CubicSpline(knots, values, axis=0, bc_type="not-a-knot")(frames)
     nearest = np.abs(frames[:, None] - times[None, :]).argmin(axis=1)
     out[:, commands] = np.round(points[nearest][:, commands])
     return out

@@ -122,7 +122,7 @@ Rebuild interpolant → `arc_interp.py`; label point joints → `arc_core.py`.
 
 ## Phase 1
 
-Phase Status: active
+Phase Status: completed
 
 Round: 1
 
@@ -153,7 +153,7 @@ target j equals the rate-1 target 2j+1.
 
 ## Phase 2
 
-Phase Status: pending
+Phase Status: active
 
 Round: 1
 
