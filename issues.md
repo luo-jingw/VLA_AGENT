@@ -131,3 +131,41 @@ Count, on the synthetic chain and LIBERO, how many inferences the replay spends 
 point reaches the final target, before and after such a stop rule.
 
 ## Resolution
+
+# ISSUE-004
+
+Status: Open
+
+Area: `label_replay` re-observation at small execution lengths
+
+## Observation
+
+The re-observation searches recorded frames strictly after the last observation, so every inference
+advances the observation by at least one recorded frame. When the executed targets cover less than one
+recorded frame of path (small e, rate 1, slow segments or keyframe windows of geometric labels), the
+observation runs ahead of the executed pose.
+
+## Impact
+
+LIBERO, `curvature-s40-d2`, rate 1: at e = 1 the replay executes 6980 frames for 7758 recorded, with path
+deviation max 2.41 and keyframe position max 5.04 path steps, against max 0.45–0.77 and 1.14–3.07 for
+e = 2–40; at rate 2, e = 1 gives max 0.51 and 1.93. The e = 1, rate 1 row overstates the error of the
+labels.
+
+## Evidence
+
+`FTpi05/runs/libero_alphabet_soup/replay_curvature-s40-d2.json` and `replay_curvature-s40-d2_r2.json`
+(2026-10-13).
+
+## Hypotheses
+
+Allowing the observation to stay on the current frame when the nearest recorded state is the current one
+(search from t instead of t + 1, keeping the forward tie-break) removes the forced advance; a stall guard
+is then needed so the loop still ends.
+
+## Next Experiment
+
+Replay e = 1 and 2 at rates 1 and 2 with the search starting at t, and compare executed frames and path
+deviation with the current rows.
+
+## Resolution

@@ -191,7 +191,7 @@ rate 2 observes every 2e frames with path deviation 0; executed frames printed f
 
 ## Phase 3
 
-Phase Status: active
+Phase Status: completed
 
 Round: 3
 
@@ -222,7 +222,7 @@ Phases 1, 2.
 
 ## Phase 4
 
-Phase Status: pending
+Phase Status: active
 
 Round: 4
 
