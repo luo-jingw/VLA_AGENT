@@ -5,8 +5,17 @@ Progress is a monotone integral with two regimes:
     ds(i) = | step * event_density / frames_per_step     i inside a keyframe window and event_density > 0
             | max(raw(i) - deadzone, 0)                   everywhere else
 
-raw(i) is 1 (time), ||dq|| (arc) or |d2q|^(1/3) (curvature) over the joint dims; `step` makes one
-point per `span_frames / action_horizon` frames on average outside the respaced windows.
+raw(i) is the progress of the segment from frame i to i+1, measured on the joint dims q:
+
+    time               1
+    curvature          max(c(i), curvature_floor * c_mean) * l(i), with l(i) = ||q[i+1] - q[i]||,
+                       c(i) = ((kappa[i] + kappa[i+1]) / 2)^(1/3), kappa the geometric curvature of the joint
+                       path (path_curvature, chords of curvature_window median per-frame steps), and c_mean
+                       the l-weighted mean of c over the episode. Progress per unit path length depends on the
+                       path's shape only, not on the teleop speed; still frames add nothing
+    second_difference  ||q[i+1] - 2 q[i] + q[i-1]||^(1/3), the acceleration per frame; depends on teleop speed
+
+`step` makes one point per `span_frames / action_horizon` frames on average outside the respaced windows.
 
 Frame t's label is H points at progress a(t) + k*step, k = 1..H, mapped back to fractional action
 indices and sampled from the recording: PCHIP on joints, nearest frame on commands. a(t) is the anchor:
@@ -17,10 +26,13 @@ Index convention: actions[i] is the target for frame i+1, i.e. state[i+1].
 from __future__ import annotations
 
 import dataclasses
+import typing
 
 import numpy as np
 import scipy.interpolate
 
+from vla_tools import path_curvature
+from vla_tools.resample_config import Metric
 from vla_tools.resample_config import ResampleConfig
 from vla_tools.robot_spec import RobotSpec
 
@@ -51,14 +63,28 @@ def command_edges(actions: np.ndarray, dim: int) -> list[int]:
     return (np.flatnonzero(np.diff(on.astype(np.int8)) != 0) + 1).tolist()
 
 
+def _curvature_metric(q: np.ndarray, config: ResampleConfig) -> np.ndarray:
+    length = np.linalg.norm(np.diff(q, axis=0), axis=1)
+    moving = length > 0.0
+    if not moving.any():
+        return np.zeros(len(length))  # no motion: progress_curve falls back to time
+    step = float(np.median(length[moving]))
+    kappa = path_curvature.curvature(q, config.curvature_window * step)
+    c = np.cbrt((kappa[:-1] + kappa[1:]) / 2.0)
+    c_mean = float((c * length).sum() / length.sum())
+    return np.maximum(c, config.curvature_floor * c_mean) * length
+
+
 def _raw_metric(actions: np.ndarray, spec: RobotSpec, config: ResampleConfig) -> np.ndarray:
     q = actions[:, list(spec.joint_dims)].astype(np.float64)
     if config.metric == "time":
         return np.ones(len(q) - 1)
-    if config.metric == "arc":
-        return np.linalg.norm(np.diff(q, axis=0), axis=1)
-    second = np.linalg.norm(np.diff(q, n=2, axis=0), axis=1)
-    return np.power(np.concatenate([second[:1], second]) + 1e-12, 1.0 / 3.0)
+    if config.metric == "curvature":
+        return _curvature_metric(q, config)
+    if config.metric == "second_difference":
+        second = np.linalg.norm(np.diff(q, n=2, axis=0), axis=1)
+        return np.power(np.concatenate([second[:1], second]) + 1e-12, 1.0 / 3.0)
+    raise ValueError(f"unknown metric {config.metric!r}; allowed: {', '.join(typing.get_args(Metric))}")
 
 
 def progress_curve(
