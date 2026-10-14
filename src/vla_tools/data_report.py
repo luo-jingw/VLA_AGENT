@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 
 from vla_tools.decision_log import load_decisions
@@ -231,30 +232,35 @@ class DataReport:
 
     def label_section(self) -> list[str]:
         s = self.sweep
-        step = s["frame_of_motion_rad"]
+        step = s["path_step_rad"]
         cells = {
             (c["config"]["metric"], c["config"]["span_frames"], c["config"]["event_density"]): c for c in s["cells"]
         }
         rows = []
         for span, config in s["shortlist"].items():
             c = cells[(config["metric"], config["span_frames"], config["event_density"])]
-            rows.append([span, config["metric"], config["event_density"], f"{c['head_err'][0] / step:.2f}",
-                         f"{c['full_err'][0] / step:.2f} / {c['full_err'][1] / step:.2f}", f"{c['edge_shift'][0]:+.1f}",
-                         f"{c['jump_steps']:.1f}", f"{c['pad_fraction']:.1%}"])  # fmt: skip
+            kf = "—" if math.isnan(c["kf_position"][0]) else f"{c['kf_position'][0] / step:.2f}"
+            rows.append([span, config["metric"], config["event_density"], f"{c['path_head'][0] / step:.2f}",
+                         f"{c['path_full'][0] / step:.2f} / {c['path_full'][1] / step:.2f}", kf,
+                         f"{c['speed_ratio'][0]:.2f} / {c['speed_ratio'][1]:.2f}", f"{c['jump_steps']:.1f}",
+                         f"{c['pad_fraction']:.1%}"])  # fmt: skip
         horizon = next(iter(s["cells"]))["config"]["action_horizon"]
         lines = [
             "## 动作标签",
             "",
-            f"候选（`sweep`，H = {horizon}，执行 {s['head']} 帧后重新请求；误差单位为一帧运动量 {step:.4g}）：",
+            f"候选（`sweep`，H = {horizon}，执行 {s['head']} 帧后重新请求）：按服务端执行的目标与录制轨迹的几何差异打分，"
+            f"不按逐帧时间对齐；距离单位为路径步长 {step:.4g} rad（录制中相邻帧关节位置欧氏距离的中位数），"
+            f"速度比为执行目标的最大单帧步长除以录制步长的 p95（{s['reference_step_rad']:.4g} rad）：",
             "",
             *_table(
                 [
                     "span",
                     "metric",
                     "density",
-                    "前段误差 中位",
-                    "整段误差 中位 / p90",
-                    "指令偏移（帧）",
+                    "前段路径偏差 中位",
+                    "整段路径偏差 中位 / p90",
+                    "关键帧位置误差 中位",
+                    "速度比 中位 / p95",
                     "首点跳变（步）",
                     "补帧点",
                 ],
