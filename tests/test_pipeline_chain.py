@@ -209,7 +209,12 @@ def test_closed_loop_replay_of_frame_labels_is_the_recording(chain: ChainRun) ->
 def test_closed_loop_observations_move_forward_for_progress_labels(chain: ChainRun) -> None:
     episodes, record = _replay_inputs(chain)
     config = ResampleConfig(
-        metric="curvature", span_frames=SPAN, action_horizon=HORIZON, event_density=1.0, anchor="state"
+        metric="curvature",
+        span_frames=SPAN,
+        action_horizon=HORIZON,
+        event_density=1.0,
+        anchor="state",
+        curvature_length=0.1,
     )
     counts = []
     for e in episodes:

@@ -61,6 +61,11 @@ from vla_tools.path_metrics import step_statistics
 from vla_tools.resample_config import ResampleConfig
 from vla_tools.robot_spec import RobotSpec
 
+# Default curvature chord length in path steps: the dataset's typical per-frame motion sets the scale
+# below which the recorded path carries no shape, and one fixed length keeps the curvature independent of
+# each episode's teleop speed.
+CURVATURE_LENGTH_STEPS = 4.0
+
 PATH_MARGIN_FRAMES = 3  # recorded frames past the last label point that still belong to the compared path
 
 
@@ -269,6 +274,8 @@ def main() -> None:
     parser.add_argument("--spans", nargs="+", type=int, required=True)
     parser.add_argument("--event-density", nargs="+", type=float, default=[0.0])
     parser.add_argument("--anchor", choices=["state", "action"], default="state")
+    parser.add_argument("--curvature-length", type=float, default=None,
+                        help=f"curvature chord length (rad); default {CURVATURE_LENGTH_STEPS:g} path steps")  # fmt: skip
     parser.add_argument("--head", type=int, default=6, help="frames executed before replanning")
     parser.add_argument("--stride", type=int, default=2, help="inference-frame subsampling")
     parser.add_argument("--max-head", type=float, default=1.0, help="path steps")
@@ -286,9 +293,12 @@ def main() -> None:
     step = median_step(episodes, spec)
     scale = PathScale.from_episodes(episodes, spec)
     bounds = Bounds(args.max_head, args.max_kf, args.max_speed_ratio, args.max_jump, args.max_pad)
+    curvature_length = (
+        args.curvature_length if args.curvature_length is not None else CURVATURE_LENGTH_STEPS * scale.path_step
+    )
     print(
         f"{len(episodes)} episodes, horizon {args.horizon}, head {args.head}, path step {scale.path_step:.4f} rad, "
-        f"reference step (p95) {scale.reference_step:.4f} rad"
+        f"reference step (p95) {scale.reference_step:.4f} rad, curvature chord length {curvature_length:.4f} rad"
     )
     print("path head / path full / kf pos: median/p90 in path steps; speed: median/p95 of the reference step")
     header = (
@@ -308,6 +318,7 @@ def main() -> None:
                     action_horizon=args.horizon,
                     event_density=density,
                     anchor=args.anchor,
+                    curvature_length=curvature_length if metric == "curvature" else None,
                 )
                 cell = evaluate(episodes, spec, record, config, args.head, args.stride, scale)
                 ok = admissible(cell, bounds, scale.path_step)

@@ -84,7 +84,7 @@ def test_rate_traverses_the_same_path_faster(tmp_path: Path) -> None:
     points[:, :2] = np.cumsum(rng.normal(0.0, 0.05, (10, 2)), axis=0)
     points[6:, 2] = 1.0
     state = np.array([0.01, -0.02, 0.0])
-    config = ResampleConfig(metric="curvature", span_frames=20, action_horizon=10, anchor="state")
+    config = ResampleConfig(metric="curvature", span_frames=20, action_horizon=10, anchor="state", curvature_length=0.1)
     report = _report(tmp_path / "arc_resample.json", config)
     slow = ArcInterpolator.from_report(report, 1.0)(points, state)
     fast = ArcInterpolator.from_report(report, 2.0)(points, state)
