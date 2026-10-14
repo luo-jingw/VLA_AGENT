@@ -88,3 +88,46 @@ Recompute `reach`, `pad` and the replay's executed/recorded ratio with the step 
 recorded rows only, on the LIBERO run and the synthetic chain.
 
 ## Resolution
+
+# ISSUE-003
+
+Status: Open
+
+Area: Action labels (geometric metrics with `event_density` 0), `label_replay` re-observation
+
+## Observation
+
+Under `curvature` (and `second_difference`), frames where the arm is exactly still add no progress. A
+command edge issued during such a stretch with `event_density` 0 lies on a progress plateau: no label
+point maps inside it, padded points clamp to the frame before the plateau, and the command never appears
+in any label. In the closed-loop replay the executed command then never switches, the re-observation
+window ends at `ceil(last label frame) + 3`, which no longer moves, and each further inference advances
+the observation by one frame while executing `e` targets.
+
+## Impact
+
+The sweep rejects such cells (not every edge kept), so selection is unaffected; `label_replay` reports
+the edge as missed but its inference and executed-frame counts are inflated at the episode end. LIBERO is
+not affected: its demonstrations have no exactly still frames (110/110 edges kept in every cell,
+`kf_missed` 0 in both replays).
+
+## Evidence
+
+Deck synthetic recordings (`FTpi05/reports/action-sparsification-src/deck/synthetic.js`, still frames at
+the grasp and the release), `curvature` span 40 density 0: the release edge is missed; observed frames at
+the end of recording A are 129, 130, 131, 132 (e = 10: 22 inferences, 220 executed frames for 134
+recorded; e = 40: 9 inferences, 360 frames). With density 1 or 2 nothing is missed (e = 40: 5
+inferences, 200 frames). Python `label_replay.closed_loop` and the JavaScript port give the same
+observed frames.
+
+## Hypotheses
+
+The replay could stop once every remaining label is padded and the executed pose equals the final
+target; the label side is already handled by `event_density` > 0 around command edges.
+
+## Next Experiment
+
+Count, on the synthetic chain and LIBERO, how many inferences the replay spends after the last label
+point reaches the final target, before and after such a stop rule.
+
+## Resolution
