@@ -290,7 +290,7 @@ suites pass.
 
 ## Phase 3
 
-Phase Status: active
+Phase Status: completed
 
 Round: 3
 
@@ -321,7 +321,7 @@ Phase 2.
 
 ## Phase 4
 
-Phase Status: pending
+Phase Status: active
 
 Round: 4
 
