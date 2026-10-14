@@ -338,7 +338,7 @@ Phases 1–4.
 
 ## Phase 6
 
-Phase Status: active
+Phase Status: completed
 
 Round: 4
 
@@ -371,7 +371,7 @@ time-indexed admission.
 
 ## Phase 7
 
-Phase Status: pending
+Phase Status: active
 
 Round: 4
 
