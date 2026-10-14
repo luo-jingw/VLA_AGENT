@@ -1483,8 +1483,9 @@ if (typeof module !== 'undefined') module.exports = PandaChain;
 </script>
 <script>
 /* Action labels, deployment and closed-loop replay: a line-by-line port of VLA_AGENT's
-     path_curvature.curvature, trajectory_curve (the rebuilt curve), arc_core (progress_curve, invert,
-     chunks with each frame's own window), arc_interp (point_frames, to_frames),
+     path_curvature.curvature, arc_core (progress_curve, invert, chunks with each frame's own window,
+     label joints linear between recorded rows), arc_interp (point_frames, to_frames: the rebuild from
+     the current pose and the H points),
      path_metrics.distance_to_path, sweep.evaluate (path and keyframe scores) and label_replay
      (closed_loop, replay).
    Plain math, no DOM, so the same file runs in the page and in node for check_core.py.
