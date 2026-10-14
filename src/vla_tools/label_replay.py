@@ -105,7 +105,7 @@ def closed_loop(
     joints, commands = list(spec.joint_dims), list(spec.command_dims)
     actions = e.actions
     poses = np.stack([spec.current_pose(s) for s in e.states])
-    _, ch = arc_core.chunks(actions, spec, config, record.windows(e.index))
+    _, ch = arc_core.chunks(actions, spec, config, record.windows(e.index), e.real)
     times = point_frames(config.span_frames, config.action_horizon, config.anchor)
     last_frame = e.real - 1
     t, pose = 0, poses[0]

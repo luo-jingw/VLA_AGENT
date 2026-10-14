@@ -50,7 +50,7 @@ def test_from_report_reproduces_the_recording_at_the_point_frames(tmp_path: Path
     actions[25:45, 2] = 1.0
     states = np.concatenate([actions[:1], actions[:-1]])
     config = ResampleConfig(metric="time", span_frames=20, action_horizon=10, anchor="state")
-    _, chunks = arc_core.chunks(actions, SPEC, config, windows=[])
+    _, chunks = arc_core.chunks(actions, SPEC, config, windows=[], recorded=len(actions))
     interp = ArcInterpolator.from_report(_report(tmp_path / "arc_resample.json", config))
     at_points = (interp.frames() - 1).astype(int)
     worst = 0.0

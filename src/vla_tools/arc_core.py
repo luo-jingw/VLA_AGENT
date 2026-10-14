@@ -15,7 +15,9 @@ raw(i) is the progress of the segment from frame i to i+1, measured on the joint
                        path's shape only, not on the teleop speed; still frames add nothing
     second_difference  ||q[i+1] - 2 q[i] + q[i-1]||^(1/3), the acceleration per frame; depends on teleop speed
 
-`step` makes one point per `span_frames / action_horizon` frames on average outside the respaced windows.
+`step` makes one point per `span_frames / action_horizon` frames on average over the recorded rows outside the
+respaced windows: the segments between recorded rows set it, so end-padding rows, which follow the recorded
+ones and add no progress under a geometric metric, do not stretch a span.
 
 Frame t's label is H points at progress a(t) + k*step, k = 1..H, mapped back to fractional action
 indices and sampled from the recording: PCHIP on joints, nearest frame on commands. a(t) is the anchor:
@@ -88,8 +90,11 @@ def _raw_metric(actions: np.ndarray, spec: RobotSpec, config: ResampleConfig) ->
 
 
 def progress_curve(
-    actions: np.ndarray, spec: RobotSpec, config: ResampleConfig, windows: list[tuple[int, int]]
+    actions: np.ndarray, spec: RobotSpec, config: ResampleConfig, windows: list[tuple[int, int]], recorded: int
 ) -> ProgressCurve:
+    """`recorded` is the number of recorded rows of `actions`; the rows after them are end padding."""
+    if not 1 <= recorded <= len(actions):
+        raise ValueError(f"recorded must be in 1..{len(actions)}, got {recorded}")
     raw = _raw_metric(actions, spec, config)
     n = len(raw)
     mask = np.zeros(n, dtype=bool)
@@ -99,8 +104,9 @@ def progress_curve(
 
     free = np.maximum(raw - config.deadzone, 0.0)
     free[respaced] = 0.0
-    n_free = n - int(respaced.sum())
-    total_free = float(free.sum())
+    between_recorded = np.arange(n) < recorded - 1
+    n_free = int((between_recorded & ~respaced).sum())
+    total_free = float(free[between_recorded].sum())
     if total_free <= 0.0 and n_free > 0:
         free[~respaced] = 1.0  # a path with no measurable progress falls back to time
         total_free = float(n_free)
@@ -129,9 +135,9 @@ def sample(actions: np.ndarray, spec: RobotSpec, frames: np.ndarray) -> np.ndarr
 
 
 def chunks(
-    actions: np.ndarray, spec: RobotSpec, config: ResampleConfig, windows: list[tuple[int, int]]
+    actions: np.ndarray, spec: RobotSpec, config: ResampleConfig, windows: list[tuple[int, int]], recorded: int
 ) -> tuple[ProgressCurve, Chunks]:
-    curve = progress_curve(actions, spec, config, windows)
+    curve = progress_curve(actions, spec, config, windows, recorded)
     n, horizon = len(actions), config.action_horizon
     first = curve.s[0] - (curve.ds[0] if len(curve.ds) else 0.0)
     anchor = curve.s if config.anchor == "action" else np.concatenate([[first], curve.s[:-1]])

@@ -67,7 +67,7 @@ def main() -> None:
     for e in load_episodes(args.dataset, spec, only=sorted(record.episodes)):
         if e.index in excluded:
             continue
-        _, ch = arc_core.chunks(e.actions, spec, config, record.windows(e.index))
+        _, ch = arc_core.chunks(e.actions, spec, config, record.windows(e.index), e.real)
         reach = ch.frames[:, -1] - np.arange(len(e.actions)) + 1.0
         unpadded = ~ch.padded.any(axis=1)
         stats[e.index] = EpisodeStats(

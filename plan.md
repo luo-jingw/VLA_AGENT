@@ -126,7 +126,7 @@ Step: `arc_core.py`. Deployed rate: `arc_interp.py`. LIBERO artifacts: `FTpi05/r
 
 ## Phase 1
 
-Phase Status: active
+Phase Status: completed
 
 Round: 1
 
@@ -159,7 +159,7 @@ of `curvature` labels on a synthetic episode printed against span.
 
 ## Phase 2
 
-Phase Status: pending
+Phase Status: active
 
 Round: 2
 

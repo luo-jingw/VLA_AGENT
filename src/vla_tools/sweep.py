@@ -177,7 +177,7 @@ def evaluate(
     for e in episodes:
         actions = e.actions
         poses = np.stack([spec.current_pose(s) for s in e.states])
-        _, ch = arc_core.chunks(actions, spec, config, record.windows(e.index))
+        _, ch = arc_core.chunks(actions, spec, config, record.windows(e.index), e.real)
         edges = {dim: arc_core.command_edges(actions, dim) for dim in spec.command_dims}
         pad.append(float(ch.padded.mean()))
         jumps.append(float(np.median(np.linalg.norm(ch.points[:, 0, joints] - poses[:, joints], axis=1))))

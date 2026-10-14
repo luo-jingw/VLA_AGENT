@@ -33,7 +33,7 @@ def _expected_baseline(actions: np.ndarray, offset: int) -> np.ndarray:
 def test_time_with_span_equal_to_horizon_is_the_recorded_chunk(anchor: str, offset: int) -> None:
     actions = _actions()
     config = ResampleConfig(metric="time", span_frames=H, action_horizon=H, anchor=anchor)
-    _, chunks = arc_core.chunks(actions, SPEC, config, windows=[])
+    _, chunks = arc_core.chunks(actions, SPEC, config, windows=[], recorded=len(actions))
     difference = float(np.abs(chunks.points - _expected_baseline(actions, offset)).max())
     print(f"anchor {anchor}: max difference to actions[t+{offset}:t+{offset}+H] {difference:.1e}")
     assert difference < 1e-9
@@ -43,7 +43,7 @@ def test_padding_and_window_weights() -> None:
     actions = _actions()
     config = ResampleConfig(metric="time", span_frames=H, action_horizon=H, key_weight=3.0, pad_weight=0.5,
                             anchor="state")  # fmt: skip
-    _, chunks = arc_core.chunks(actions, SPEC, config, windows=[(10, 15)])
+    _, chunks = arc_core.chunks(actions, SPEC, config, windows=[(10, 15)], recorded=len(actions))
     n = len(actions)
     target = np.arange(n)[:, None] + np.arange(H)[None, :]
     np.testing.assert_array_equal(chunks.padded, target > n - 1)
@@ -53,7 +53,7 @@ def test_padding_and_window_weights() -> None:
 
 def test_event_density_respaces_progress_inside_windows() -> None:
     config = ResampleConfig(metric="time", span_frames=2 * H, action_horizon=H, event_density=2.0, anchor="state")
-    curve = arc_core.progress_curve(_actions(), SPEC, config, windows=[(10, 15)])
+    curve = arc_core.progress_curve(_actions(), SPEC, config, windows=[(10, 15)], recorded=40)
     np.testing.assert_allclose(curve.ds[10:15], 2.0 * curve.ds[0])
     np.testing.assert_allclose(np.delete(curve.ds, range(10, 15)), curve.ds[0])
 
@@ -62,7 +62,7 @@ def test_event_density_respaces_progress_inside_windows() -> None:
 def test_progress_metrics_give_monotone_frames_and_binary_commands(metric: str) -> None:
     actions = _actions()
     config = ResampleConfig(metric=metric, span_frames=2 * H, action_horizon=H, anchor="state")
-    curve, chunks = arc_core.chunks(actions, SPEC, config, windows=[])
+    curve, chunks = arc_core.chunks(actions, SPEC, config, windows=[], recorded=len(actions))
     assert (np.diff(curve.s) >= 0).all()
     assert (np.diff(chunks.frames, axis=1) >= 0).all()
     assert chunks.frames.min() >= 0.0 and chunks.frames.max() <= len(actions) - 1
@@ -125,7 +125,7 @@ def test_curvature_progress_per_unit_length_is_independent_of_teleop_speed() -> 
     progress = {}
     for name, sigma in _speed_profiles().items():
         q = _bent_path(sigma)
-        curve = arc_core.progress_curve(_record(q), SPEC, config, windows=[])
+        curve = arc_core.progress_curve(_record(q), SPEC, config, windows=[], recorded=len(q))
         distinct, first = np.unique(sigma, return_index=True)
         progress[name] = np.interp(grid, distinct, (curve.s / curve.total)[first])
         length = np.linalg.norm(np.diff(q, axis=0), axis=1)
@@ -186,4 +186,38 @@ def test_arc_metric_is_refused() -> None:
         ResampleConfig.from_dict({"metric": "arc", "span_frames": 20, "action_horizon": 10, "anchor": "state"})
     config = ResampleConfig(metric="arc", span_frames=20, action_horizon=10, anchor="state")  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="arc"):
-        arc_core.progress_curve(_actions(), SPEC, config, windows=[])
+        arc_core.progress_curve(_actions(), SPEC, config, windows=[], recorded=40)
+
+
+def _padded(actions: np.ndarray, rows: int) -> np.ndarray:
+    """End padding as episode_timing writes it: rows holding the last recorded target."""
+    return np.concatenate([actions, np.repeat(actions[-1:], rows, axis=0)])
+
+
+@pytest.mark.parametrize("metric", ["time", "curvature", "second_difference"])
+def test_end_padding_does_not_change_labels_of_recorded_frames(metric: str) -> None:
+    sigma = _speed_profiles()["accelerating, slowing, paused"]
+    recorded = _record(_bent_path(sigma))
+    config = ResampleConfig(metric=metric, span_frames=40, action_horizon=H, event_density=2.0, anchor="state")
+    windows = [(300, 320)]
+    results = {}
+    for rows in (10, 40):
+        actions = _padded(recorded, rows)
+        results[rows] = arc_core.chunks(actions, SPEC, config, windows, recorded=len(recorded))
+    (c10, k10), (c40, k40) = results[10], results[40]
+    n = len(recorded)
+    clean = ~k40.padded[:n].any(axis=1)
+    progress = float(np.abs(c10.s[:n] - c40.s[:n]).max())
+    points = float(np.abs(k10.points[:n][clean] - k40.points[:n][clean]).max())
+    reach = np.median(k40.frames[:n][clean, -1] - np.arange(n)[clean] + 1)
+    print(f"{metric}: step {c10.step:.6f} vs {c40.step:.6f}, progress over recorded rows differs by {progress:.1e}, "
+          f"labels of {int(clean.sum())} unpadded frames differ by {points:.1e}; median reach {reach:.1f} frames for span 40")  # fmt: skip
+    assert c10.step == c40.step
+    assert progress == 0.0
+    assert points <= 1e-9  # the strict-progress drift and PCHIP end slopes see the padding rows
+
+
+def test_recorded_rows_must_be_within_the_episode() -> None:
+    config = ResampleConfig(metric="time", span_frames=H, action_horizon=H, anchor="state")
+    with pytest.raises(ValueError, match="recorded"):
+        arc_core.chunks(_actions(), SPEC, config, windows=[], recorded=41)
