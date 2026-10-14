@@ -1,6 +1,6 @@
 # Plan
 
-Plan Status: approved
+Plan Status: completed
 
 # Problem
 
@@ -249,7 +249,7 @@ No text describes the every-row curve or PCHIP as the rebuild; the tables match 
 
 ## Phase 5
 
-Phase Status: active
+Phase Status: completed
 
 Round: 3
 
