@@ -76,7 +76,10 @@ websocket_policy_server.WebsocketPolicyServer(policy=policy, host="0.0.0.0", por
                                               metadata=policy.metadata).serve_forever()
 ```
 
-`examples/ur3_dual_arm/run.py serve` is a complete instance (`vla_openpi.launch.serve`).
+`from_report(path, rate)` takes the execution rate, a deployment choice that `arc_resample.json` does not
+record: point k is placed at (offset + k·span/H)/rate frames, so rate 1 executes a chunk at the recording's
+average pace and rate r traverses the same interpolated path r times faster (⌊span/rate⌋ targets per chunk).
+`examples/ur3_dual_arm/run.py serve --rate <r>` is a complete instance (`vla_openpi.launch.serve(..., rate)`).
 
 ## Verified
 

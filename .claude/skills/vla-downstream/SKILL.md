@@ -24,14 +24,15 @@ description: 训练就绪数据集的下游使用：接入 openpi 训练、在�
 
 ## 评估
 
-- `label_replay`：标签本身经服务端插值、闭环执行后的路径偏差与关键帧位置误差，是任何模型都低不过的下限。
+- `label_replay`：标签本身经服务端插值、在部署倍速下闭环执行后的路径偏差、关键帧位置误差与速度比，是任何模型都低不过的下限。
 - `replay_eval`：在留出集上开环回放，按 points（模型点与标签点之差）、head、stitched（拼接后的逐帧误差）、edges（指令时机）、static、hold（补帧行上的保持误差）、ms 报告；`coverage_eval` 把误差与"离训练数据多远"对照。
-- 闭环试验用同一协议：相同的初始摆放、次数、执行长度，成功率附置信区间，失败按关键帧阶段归类。
+- 闭环试验用同一协议：相同的初始摆放、次数、执行长度和执行倍速，成功率附置信区间，失败按关键帧阶段归类。
 - 训练 loss 不能跨标签定义比较；训练集上的回放只说明链路可用。
 
 ## 交付
 
-- 服务端把模型输出的点插值成逐帧目标：`vla_tools/arc_interp.py` 可单独拷贝，参数用 `ArcInterpolator.from_report(<ckpt>/assets/<asset_id>/arc_resample.json)` 读取；机器人执行前几帧后重新请求。
+- 服务端把模型输出的点插值成逐帧目标：`vla_tools/arc_interp.py` 可单独拷贝，参数用 `ArcInterpolator.from_report(<ckpt>/assets/<asset_id>/arc_resample.json, rate)` 读取；机器人执行前几帧后重新请求。
+- 执行倍速 r 是部署参数（默认 1），不写入 `arc_resample.json`：`vla_openpi.launch.serve(config, checkpoint, port, rate)`，示例 `examples/ur3_dual_arm/run.py serve --rate <r>`。r 只改变走完同一条插值路径用的帧数；先用 `label_replay --rate <r>` 看速度比是否在机器人的关节速度上限之内，执行长度不超过 span / r。
 - 推理配置与训练一致：模型配置、分位数归一化、差分掩码、观测键映射、checkpoint 中的 norm stats。
 - LoRA 训练的模型转 PyTorch 用 `lora_to_pytorch`：先把适配器合并进主权重，注意力输出投影的 `lora_b` 要在 head 维上求和；转换后用 `policy_parity` 与 JAX 在同观测、同噪声下比较。
 - 上传模型仓库前确认可见性，凭据按 `PROJECT.md`；上传后比对文件大小，大文件再比对校验和。

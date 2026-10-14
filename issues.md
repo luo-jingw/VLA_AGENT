@@ -52,42 +52,40 @@ moves a span-40 label point by ≈ 0.6 frames; whether that matters to a trained
 
 # ISSUE-002
 
-Status: Open
+Status: Resolved
 
 Area: Action labels (`arc_core.progress_curve` step)
 
 ## Observation
 
-`step` divides the total progress by every row of the episode, including end-padding rows and still
-frames. Under `curvature` and `second_difference` those rows add no progress, so a span of S frames
-reaches fewer recorded frames than S, while the server still plays the H points back over S frames: the
-executed motion is slower than the recording, and every label taken on a padding row counts as padded.
+The step divided the total progress by every row of the episode, end-padding rows included. Under
+`curvature` and `second_difference` padding rows add no progress, so a span of S reached fewer recorded
+frames than S while the server still played the H points back over S frames.
 
 ## Impact
 
-LIBERO run (40 padding rows on 135–195 recorded rows): `curvature` span 40 reaches 26.5–30 recorded
-frames (`time` span 40: 34–40); the closed-loop replay of `curvature-s40-d2` executes 11,218–12,240
-frames for 7,758 recorded (1.45–1.58×), with speed ratio median 0.70–0.82 of the reference step; the
-`pad` column is 22–32% for the geometric metrics against 2–11% for `time`, of which ≈ 21 percentage points are
-labels on padding rows. For static tasks the slower execution costs cycle time, not accuracy.
+LIBERO, `curvature` span 40 density 2: reach median 26.5 recorded frames; the closed-loop replay executed
+1.45–1.58× the recorded frames.
 
 ## Evidence
 
-`FTpi05/runs/libero_alphabet_soup/sweep.json` (`reach`, `pad`), `replay_curvature-s40-d2.json`
-(`executed_frames` vs `recorded_frames`, `speed_ratio`).
+`FTpi05/runs/libero_alphabet_soup/sweep.json` and `replay_curvature-s40-d2.json` before the change
+(git history of `docs/validation.md`).
 
 ## Hypotheses
 
-Normalizing `step` over recorded, moving rows only (padding rows and still frames excluded) makes a
-span of S reach S recorded frames on average under every metric, and leaves padding rows' labels at
-the final pose as now.
-
 ## Next Experiment
 
-Recompute `reach`, `pad` and the replay's executed/recorded ratio with the step normalized over
-recorded rows only, on the LIBERO run and the synthetic chain.
-
 ## Resolution
+
+`arc_core.chunks` and `progress_curve` take the number of recorded rows and compute the step over the
+segments between them (commit e3f93cb); still frames inside the recording still count. One recording
+with 10 and 40 padding rows gives the same step, identical progress over the recorded rows and
+labels within 5.6e-11 on unpadded frames. LIBERO re-run: `curvature` span 40 reaches 37.6 (density 0)
+and 32.8 (density 2) recorded frames; at e = 10 the replay executes 1.03× (density 0) and 1.23×
+(density 2) the recorded frames, the remainder being the keyframe windows (`time` density 2: 1.21×). The
+`pad` column stays at 25–34% for geometric metrics: labels taken on padding rows hold the final target
+and count as padded.
 
 # ISSUE-003
 

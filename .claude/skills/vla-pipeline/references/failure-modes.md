@@ -25,11 +25,12 @@
 
 | 失效 | 现象 | 检测 | 处理 | 证据 |
 |---|---|---|---|---|
-| 进度度量丢掉时间 | 按逐帧时间对齐比较时，部署误差远大于按真实时间插值的误差，chunk 后段尤其大；路径本身仍然跟上 | `sweep.json` 中的 `full_err` 与 `true_err` 对比；几何列 path head / path full | 静态任务按几何打分（路径偏差、关键帧位置），时间对齐误差只作参考；需要按时间跟随的任务用 `time` | 按时间对齐，span 20：`second_difference` full 2.37 帧运动量（p90 5.97），`time` 0.46（p90 0.91）。LIBERO span 40 密度 2：`curvature` 按时间对齐 full 12.2 帧运动量，几何 path full 0.06 路径步长 |
-| 关键帧窗口密度 ≠ 1 | 窗口比周围稀时指令提前切换，比周围密时推后切换并在切换点停留更久 | `sweep.json` 的 `edge_shift`（时间）与 kf position（位置） | 静态任务按 kf position 判断；只想加大关键时刻的 loss 时用 `key_weight` | 按时间对齐：窗口内固定 3 点提前 2–3 帧，密度 2 推后 2 帧。LIBERO：密度 2 时 `curvature` 各 span 的 kf position 中位都比密度 0 低（span 40：0.30 vs 0.48 路径步长） |
+| 进度度量丢掉时间 | 按逐帧时间对齐比较时，部署误差远大于按真实时间插值的误差，chunk 后段尤其大；路径本身仍然跟上 | `sweep.json` 中的 `full_err` 与 `true_err` 对比；几何列 path head / path full | 静态任务按几何打分（路径偏差、关键帧位置），时间对齐误差只作参考；需要按时间跟随的任务用 `time` | 按时间对齐，span 20：`second_difference` full 2.37 帧运动量（p90 5.97），`time` 0.46（p90 0.91）。LIBERO span 40 密度 2：`curvature` 按时间对齐 full 6.65 帧运动量，几何 path full 0.10 路径步长 |
+| 关键帧窗口密度 ≠ 1 | 窗口比周围稀时指令提前切换，比周围密时推后切换并在切换点停留更久 | `sweep.json` 的 `edge_shift`（时间）与 kf position（位置） | 静态任务按 kf position 判断；只想加大关键时刻的 loss 时用 `key_weight` | 按时间对齐：窗口内固定 3 点提前 2–3 帧，密度 2 推后 2 帧。LIBERO：密度 2 时 `curvature` 各 span 的 kf position 中位都比密度 0 低（span 40：0.30 vs 0.65 路径步长） |
 | 锚点晚一帧 | span = H 的 `time` 标签不等于逐帧 chunk；首点跳变被低估 | 与 `action[t:t+H]` 比较 | `anchor="state"` | 旧锚点下首点距当前状态 3.1 倍步长，报告值为 2.2 倍 |
 | 按 reach 选择 | 因多 0.3 帧的 reach，选中误差 3 倍的格子 | 候选清单中同 span 对比 | 先取最大可接受 span，再取同 span 内误差最小者 | 按时间对齐，span 40：`second_difference` full 3.81，`time` 1.23 |
-| 补帧行稀释进度步长 | 几何度量下补帧行和静止帧不增加进度，span 覆盖的录制帧少于 span，服务端仍按 span 帧展开，执行比录制慢；补帧点比例偏高 | `sweep` 的 `reach` 与 span 对比；`label_replay` 的执行帧 / 录制帧 | 跨度量比较时看 reach；见 `issues.md` 的 ISSUE-002 | LIBERO：`curvature` span 40 的 reach 中位 26.5–30.2；闭环执行帧数是录制帧数的 1.45–1.58 倍；pad 22–32%，`time` 2–11% |
+| 补帧行稀释进度步长 | 步长若按全部行平均，几何度量下补帧行不增加进度却参与平均，span 覆盖的录制帧少于 span，服务端仍按 span 帧展开，执行比录制慢 | `sweep` 的 `reach` 与 span 对比；`label_replay` 的执行帧 / 录制帧 | `arc_core` 只按录制行之间的段计算步长（`chunks` 的 `recorded` 参数） | LIBERO `curvature` span 40 密度 2，e = 10：按全部行平均时 reach 中位 26.5、执行 1.49 倍录制帧，只按录制行平均时 32.8、1.23 倍；`pad` 列仍为 25–34%（`time` 2–11%），多出的部分是补帧行上取的标签 |
+| 执行长度很短时回放高估误差 | 回放每次重新观测至少前进一个录制帧；执行的目标不到一帧路径时，观测跑到执行位姿前面 | 同一配置 e = 1 与 e ≥ 2 的回放行对比 | e = 1、倍速 1 的行不作为标签误差的证据；见 `issues.md` 的 ISSUE-004 | LIBERO `curvature` span 40 密度 2，倍速 1：e = 1 路径偏差最大 2.41、关键帧位置最大 5.04 路径步长，e = 2–40 为 0.45–0.77 和 1.14–3.07；倍速 2、e = 1 为 0.51 和 1.93 |
 | loss 权重改变有效学习率 | 加权后平均权重 > 1，与基线比较时学习率不一致 | `build_labels` 输出的平均权重 | 比较时说明；或按平均权重调整学习率 | 窗口占 20%、权重 3 时平均权重 1.40 |
 
 ## 训练与评估
