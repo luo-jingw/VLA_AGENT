@@ -109,8 +109,10 @@ JavaScript port checked against the Python implementation.
   information; `jump_steps` and `--max-jump` are in path steps. Admission: `path_head` median ≤ 1
   path step (median Euclidean per-frame joint step), `kf_position` median ≤ 1 path step, all command
   edges kept, and optional `--max-speed-ratio`, `--max-jump`, `--max-pad`.
-- `label_replay` rows: `execute`, path deviation (median, p90, max), seams, keyframe position error,
-  inferences, executed frames vs recorded frames, frames held at each command edge.
+- `label_replay.closed_loop(episode, spec, record, config, execute) -> EpisodeReplay` (executed targets,
+  observed frames, distances, seams); `label_replay` rows (`ReplayRow`): `execute`, path deviation
+  (median, p90, max), seams, keyframe position error and missed command edges, frames held at each
+  command switch, speed ratio, inferences, executed frames vs recorded frames.
 - LIBERO conversion: `convert_libero.py <task.hdf5> <out_dir>` writes a LeRobot v2.1 dataset with
   `observation.state` = 7 joint angles + gripper command, `action` = next frame's joint angles + gripper
   command (−1/+1 mapped to 0/1), the two camera images, 20 fps.
@@ -235,7 +237,7 @@ synthetic chain the `time`, span = H cell scores 0 and selection follows the sta
 
 ## Phase 3
 
-Phase Status: active
+Phase Status: completed
 
 Round: 2
 
@@ -262,7 +264,7 @@ Phase 2 (`path_metrics.py`, `data_report.py`, `tests/test_pipeline_chain.py`).
 
 ### Observation
 
-Synthetic chain: `time`, span = H replay has 0 path deviation and ⌈frames / e⌉ inferences; observation
+Synthetic chain: `time`, span = H replay has 0 path deviation and ⌈(frames − 1) / e⌉ inferences; observation
 indices increase monotonically for every configuration; figures printed per execution length.
 
 ## Phase 4
@@ -302,7 +304,7 @@ from the recorded end-effector position is reported; one rendered frame inspecte
 
 ## Phase 5
 
-Phase Status: pending
+Phase Status: active
 
 Round: 3
 

@@ -273,10 +273,12 @@ class DataReport:
             report = _json(self._path(versions.train) / "meta" / "arc_resample.json")
             stats = list(report["episodes"].values())
             replay = _json(self.run_dir / f"replay_{name}.json")
-            r_step = replay["frame_of_motion_rad"]
+            r_step = replay["path_step_rad"]
             replay_rows = [
-                [r["execute"], f"{r['err'][0] / r_step:.2f} / {r['err'][1] / r_step:.2f}", f"{r['seam'][0]:.2f} / {r['seam'][1]:.2f}",
-                 f"{r['edge_shift'][0]:+.1f} [{r['edge_shift'][1]:+.0f}, {r['edge_shift'][2]:+.0f}]", r["edges_missed"]]
+                [r["execute"], f"{r['path'][0] / r_step:.2f} / {r['path'][1] / r_step:.2f} / {r['path'][2] / r_step:.2f}",
+                 f"{r['seam'][0]:.2f} / {r['seam'][1]:.2f}", f"{r['kf_position'][0] / r_step:.2f}", r["kf_missed"],
+                 f"{r['hold_frames'][0]:.0f}", f"{r['speed_ratio'][0]:.2f} / {r['speed_ratio'][1]:.2f}",
+                 r["inferences"], f"{r['executed_frames']} / {r['recorded_frames']}"]
                 for r in replay["rows"]
             ]  # fmt: skip
             lines += [
@@ -288,15 +290,19 @@ class DataReport:
                 f"{sum(x['window_fraction'] for x in stats) / len(stats):.1%}，平均 loss 权重 "
                 f"{sum(x['weight_mean'] for x in stats) / len(stats):.2f}。",
                 "",
-                "标签回放（按服务端的执行方式拼接；误差单位为一帧运动量）：",
+                "标签闭环回放（按服务端的执行方式插值，执行后在最近的录制帧重新观测；距离单位为路径步长）：",
                 "",
                 *_table(
                     [
                         "执行帧数",
-                        "误差 中位 / p90",
-                        "接缝 中位 / 最大（步）",
-                        "指令偏移 中位 [最小, 最大]",
+                        "路径偏差 中位 / p90 / 最大",
+                        "接缝 中位 / 最大",
+                        "关键帧位置",
                         "漏掉的指令",
+                        "指令处停留帧",
+                        "速度倍数 中位 / 最大",
+                        "推理次数",
+                        "执行帧 / 录制帧",
                     ],
                     replay_rows,
                 ),

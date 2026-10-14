@@ -17,6 +17,9 @@ from synthetic_dataset import SPEC
 from tool_runner import run_tool
 from vla_tools.arc_interp import ArcInterpolator
 from vla_tools.episodes import load_episodes
+from vla_tools.keyframe_record import KeyframeRecord
+from vla_tools.label_replay import closed_loop
+from vla_tools.resample_config import ResampleConfig
 
 JOINTS = list(SPEC.joint_dims)
 
@@ -181,10 +184,39 @@ def test_sweep_frame_baseline_is_exact_and_largest_admissible_span_is_selected(c
     assert sweep["selected"] == best["config"]
 
 
-def test_label_replay_reports_each_replan_interval(chain: ChainRun) -> None:
+def test_label_replay_reports_each_execution_length(chain: ChainRun) -> None:
     replay = _json(chain.run_dir / f"replay_time-s{SPAN}.json")
-    print([(r["execute"], r["err"], r["edges_missed"]) for r in replay["rows"]])
+    print([(r["execute"], r["path"], r["seam"], r["kf_position"], r["inferences"]) for r in replay["rows"]])
     assert [r["execute"] for r in replay["rows"]] == [4, 8]
+    assert all(r["inferences"] > 0 and r["executed_frames"] > 0 for r in replay["rows"])
+
+
+def _replay_inputs(chain: ChainRun) -> tuple[list, KeyframeRecord]:
+    record = KeyframeRecord.load(chain.keyframes)
+    return load_episodes(chain.timed, SPEC, only=sorted(record.episodes)), record
+
+
+def test_closed_loop_replay_of_frame_labels_is_the_recording(chain: ChainRun) -> None:
+    episodes, record = _replay_inputs(chain)
+    config = ResampleConfig(metric="time", span_frames=HORIZON, action_horizon=HORIZON, anchor="state")
+    execute = 4
+    for e in episodes:
+        run = closed_loop(e, SPEC, record, config, execute)
+        assert float(run.distances.max()) < 1e-9
+        assert run.observations == list(range(0, e.real - 1, execute))
+
+
+def test_closed_loop_observations_move_forward_for_progress_labels(chain: ChainRun) -> None:
+    episodes, record = _replay_inputs(chain)
+    config = ResampleConfig(
+        metric="curvature", span_frames=SPAN, action_horizon=HORIZON, event_density=1.0, anchor="state"
+    )
+    counts = []
+    for e in episodes:
+        run = closed_loop(e, SPEC, record, config, 8)
+        assert all(b > a for a, b in zip(run.observations, run.observations[1:], strict=False))
+        counts.append((len(run.observations), len(run.executed), e.real))
+    print("curvature span", SPAN, "execute 8: (inferences, executed frames, recorded frames) per episode", counts)
 
 
 def test_train_and_eval_label_datasets(chain: ChainRun) -> None:
