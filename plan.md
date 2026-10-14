@@ -1,84 +1,147 @@
 # Plan
 
-Plan Status: completed
+Plan Status: approved
 
 # Problem
 
 ## Current
 
-The server places label point k at offset + k·span/H frames after the observation
-(`arc_interp.point_frames`), so a chunk that covers about span recorded frames is executed over span
-control frames: on average the robot moves at the recording's pace and never faster. For static tasks
-timing along the path does not matter except stopping at keyframes, so the deployment pace is a free
-choice, but no tool exposes it.
+A teleoperated recording samples the joint path uniformly in time, so the recorded frames sit unevenly
+along the path. `arc_core` builds every observation frame's label from three things that are mixed
+together:
 
-The progress step (`arc_core.progress_curve`) divides the total progress by every row of the episode,
-end-padding rows included. Under `curvature` and `second_difference` those rows add no progress, so a
-span of S reaches fewer recorded frames than S (ISSUE-002). LIBERO run, span 40, e = 10, 50
-demonstrations: executed / recorded frames are 1.02× for `time` density 0, 1.29× for `curvature`
-density 0 (1.03× with the padding rows removed), 1.49× for `curvature` density 2 (1.23× without padding
-rows); density 2 slows `time` labels to 1.21× as well.
+- the continuous curve: PCHIP over the row index, i.e. parameterized by recorded time;
+- the curvature: chord angles between the raw recorded samples, with chords of `curvature_window` × the
+  episode's median per-frame step, a length that scales with the teleop speed (ISSUE-001: re-timing a
+  LIBERO demonstration to 2× moves the normalized progress by 1.6% median, 0.9% with an absolute window);
+- the point spacing: progress s accumulated as κ^(1/3) · chord length, and one step for the whole episode,
+  `step = (free progress over the recorded rows) × (span/H) ÷ (free segments)`; each frame starts at its own
+  s(t−1) and walks H steps of that shared size.
 
-The deck's robot page (page 6) offers a time / curvature switch that duplicates the left view's
-baseline, and cannot show a faster execution.
+Because the step is episode-wide, how far a frame's label reaches depends on the curvature of the entire
+episode, not on the stretch ahead of the frame. LIBERO, `curvature`, span 40, H 10, density 0, 5708 frames
+whose window fits in the recording: the 10th point reaches p05 30.1 / p50 37.9 / p95 45.3 recorded frames;
+a step computed from each frame's own 40 frames would be p05 0.86 / p50 1.06 / p95 1.28 times the episode
+step and would move points by p50 1.5 / p95 6.6 / max 28 frames. The same local motion gets different
+spacing in different episodes, and the end-padding dilution of ISSUE-002 came from the same average.
+
+The per-window rule exists in the G2 Orion 0.5 resampling package only as an experiment
+(`sliding_window.py`: 1.67 mm error / 1.78 mm replan jitter against 8.39 / 9.52 for a fixed global grid at
+span 100, H 50); its dataset builder uses the episode-wide step, as `arc_core` does.
 
 ## Problem
 
-1. Deployment pace is tied to the recording; there is no parameter to execute faster.
-2. Geometric labels are stretched by end padding (ISSUE-002).
-3. The robot page compares the wrong things.
+1. The curve representation is not chosen or validated on its own: its parameterization is recorded time,
+   and the curvature is estimated on raw samples with a speed-dependent chord length.
+2. Each frame's label must be the sparsification of that frame's own window of the curve, not a walk with
+   an episode-wide step.
 
 ## Goal
 
-- An execution rate r at deployment: point k at (offset + k·span/H) / r frames. Labels and training are
-  unchanged; the joint path executed is the same PCHIP curve, traversed r times faster.
-- The progress step normalized over recorded rows only: with no padding effect, `curvature` density 0
-  executes within a few percent of the recording at r = 1.
-- Page 6: left, teleop playback at 1×; right, closed-loop execution of geometric (`curvature`) labels
-  with span, execution rate, execution length and keyframe density adjustable; completion time of both,
-  speed-up, largest joint step relative to the recorded p95 step, path deviation.
+Three separated stages: reconstruct the whole trajectory as a curve → cut each frame's window → sparsify
+the window by curvature.
+
+- Reconstruction: a parameterization and interpolant chosen by measurement on LIBERO and a constructed
+  path with known geometry, independent of curvature; the curvature estimator chosen by its dependence on
+  the teleop speed.
+- Window: frame t's window starts at its state and covers the next span recorded frames.
+- Sparsify: a frame whose window holds no keyframe segment and lies within the recorded rows has its H-th
+  point at exactly the window end; inside keyframe segments the density is `event_density` points per
+  span/H recorded frames whatever the rest of the window holds, and free segments of the window keep one
+  point per span/H frames on average, so a window holding keyframe frames covers fewer than span frames
+  when `event_density` > 1; points past the last recorded row stay on it and are flagged as padding.
+- `time` labels with span = H unchanged (they sample recorded rows only).
+- LIBERO comparison before / after: reach, replan jitter (strides 1 and 10), path deviation, keyframe
+  deviation, executed / recorded frames at rates 1 and 2.
 
 # Structure
 
 ## Modules
 
-- Labels: `src/vla_tools/arc_core.py`.
-- Deployment: `src/vla_tools/arc_interp.py` (server, standalone), `src/vla_openpi/launch.py`.
-- Scoring: `src/vla_tools/label_replay.py`, `src/vla_tools/sweep.py`; `src/vla_tools/build_labels.py`
-  calls the label builder.
-- LIBERO run: `FTpi05/runs/libero_alphabet_soup/`, `FTpi05/data/libero-alphabet-soup-*`.
-- Knowledge: skills, `docs/validation.md`, `issues.md`, `README.md`.
+- Curve: `src/vla_tools/trajectory_curve.py` (new): the reconstructed joint curve of one episode.
+- Labels: `src/vla_tools/arc_core.py` (window and sparsification), `src/vla_tools/resample_config.py`.
+- Measurement: `FTpi05/reports/action-sparsification-src/libero/curve_check.py` (new, the reconstruction
+  experiment) and `window_check.py` (new, label statistics of the current `arc_core`).
+- LIBERO run: `FTpi05/runs/libero_alphabet_soup/`, `FTpi05/data/libero-alphabet-soup-*-train|eval`.
+- Knowledge: `.claude/skills/vla-action-labels/`, `.claude/skills/vla-pipeline/references/failure-modes.md`,
+  `docs/validation.md`, `issues.md`, `opportunities.md`, `README.md`.
 - Deck: `FTpi05/reports/action-sparsification-src/deck/`, `FTpi05/reports/action-sparsification.html`,
   `gh-pages`.
 
+Deployment (`arc_interp`, `vla_openpi.launch`), `label_replay` and `build_labels` call `arc_core.chunks`
+and are unchanged.
+
 ## Responsibilities
 
-The rate is a deployment parameter owned by the server (`ArcInterpolator.rate`) and by the replay that
-imitates it; label datasets and `arc_resample.json` do not record it. The step normalization belongs to
-`arc_core` alone; callers pass the number of recorded rows.
+`trajectory_curve` owns the curve: per-row parameter, interpolation between rows, arc length and curvature
+along the curve. `arc_core` owns the metric built on it, the per-frame window, the step and the points.
+`curve_check.py` compares candidate reconstructions; only the selected one is implemented in
+`trajectory_curve`.
 
 ## State Ownership
 
-`arc_core.progress_curve` owns the step. `ArcInterpolator` owns the deployed rate. The LIBERO run's
-artifacts are owned by the run directory and rewritten by S7.
+The curve is built per episode inside `arc_core.chunks` and not stored. The per-frame step is returned in
+`Chunks.step`. LIBERO run artifacts are owned by the run directory and rewritten by S7.
 
 # Interface
 
 ## Interfaces
 
-- `arc_core.progress_curve(actions, spec, config, windows, recorded: int)` and
-  `arc_core.chunks(actions, spec, config, windows, recorded: int)`: `recorded` is the number of recorded
-  rows (padding rows follow them). The step is (sum of the free progress over the segments between
-  recorded rows) × span/H ÷ (number of non-respaced segments between recorded rows). Padding segments
-  keep their own progress (1 under `time`, 0 under geometric metrics).
-- `arc_interp.point_frames(span_frames, action_horizon, anchor, rate: float)`: (offset + k·span/H) / rate.
-  `ArcInterpolator.rate: float = 1.0`; `ArcInterpolator.from_report(path, rate: float = 1.0)`.
-  `vla_openpi.launch.serving_config` and `serve` take `rate`; the example launcher has `--rate`.
-- `label_replay.closed_loop(e, spec, record, config, execute, rate: float)`; `replay(..., rate)`;
-  CLI `--rate` (default 1); the payload records the rate. The tie-break for re-observation moves to
-  t + round(r · executed targets).
-- `sweep` scores at r = 1 (path geometry does not depend on r; speed figures do, and the replay reports
-  them at the deployed rate).
+Segment i joins action rows i and i+1; `recorded` rows R are followed by end-padding rows.
+
+- `trajectory_curve.TrajectoryCurve` (frozen dataclass): `u` (T,) the selected parameter of every row
+  (equal on rows that do not move under a geometric parameterization), `arc` (T,) arc length along the
+  curve at every row, `density_arc` / `kappa` the dense arc-length grid and the curvature on it.
+  `joints(frames: np.ndarray) -> np.ndarray` evaluates the curve at fractional row indices.
+  `trajectory_curve.build(joints: np.ndarray, curvature_length: float) -> TrajectoryCurve`.
+- `arc_core.progress_curve(actions, spec, config, windows, recorded) -> ProgressCurve`: `free` (T−1,) the
+  metric progress of each segment (`curvature`: ∫ max(κ^(1/3), floor · mean) dσ over the segment on the
+  curve), 0 on respaced keyframe segments; `respaced` (T−1,); `window_mask` (T−1,); `recorded: int`.
+- `arc_core.chunks(actions, spec, config, windows, recorded) -> tuple[ProgressCurve, Chunks]`. For frame t
+  with anchor index a (t−1 under `anchor="state"`, with a virtual segment copying segment 0 before row 0;
+  t under `"action"`):
+  - window W = segments a … a+span−1 that lie before row R−1;
+  - A = free progress over the non-respaced segments of W, N = their count;
+  - A > 0: step = A · (span/H) / N; segment progress is `free` outside keyframes and
+    step · event_density / (span/H) on respaced segments;
+  - A = 0 (a still window, or one with no free segment): the frame is spaced in time: progress 1 on free
+    recorded segments, `free` on padding segments, event_density on respaced segments, step = span/H;
+  - point k (k = 1 … H) at cumulative progress s(a) + k·step, mapped to a fractional row index (strictly
+    increasing drift as now), joints from `TrajectoryCurve.joints`, commands from the nearest row; a point
+    past the episode's cumulative progress is padded.
+  `Chunks` gains `step` (T,).
+- `arc_core.invert(s, targets)` takes the cumulative progress array explicitly.
+- If the experiment selects an absolute curvature length: `ResampleConfig.curvature_window` (a multiple of
+  the episode's median step) is replaced by `curvature_length` (rad); `sweep --curvature-length` defaults
+  to 4 × the dataset's path step and is printed; a recorded config with `curvature_window` is refused.
+- `curve_check.py --dataset --spec --out`: the experiment grid below.
+- `window_check.py --dataset --spec --keyframes --label-config --out`: reach of the H-th point
+  (p05 / p50 / p95), |reach − span| over windows without keyframes, per-frame step ÷ span/H, replan jitter:
+  for inference frames t and t+d (d = 1 and 10, both unpadded), the largest joint distance between their
+  deployed targets (`arc_interp.to_frames` at `point_frames`, rate 1) over the frames both cover,
+  median / p90 / max in path steps.
+
+## Experiment
+
+Variables: parameterization ∈ {row index (time), chord length, centripetal (chord length^½)}; interpolant ∈
+{PCHIP, cubic spline}; curvature estimator ∈ {chord angles on raw rows with the relative window (current),
+chord angles on raw rows with an absolute window, chord angles on the dense reconstruction (spacing ≤
+window / 16) with an absolute window, for each reconstruction}. Absolute window: 4 × the dataset path step.
+
+Measurements:
+- LIBERO hold-out: keep every k-th recorded row (k = 2, 4, plus the last), reconstruct, distance of every
+  dropped row to the reconstructed curve; median / p95 / max in path steps.
+- Constructed path (straight, arc, straight; known curve and curvature) sampled at three teleop speed
+  profiles (steady, 2× steady, accelerating / slowing / paused): largest distance of each reconstruction to
+  the true curve; normalized curvature progress along arc length against the analytic one and its spread
+  across the profiles.
+- LIBERO re-timing (uniform, 2×, sine, as `retime_check.py`): spread of the normalized progress per
+  estimator. The copies are generated by chord-length PCHIP, which favours that reconstruction; the
+  constructed path is the unbiased reference.
+
+Selection: the reconstruction with the lowest LIBERO hold-out p95 at k = 4 (then k = 2); within 5% the
+geometric parameterization wins. The curvature estimator with the smallest spread across speed profiles on
+the constructed path whose error against the analytic progress is not larger than the current estimator's.
 
 ## Inputs
 
@@ -86,66 +149,70 @@ The LIBERO timed dataset (end padding 40), keyframes, label configurations.
 
 ## Outputs
 
-Rebuilt `sweep.json`, `sweep_three_metrics.json`, label datasets, `replay_<labels>.json` (r = 1) and
-`replay_<labels>_r2.json` (r = 2), data report; updated docs; rebuilt deck.
+`curve_check.json`, `window_check_episode_step.json` (before), `window_check_window_step.json` (after) in
+the run directory; rebuilt sweeps, label datasets, replays at rates 1 and 2, data report; updated docs;
+rebuilt deck.
 
 ## State Changes
 
-Label datasets built with a geometric metric before this change are not reproducible by the new code;
-the only ones are the LIBERO `curvature-s40-d2` datasets, which S7 rebuilds. `time` labels are unchanged.
+Label datasets built with a geometric metric before this change are not reproducible by the new code; the
+only ones in use are the LIBERO `curvature` datasets, which S7 rebuilds. `time` labels with span = H are
+identical, checked against the existing LIBERO `time-s10` datasets.
 
 # Flow
 
 ## Main Flow
 
-Build labels: progress curve over the whole episode, step from the recorded rows → chunks. Deploy:
-`ArcInterpolator(rate)` places the H points at (offset + k·span/H)/r frames and interpolates. Replay:
-the closed loop executes e targets at rate r and re-observes. Deck: the JavaScript port does the same
-for one LIBERO demonstration and animates teleop playback beside execution.
+Build labels: reconstruct the episode's curve (selected parameterization and interpolant) → curvature on
+the dense curve → metric progress per segment → for each frame, the step from its own window → H points on
+the curve. Deploy: unchanged; the server places point k at (offset + k·span/H)/r frames, so a chunk without
+keyframes covers exactly span recorded frames in span/r control frames. Replay and sweep: unchanged code,
+new labels.
 
 # Code Mapping
 
 ## Modules
 
-`src/vla_tools/arc_core.py`, `arc_interp.py`, `label_replay.py`, `sweep.py`, `build_labels.py`,
-`src/vla_openpi/launch.py`; `tests/test_arc_core.py`, the interpolator tests, `tests/test_pipeline_chain.py`;
-`.claude/skills/vla-action-labels/`, `.claude/skills/vla-downstream/SKILL.md`, `docs/validation.md`,
-`issues.md`, `README.md`; deck files under `FTpi05/reports/`.
+`src/vla_tools/trajectory_curve.py`, `src/vla_tools/arc_core.py`, `src/vla_tools/resample_config.py`,
+`src/vla_tools/sweep.py` (only for `--curvature-length`), `tests/test_trajectory_curve.py`,
+`tests/test_arc_core.py`, `tests/test_pipeline_chain.py`; `FTpi05/reports/action-sparsification-src/libero/`
+`curve_check.py`, `window_check.py`; knowledge files above; deck files under `FTpi05/reports/`.
 
 ## Interfaces
 
-`progress_curve`, `chunks` → `arc_core.py`; `point_frames`, `ArcInterpolator` → `arc_interp.py`;
-`closed_loop`, `replay` → `label_replay.py`; `--rate` → `launch.py`, `label_replay.py`; JavaScript port →
-`FTpi05/reports/action-sparsification-src/deck/core.js`.
+`TrajectoryCurve`, `build` → `trajectory_curve.py`; `progress_curve`, `chunks`, `invert`, `ProgressCurve`,
+`Chunks` → `arc_core.py`; JavaScript port → `FTpi05/reports/action-sparsification-src/deck/core.js`.
 
 ## State
 
-Step: `arc_core.py`. Deployed rate: `arc_interp.py`. LIBERO artifacts: `FTpi05/runs/libero_alphabet_soup/`.
+Curve and per-frame step: `arc_core.py` (built per call). LIBERO artifacts: `FTpi05/runs/libero_alphabet_soup/`.
 
 # Implementation
 
 ## Phase 1
 
-Phase Status: completed
+Phase Status: active
 
 Round: 1
 
 ### Goal
 
-Normalize the progress step over recorded rows (ISSUE-002).
+Run the reconstruction experiment and record the selection; measure the current labels with
+`window_check.py` before anything changes.
 
 ### Files
 
-`src/vla_tools/arc_core.py`, `src/vla_tools/sweep.py`, `src/vla_tools/label_replay.py`,
-`src/vla_tools/build_labels.py`, `tests/test_arc_core.py`.
+`FTpi05/reports/action-sparsification-src/libero/curve_check.py`, `window_check.py`,
+`FTpi05/runs/libero_alphabet_soup/curve_check.json`, `window_check_episode_step.json`, `plan.md`
+(selection recorded under Phase 2).
 
 ### Structures
 
-`recorded` argument.
+None in the package.
 
 ### Affected Modules
 
-Labels, scoring.
+Measurement.
 
 ### Dependencies
 
@@ -153,51 +220,54 @@ None.
 
 ### Observation
 
-The same episode with 10 and 40 padding rows gives identical progress over recorded rows and identical
-labels on frames whose label has no padded point; `time` labels unchanged (existing tests); median reach
-of `curvature` labels on a synthetic episode printed against span.
+The full grid as one table; the selected parameterization, interpolant and curvature estimator with the
+measured margins.
 
 ## Phase 2
 
-Phase Status: completed
+Phase Status: pending
 
 Round: 2
 
 ### Goal
 
-Execution rate r in the server, the launcher and the closed-loop replay.
+Implement the selected reconstruction in `trajectory_curve` and the per-window sparsification in `arc_core`.
 
 ### Files
 
-`src/vla_tools/arc_interp.py`, `src/vla_openpi/launch.py`, `src/vla_tools/label_replay.py`,
-`src/vla_tools/sweep.py`, tests of the interpolator and the pipeline chain.
+`src/vla_tools/trajectory_curve.py`, `src/vla_tools/arc_core.py`, `src/vla_tools/resample_config.py`,
+`src/vla_tools/sweep.py`, `tests/test_trajectory_curve.py`, `tests/test_arc_core.py`,
+`tests/test_pipeline_chain.py`.
 
 ### Structures
 
-`rate` field and arguments.
+`TrajectoryCurve`, `ProgressCurve` fields, `Chunks.step`, window rule.
 
 ### Affected Modules
 
-Deployment, scoring.
+Curve, labels.
 
 ### Dependencies
 
-Phase 1 (`label_replay.py`, `sweep.py`).
+Phase 1.
 
 ### Observation
 
-Targets at rate 2 equal the rate-1 targets at every second frame (≤ 1e-12); `time`, span = H replay at
-rate 2 observes every 2e frames with path deviation 0; executed frames printed for rates 1 and 2.
+On the constructed path: the curve passes through every row (≤ 1e-12) and the H-th point of every window
+without keyframes is the recorded pose span frames after the state (≤ 1e-9); inside keyframe segments the
+points per frame equal event_density ÷ (span/H); labels of recorded frames identical with 10 and 40
+padding rows; LIBERO `time-s10` rebuilt against the datasets on disk (max difference printed); test
+suites pass.
 
 ## Phase 3
 
-Phase Status: completed
+Phase Status: pending
 
 Round: 3
 
 ### Goal
 
-Re-run S7 on LIBERO: sweeps, label datasets, replays at r = 1 and r = 2, data report.
+Re-run S7 on LIBERO and measure the new labels with `window_check.py`.
 
 ### Files
 
@@ -213,29 +283,30 @@ LIBERO run.
 
 ### Dependencies
 
-Phases 1, 2.
+Phase 2.
 
 ### Observation
 
-`run_status` all passed; executed / recorded frames of the selected labels at r = 1 and r = 2 printed;
-`curvature` reach close to span.
+`run_status` all passed; sweep selection printed; before / after table: reach, jitter at strides 1 and
+10, path head / full, keyframe position, executed / recorded frames at rates 1 and 2.
 
 ## Phase 4
 
-Phase Status: completed
+Phase Status: pending
 
 Round: 4
 
 ### Goal
 
-Docs: rate and step normalization in the action-labels and downstream skills, method reference,
-validation numbers, README; ISSUE-002 resolved.
+Docs: reconstruction, window and sparsification in the action-labels skill and method reference; the
+experiment and LIBERO numbers in validation; README; issues (ISSUE-001 by the selected estimator) and
+opportunities.
 
 ### Files
 
 `.claude/skills/vla-action-labels/SKILL.md`, `.claude/skills/vla-action-labels/references/method.md`,
-`.claude/skills/vla-downstream/SKILL.md`, `.claude/skills/vla-pipeline/references/failure-modes.md`,
-`docs/validation.md`, `issues.md`, `README.md`.
+`.claude/skills/vla-pipeline/references/failure-modes.md`, `docs/validation.md`, `issues.md`,
+`opportunities.md`, `README.md`.
 
 ### Structures
 
@@ -251,19 +322,20 @@ Phase 3.
 
 ### Observation
 
-LIBERO numbers match the rebuilt artifacts; no text describes padding-stretched spans as current.
+Numbers match the artifacts; no text describes the time-parameterized curve or an episode-wide step as
+current.
 
 ## Phase 5
 
-Phase Status: completed
+Phase Status: pending
 
 Round: 4
 
 ### Goal
 
-Deck: port the step normalization and the rate; page 6 rebuilt as approved (no metric switch; span,
-execution rate, execution length, keyframe slow-down; completion times and speed-up); other pages' LIBERO
-numbers from the rebuilt run; publish to `gh-pages`.
+Deck: port the curve and the window rule to `core.js`; pages 3–4 show one frame's window and its points
+instead of episode-wide progress ticks; titles and cover text describe reconstruct → window → sparsify;
+LIBERO numbers from the re-run; publish to `gh-pages`.
 
 ### Files
 
@@ -280,9 +352,9 @@ Deck.
 
 ### Dependencies
 
-Phases 1, 2, 3.
+Phases 2, 3.
 
 ### Observation
 
-`check_core.py` ≤ 1e-9 including rates 1 and 2; smoke tests pass; 3-D capture in view; served page
-identical to the local build.
+`check_core.py` ≤ 1e-9 against `arc_core` including windows with keyframes and the episode end; smoke
+tests pass; served page identical to the local build.
