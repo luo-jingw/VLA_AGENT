@@ -1,6 +1,6 @@
 # Plan
 
-Plan Status: approved
+Plan Status: completed
 
 # Problem
 
@@ -371,7 +371,7 @@ time-indexed admission.
 
 ## Phase 7
 
-Phase Status: active
+Phase Status: completed
 
 Round: 4
 
