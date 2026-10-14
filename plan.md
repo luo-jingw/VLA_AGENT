@@ -100,10 +100,13 @@ JavaScript port checked against the Python implementation.
   `second_difference` is the previous `curvature`, kept to reproduce existing datasets; `arc` is removed.
   `from_dict` refuses a recorded `curvature` config without `curvature_window` (recorded before this
   change), naming `second_difference`.
-- `path_metrics.path_deviation(targets, recorded, start, end) -> float`, `keyframe_position_error(...)`,
-  `speed_ratio(targets, pose, recorded_step) -> float`; joint-space Euclidean distances in radians.
+- `path_metrics.step_statistics(paths) -> (median, p95)`, `distance_to_path(points, path)`,
+  `path_deviation(targets, path) -> float`, `keyframe_position_error(targets_joints, targets_cmd,
+  current_cmd, recorded_joints, recorded_edge_index) -> float | None`, `speed_ratio(targets, pose,
+  reference_step) -> float`; joint-space Euclidean distances in radians.
 - `sweep` cell fields gain `path_head`, `path_full` (median, p90), `kf_position` (median, p90),
-  `speed_ratio`; existing time-indexed fields stay as information. Admission: `path_head` median ≤ 1
+  `kf_missed`, `speed_ratio` (median, p95), `admissible`; existing time-indexed fields stay as
+  information; `jump_steps` and `--max-jump` are in path steps. Admission: `path_head` median ≤ 1
   path step (median Euclidean per-frame joint step), `kf_position` median ≤ 1 path step, all command
   edges kept, and optional `--max-speed-ratio`, `--max-jump`, `--max-pad`.
 - `label_replay` rows: `execute`, path deviation (median, p90, max), seams, keyframe position error,
@@ -168,7 +171,7 @@ run's artifacts under `FTpi05/reports/action-sparsification-src/libero/run/`.
 
 ## Phase 1
 
-Phase Status: active
+Phase Status: completed
 
 Round: 1
 
@@ -200,7 +203,7 @@ straight line, and on circles of three radii against R^(−1/3); a recorded old-
 
 ## Phase 2
 
-Phase Status: active
+Phase Status: completed
 
 Round: 1
 
@@ -232,7 +235,7 @@ synthetic chain the `time`, span = H cell scores 0 and selection follows the sta
 
 ## Phase 3
 
-Phase Status: pending
+Phase Status: active
 
 Round: 2
 
