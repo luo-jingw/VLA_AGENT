@@ -264,7 +264,7 @@ indices increase monotonically for every configuration; figures printed per exec
 
 ## Phase 4
 
-Phase Status: active
+Phase Status: completed
 
 Round: 1
 
