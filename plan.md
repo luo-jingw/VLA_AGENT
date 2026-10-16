@@ -1,97 +1,136 @@
 # Plan
 
-Plan Status: completed
+Plan Status: approved
 
 # Problem
 
 ## Current
 
-A label is H points per observation frame; the deployed system rebuilds the trajectory from those few
-points. The repository interpolates in two places:
+Resampled labels exist to raise the execution rate a deployed policy runs at: a chunk that covers
+`span_frames` recorded frames is executed r times faster than the recording, with fewer inferences per task.
+The current evidence does not measure that rate:
 
-- `trajectory_curve` (label side): a not-a-knot cubic spline over the row index through every recorded
-  row, used only to read a point's joints between two recorded rows. It was selected by a hold-out
-  experiment (keep every 4th row, rebuild, measure the dropped rows), which is a rebuild from few points,
-  but its result was applied here, where every row is a knot: the label points lie p50 0.017 / p90 0.03 /
-  max 0.09 path steps off the recorded polyline whatever the interpolant.
-- `arc_interp.to_frames` (server side): PCHIP over the knots `(offset + k·span/H) / rate` through the
-  current pose and the H points. This is the rebuild from few points; `sweep` and `label_replay` score it.
-
-Rebuild error from the label points themselves, LIBERO 50 episodes, unpadded frames
-(`FTpi05/reports/action-sparsification-src/libero/sparse_rebuild_check.py`), larger of recorded rows to
-the rebuilt curve and the rebuilt curve to the recorded path, path steps, p50 / p90 / max:
-
-| rebuild from the H points | `curvature` s40 d2 | `curvature` s40 d0 |
-|---|---|---|
-| polyline | 0.21 / 0.36 / 0.98 | 0.33 / 0.73 / 1.33 |
-| PCHIP, uniform knots (server today) | 0.11 / 0.24 / 0.77 | 0.23 / 0.60 / 1.20 |
-| cubic spline, uniform knots | 0.09 / 0.21 / 0.74 | 0.17 / 0.44 / 0.74 |
-| cubic spline, centripetal | 0.09 / 0.21 / 0.73 | 0.19 / 0.54 / 1.10 |
-| PCHIP, chord | 0.12 / 0.25 / 0.81 | 0.24 / 0.63 / 1.24 |
-| cubic spline, chord | 0.11 / 0.30 / 1.40 | 0.22 / 0.72 / 2.41 |
-| PCHIP, the points' true recorded rows (not available to the server) | 0.11 / 0.24 / 0.75 | 0.23 / 0.59 / 1.19 |
+- Data: LIBERO only, simulated demonstrations. Its operators' speed follows the path shape (log speed against
+  log κ: slope −0.31, R² 0.45; window progress p90 / p10 1.3×), so `time` and `curvature` place the same
+  point 1.25 recorded frames apart (median) and rebuild alike: on the frames both leave unpadded, s40 d2
+  spline rebuild p50 / p90 / max 0.10 / 0.21 / 1.02 path steps for `time`, 0.09 / 0.21 / 0.72 for `curvature`.
+- Rate: `label_replay` reports the largest executed step against the demonstration's p95 step. No robot
+  velocity or acceleration limit, gripper actuation time or inference latency enters any figure; no maximum
+  rate is computed.
+- Selection: `sweep` scores each cell on its own unpadded frames. `time` labels count end-padding rows as
+  rows, `curvature` labels count points on them as padded, so s40 d2 is scored on 7708 frames for `time` and
+  6313 for `curvature`; the 1395 extra frames lie at the recording's end (rebuild p50 0.06). The selected
+  cell beat `time` s40 d2 by 0.01 path steps on these different sets.
+- Span: all 30 cells (spans 10–40) are admissible; the largest-admissible-span rule returns the grid's top.
+- Latency: the replay is synchronous with zero latency: the robot waits for no inference and a chunk is never
+  older than the pose it starts from.
 
 ## Problem
 
-1. The interpolant selected for rebuilding from few points is not the one that rebuilds from the label
-   points; the server still uses PCHIP.
-2. The label side carries a second interpolant that has no measurable role.
+1. Nothing measures the quantity the labels are for: the highest task completion speed-up a robot reaches
+   with asynchronous inference at a given inference latency, on real teleoperation data.
+2. `sweep` compares cells on different frames.
 
 ## Goal
 
-One reconstruction in the system: the rebuild from the H label points.
+On a small subset of DROID (`lerobot/droid_1.0.1`: Franka Panda, VR teleoperation, 15 Hz, joint position
+actions and gripper; LeRobot v3.0), per label configuration (per-frame baseline `time` span 10; `time` and
+`curvature` at spans 32, 64, 128, 256; keyframe density 0 and 2; H = 10):
 
-- Server: not-a-knot cubic spline over the same knots (timing and execution rate unchanged).
-- Labels: a point's joints are the linear interpolation of its two neighbouring recorded rows, so every
-  label point lies on the recorded polyline (distance ≤ 1e-12 rad).
-- The spline's per-joint overshoot between neighbouring nodes is measured, in keyframe windows separately
-  (PCHIP has none by construction), together with the replay's hold frames and speed ratio.
-- LIBERO S7 re-run and before / after comparison; documentation and deck describe the rebuild from few
-  points.
+- Execution model (closed-loop label replay, the labels standing in for a perfect model), inference latency
+  d = ⌈L · fps⌉ control frames:
+  - asynchronous: an observation is taken every e control frames (e ≥ max(d, 1)); its chunk, built from the pose
+    at the observation, arrives d frames later and is executed from its target d (the targets for the frames
+    that already passed are skipped) until the next chunk arrives; the first chunk is executed from target 0
+    after the robot has held still for d frames; a chunk that runs out holds its last target;
+  - synchronous: the robot holds still for d frames at every observation, then executes e targets.
+  L = 0 gives the current replay in both modes.
+- Feasible: the executed targets (one per control frame) stay within the Panda's joint velocity and
+  acceleration limits (finite differences at the dataset rate, chunk switches and holds included), every
+  recorded gripper edge is executed, and at each gripper switch the robot holds for at least the shorter of
+  the gripper's actuation time and the recording's own hold there.
+- Rates 1, 1.5, 2, 3, 4, 6, 8, 12, 16; e either max(d, 1) (inference back to back) or ⌊span / rate⌋ − d (the
+  whole chunk).
+- Result per configuration, latency L ∈ {0, 0.05, 0.1, 0.2, 0.4} s and mode: the largest rate feasible on every
+  episode and the completion speed-up there (recorded duration / wall-clock duration, holds included); the
+  maximum asynchronous speed-up at each latency is the headline figure, the synchronous one is reported beside
+  it; per-episode largest feasible rate, median / p10.
+- Upper bound: the time-optimal traversal of each recorded path under the same limits (TOPP-RA) plus the
+  gripper actuation time at each switch.
+- Path deviation of the executed targets in joint space and of the end effector in mm (Panda forward
+  kinematics).
+- The same on LIBERO (also a Panda) for comparison.
+- `sweep`: cells of the same span scored on the frames every cell of that span leaves unpadded (with spans up to
+  256 a common set over all spans would keep only the first frames of each episode); the LIBERO sweep re-run.
 
 # Structure
 
 ## Modules
 
-- Server rebuild: `src/vla_tools/arc_interp.py`.
-- Labels: `src/vla_tools/arc_core.py`; `src/vla_tools/trajectory_curve.py` is removed.
-- Measurement: `FTpi05/reports/action-sparsification-src/libero/sparse_rebuild_check.py`.
-- LIBERO run: `FTpi05/runs/libero_alphabet_soup/`, `FTpi05/data/libero-alphabet-soup-curvature-s40-d2-*`.
-- Knowledge: `.claude/skills/vla-action-labels/` (SKILL.md, references/method.md), `docs/validation.md`,
+- Robot limits: `src/vla_tools/robot_spec.py`.
+- Execution model: `src/vla_tools/label_replay.py` (`closed_loop` with latency and mode; per-episode edge and
+  hold check).
+- Rate ceiling: `src/vla_tools/rate_ceiling.py` (new), built on `label_replay`.
+- Sweep: `src/vla_tools/sweep.py`.
+- DROID subset: `FTpi05/reports/rate-ceiling-src/extract_droid.py`; data in `FTpi05/data/droid-pick-place*`;
+  run in `FTpi05/runs/droid_pick_place/`.
+- Reference figures: `FTpi05/reports/rate-ceiling-src/panda_kinematics.py` (forward kinematics),
+  `topp_reference.py` (time-optimal bound), `ee_deviation.py` (end-effector deviation of executed targets).
+- Knowledge: `docs/validation.md`, `.claude/skills/vla-action-labels/` (SKILL.md, references/method.md),
   `README.md`.
-- Deck: `FTpi05/reports/action-sparsification-src/deck/`, `FTpi05/reports/action-sparsification.html`,
-  `gh-pages`.
-
-`sweep`, `label_replay`, `build_labels` and `vla_openpi.launch` call `arc_interp.to_frames` /
-`ArcInterpolator` and `arc_core.chunks` through unchanged interfaces.
 
 ## Responsibilities
 
-`arc_interp` owns the reconstruction from the H points. `arc_core` owns the label points, read from the
-recorded rows.
+`robot_spec` holds the robot's joint limits. `label_replay` owns the execution model (observation rule,
+latency, synchronous / asynchronous switching) and the edge and hold check. `rate_ceiling` searches rates and
+execution lengths, applies the limits and computes the speed-ups. `sweep` keeps its scores and
+selection rule. The FTpi05 scripts prepare the DROID subset and compute the reference figures; they are not
+part of the package.
 
 ## State Ownership
 
-- Rebuild interpolant: `arc_interp.to_frames`.
-- Label point joints: `arc_core.chunks`.
+- Joint limits: each run's `robot_spec.json`, read through `RobotSpec`.
+- Rate ceilings: each run's `rate_ceiling.json`, written by `rate_ceiling`.
 
 # Interface
 
 ## Interfaces
 
-- `arc_interp.to_frames(points, current, times, command_dims) -> np.ndarray`: unchanged signature; joints
-  from `scipy.interpolate.CubicSpline(knots, values, axis=0, bc_type="not-a-knot")` (two knots: the chord,
-  three: the parabola).
-- `arc_core.chunks(...)`: unchanged signature; `points[..., joints]` linear between rows ⌊f⌋ and ⌈f⌉ of the
-  recorded joints, f clamped to [0, recorded − 1].
+- `RobotSpec.joint_velocity_limits: tuple[float, ...] = ()`, `RobotSpec.joint_acceleration_limits:
+  tuple[float, ...] = ()`: one entry per joint dim (rad/s, rad/s²); empty when unknown; `load` reads them
+  when present and checks their length.
+- `label_replay.closed_loop(e, spec, record, config, execute, rate, latency_frames: int = 0, mode: str = "sync")
+  -> EpisodeReplay`: `EpisodeReplay.executed` is the wall-clock sequence of targets (holds included);
+  `EpisodeReplay.stall_frames` counts the frames held for latency or an exhausted chunk. Defaults reproduce the
+  current replay exactly.
+- `label_replay.edge_check(e, spec, executed, tolerance) -> EdgeCheck`: per recorded command edge, the executed
+  position error and hold frames, the recording's own hold frames, and the edges never switched; used by
+  `replay` and `rate_ceiling`.
+- `rate_ceiling.check(e, spec, record, config, rate, execute, latency_frames, mode, gripper_frames, path_step)
+  -> RateCheck`: velocity ratio (max |Δq · fps| / limit), acceleration ratio (max |Δ²q · fps²| / limit) over the
+  executed targets preceded by the first observed pose, edges missed, worst hold against its requirement, path
+  max (rad), inferences, wall-clock and stalled frames, feasible.
+- CLI: `python -m vla_tools.rate_ceiling --dataset --spec --keyframes --horizon --metrics --spans
+  --event-density --rates --latency --modes --gripper-seconds --out`; prints per configuration, latency and mode
+  the largest rate feasible on every episode, its execution length, the binding constraint and the speed-up.
+- `sweep`: CLI unchanged; the cells of one span are scored on the intersection of their unpadded frames; the
+  JSON records that frame count per cell.
 
 ## Inputs
 
-LIBERO timed dataset, keyframes, robot spec, `label_config.json` (unchanged).
+- DROID: 3 data parquet files (~260 MB, no video) from different parts of the dataset and the episode
+  metadata; successful episodes whose instruction is a pick-and-place, with one gripper close and one open
+  edge; 60 episodes spread over buildings and collectors.
+- Panda joint velocity and acceleration limits from Franka's published specifications; the gripper's
+  actuation time from its datasheet (DROID's gripper model confirmed from the DROID paper).
+- LIBERO run inputs, unchanged.
 
 ## Outputs
 
-`sparse_rebuild_check.json` with an overshoot column; rebuilt label datasets; S7 artifacts.
+`data/droid-pick-place` (extracted) and its timed version; `runs/droid_pick_place/`: `robot_spec.json`,
+`audit.json`, `keyframes.json`, `timing_plan.json`, `sweep.json`, `rate_ceiling.json`,
+`topp_reference.json`, `ee_deviation.json`; `runs/libero_alphabet_soup/sweep.json` (re-run),
+`rate_ceiling.json`.
 
 ## State Changes
 
@@ -101,46 +140,52 @@ None beyond the outputs.
 
 ## Main Flow
 
-Labels: progress → per-window targets → fractional rows → joints linear between recorded rows.
-Server: current pose + H points at `(offset + k·span/H) / rate` → cubic spline → per-frame targets.
+DROID files → `extract_droid.py` (LeRobot v2.1 layout, low-dimensional columns) → `audit` →
+`keyframe_detect` (gripper edges; no camera review, videos are not downloaded) → `episode_timing` (still
+ends trimmed, end padding ≥ the largest span) → `keyframe_detect` on the timed version → `sweep` (common
+frames) → `rate_ceiling` per configuration → `topp_reference.py`, `ee_deviation.py` → one table per data set.
 
 # Code Mapping
 
 ## Modules
 
-Server rebuild → `src/vla_tools/arc_interp.py`; labels → `src/vla_tools/arc_core.py`.
+Robot limits → `src/vla_tools/robot_spec.py`; rate ceiling → `src/vla_tools/rate_ceiling.py`; sweep →
+`src/vla_tools/sweep.py`; DROID subset and reference figures → `FTpi05/reports/rate-ceiling-src/`.
 
 ## Interfaces
 
-`to_frames` → `arc_interp.py`; `chunks` → `arc_core.py`.
+`RobotSpec` limits → `robot_spec.py`; `closed_loop`, `edge_check`, `EdgeCheck` → `label_replay.py`; `check`,
+`RateCheck` → `rate_ceiling.py`; common-frame scoring → `sweep.py`.
 
 ## State
 
-Rebuild interpolant → `arc_interp.py`; label point joints → `arc_core.py`.
+Joint limits → `runs/*/robot_spec.json`; rate ceilings → `runs/*/rate_ceiling.json`.
 
 # Implementation
 
 ## Phase 1
 
-Phase Status: completed
+Phase Status: pending
 
 Round: 1
 
 ### Goal
 
-Server rebuild with the not-a-knot cubic spline.
+Joint limits in `RobotSpec`; latency and asynchronous switching in `label_replay`; `rate_ceiling` module and
+CLI.
 
 ### Files
 
-`src/vla_tools/arc_interp.py`, `tests/test_arc_interp.py`.
+`src/vla_tools/robot_spec.py`, `src/vla_tools/label_replay.py`, `src/vla_tools/rate_ceiling.py`,
+`tests/test_rate_ceiling.py`, `tests/test_label_replay.py`.
 
 ### Structures
 
-None.
+`EdgeCheck`, `RateCheck`.
 
 ### Affected Modules
 
-Server rebuild; `sweep` and `label_replay` through `to_frames`.
+Robot limits, execution model, rate ceiling.
 
 ### Dependencies
 
@@ -148,23 +193,24 @@ None.
 
 ### Observation
 
-Tests; `to_frames` equals `sparse_rebuild_check`'s spline/uniform samples at the frame times; the rate-2
-target j equals the rate-1 target 2j+1.
+Tests: latency 0 in both modes equals the current replay; asynchronous switching starts each chunk at target
+d and holds d frames only at the start; a straight constant-speed recording gives velocity ratio r · v / limit;
+`time` span 10 at rate 1 executes the recording. The LIBERO replay JSONs unchanged under the defaults; LIBERO
+rate ceiling printed for `time` s10 and `curvature` s40 d2.
 
 ## Phase 2
 
-Phase Status: completed
+Phase Status: pending
 
 Round: 1
 
 ### Goal
 
-Label points linear between recorded rows; remove `trajectory_curve`.
+`sweep` scores the cells of one span on their common unpadded frames; LIBERO sweep re-run.
 
 ### Files
 
-`src/vla_tools/arc_core.py`, `src/vla_tools/trajectory_curve.py` (removed),
-`tests/test_trajectory_curve.py` (removed), `tests/test_arc_core.py`.
+`src/vla_tools/sweep.py`, `tests/test_sweep.py`, `FTpi05/runs/libero_alphabet_soup/sweep.json`.
 
 ### Structures
 
@@ -172,7 +218,7 @@ None.
 
 ### Affected Modules
 
-Labels.
+Sweep.
 
 ### Dependencies
 
@@ -180,23 +226,58 @@ None.
 
 ### Observation
 
-Tests; label points' distance to the recorded polyline on LIBERO; largest change of the label points
-against the spline lookup; `time` s10 labels unchanged.
+Equal frame count across the cells of a span; LIBERO selection and cell table before / after.
 
 ## Phase 3
 
-Phase Status: completed
+Phase Status: pending
+
+Round: 1
+
+### Goal
+
+DROID subset through audit, keyframes and timing (end padding ≥ 256 rows).
+
+### Files
+
+`FTpi05/reports/rate-ceiling-src/extract_droid.py`, `FTpi05/data/droid-pick-place*`,
+`FTpi05/runs/droid_pick_place/` (`robot_spec.json`, `audit.json`, `keyframes_spec.json`, `keyframes.json`,
+`keyframe_overrides.json`, `timing_plan.json`).
+
+### Structures
+
+None.
+
+### Affected Modules
+
+DROID subset.
+
+### Dependencies
+
+None.
+
+### Observation
+
+Episodes, buildings and collectors kept; length distribution; audit findings (index convention, gripper
+value distribution, jumps, idle); keyframe issue list; timing report; operators' speed against curvature
+(slope, R²) and window progress p90 / p10, against LIBERO's −0.31 and 1.3×.
+
+## Phase 4
+
+Phase Status: pending
 
 Round: 2
 
 ### Goal
 
-LIBERO S7 re-run with both changes; overshoot measurement.
+DROID rate ceiling for every configuration, upper bound, end-effector deviation; LIBERO rate ceiling.
 
 ### Files
 
-`sparse_rebuild_check.py` (overshoot column), `FTpi05/runs/libero_alphabet_soup/*`,
-`FTpi05/data/libero-alphabet-soup-curvature-s40-d2-train|eval`.
+`FTpi05/reports/rate-ceiling-src/panda_kinematics.py`, `topp_reference.py`, `ee_deviation.py`,
+`FTpi05/runs/droid_pick_place/{sweep,rate_ceiling,topp_reference,ee_deviation}.json`,
+`FTpi05/runs/libero_alphabet_soup/rate_ceiling.json`. `toppra` 0.6.10 installed into the FTpi05 work
+environment only.
 
 ### Structures
 
@@ -204,32 +285,33 @@ None.
 
 ### Affected Modules
 
-LIBERO run.
+None in the package.
 
 ### Dependencies
 
-Phases 1 and 2.
+Phases 1, 2 and 3.
 
 ### Observation
 
-Sweep selection and cells, replays (density 0 / 2, rates 1 / 2, time s10), window check, retime, sparse
-rebuild check, run_status S0–S7, data report; before / after table.
+Per configuration and latency: the maximum asynchronous speed-up (and the synchronous one), its rate and
+execution length, the binding constraint (velocity, acceleration, gripper hold, edge), per-episode largest
+rate median / p10, path deviation (joint path steps, end effector mm); against the per-frame baseline and the
+time-optimal bound.
 
-## Phase 4
+## Phase 5
 
-Phase Status: completed
+Phase Status: pending
 
 Round: 3
 
 ### Goal
 
-Documentation of the rebuild from few points.
+Documentation of the rate ceiling and the DROID results.
 
 ### Files
 
 `docs/validation.md`, `.claude/skills/vla-action-labels/SKILL.md`,
-`.claude/skills/vla-action-labels/references/method.md`, `README.md`, `src/vla_tools/arc_core.py`
-(docstring), `src/vla_tools/arc_interp.py` (docstring).
+`.claude/skills/vla-action-labels/references/method.md`, `README.md`.
 
 ### Structures
 
@@ -241,39 +323,8 @@ Knowledge.
 
 ### Dependencies
 
-Phase 3.
+Phase 4.
 
 ### Observation
 
-No text describes the every-row curve or PCHIP as the rebuild; the tables match the phase 3 artifacts.
-
-## Phase 5
-
-Phase Status: completed
-
-Round: 3
-
-### Goal
-
-Deck: server rebuild as cubic spline, label lookup linear; page text; publish to gh-pages.
-
-### Files
-
-`FTpi05/reports/action-sparsification-src/deck/core.js`, `check_core.py`, `deck.html`, `page.js`,
-`README.md`, `FTpi05/reports/action-sparsification.html`.
-
-### Structures
-
-None.
-
-### Affected Modules
-
-Deck.
-
-### Dependencies
-
-Phase 3.
-
-### Observation
-
-`check_core.py` against Python; smoke test; screenshots of pages 3 and 4; published file equal to local.
+The tables match the phase 2 and 4 artifacts; the rate is chosen by `rate_ceiling` in the S7 procedure.
