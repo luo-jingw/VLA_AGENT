@@ -10,6 +10,7 @@ import pytest
 
 from vla_tools import arc_core
 from vla_tools.arc_interp import ArcInterpolator
+from vla_tools.arc_interp import after_latency
 from vla_tools.arc_interp import point_frames
 from vla_tools.arc_interp import to_frames
 from vla_tools.resample_config import ResampleConfig
@@ -119,3 +120,32 @@ def test_rate_traverses_the_same_path_faster(tmp_path: Path) -> None:
     )
     assert len(fast) == len(slow) // 2
     assert difference <= 1e-12
+
+
+def test_after_latency_starts_at_the_commanded_pose(tmp_path: Path) -> None:
+    """Per-frame points of a curve, arriving d frames late: the targets after the arrival are the points not
+    yet passed, the spline starting at the commanded pose; zero latency is the plain rebuild."""
+    t = np.arange(1, 11, dtype=np.float64)
+    curve = np.stack([np.sin(0.3 * t), np.cos(0.2 * t), (t > 4).astype(np.float64)], axis=1)
+    config = ResampleConfig(metric="time", span_frames=10, action_horizon=10, anchor="state")
+    interp = ArcInterpolator.from_report(_report(tmp_path / "arc_resample.json", config))
+    start = np.array([0.0, 1.0, 0.0])
+    np.testing.assert_array_equal(interp.after_latency(curve, start, 0), interp(curve, start))
+    for d in (1, 3, 9):
+        out = interp.after_latency(curve, curve[d - 1], d)
+        assert out.shape == (10 - d, 3)
+        np.testing.assert_allclose(out, curve[d:], atol=1e-12)
+    assert interp.after_latency(curve, curve[-1], 10).shape == (0, 3)
+
+
+def test_after_latency_drops_points_within_half_a_spacing() -> None:
+    """Points on a line except the one at frame 4; the commanded pose on the line. Arriving at frame 3 the point
+    at 4 lies half a spacing ahead and is dropped: the rebuild is the line. Arriving at 2 it is kept."""
+    times = point_frames(20, 10, "state", 1.0)  # 2, 4, ..., 20
+    points = np.stack([0.1 * times, -0.1 * times, np.zeros(10)], axis=1)
+    points[1, :2] += 0.5
+    out = after_latency(points, times, np.array([0.3, -0.3, 0.0]), 3, command_dims=(2,))
+    assert out.shape == (17, 3)  # frames 4..20 after the observation
+    np.testing.assert_allclose(out[:, 0], 0.1 * np.arange(4, 21), atol=1e-12)
+    out = after_latency(points, times, np.array([0.2, -0.2, 0.0]), 2, command_dims=(2,))
+    np.testing.assert_allclose(out[1, :2], points[1, :2], atol=1e-12)

@@ -17,6 +17,11 @@ timing differs from the recording, which for static tasks costs nothing but spee
 replay.
 
 Output: out[j] is the target for frame t + j + 1, the meaning a per-frame policy's actions have.
+
+Inference latency: a chunk that arrives d frames after its observation, while the robot keeps executing the
+previous chunk, is rebuilt from the pose commanded at arrival (after_latency): knots = that pose at 0 and the
+points whose time minus d exceeds half a point spacing, at their times minus d. The switch between chunks
+is continuous in position; out[j] is then the target for frame arrival + j + 1.
 """
 
 from __future__ import annotations
@@ -53,6 +58,20 @@ def to_frames(points: np.ndarray, current: np.ndarray, times: np.ndarray, comman
     nearest = np.abs(frames[:, None] - times[None, :]).argmin(axis=1)
     out[:, commands] = np.round(points[nearest][:, commands])
     return out
+
+
+def after_latency(
+    points: np.ndarray, times: np.ndarray, commanded: np.ndarray, elapsed: int, command_dims: tuple[int, ...]
+) -> np.ndarray:
+    """(H, D) points at `times` after the observation, arriving `elapsed` frames later when the robot is
+    commanded to the (D,) pose `commanded` -> (n, D) targets for the frames after the arrival. Points within
+    half a point spacing of the arrival or before it are dropped; with none left n is 0 and the commanded
+    pose is held."""
+    spacing = float(np.diff(np.concatenate([[0.0], times])).min())
+    keep = times - elapsed > 0.5 * spacing
+    if not keep.any():
+        return np.zeros((0, points.shape[1]), dtype=np.float64)
+    return to_frames(points[keep], commanded, times[keep] - elapsed, command_dims)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -92,13 +111,23 @@ class ArcInterpolator:
         state = np.asarray(state, dtype=np.float64)
         return np.array([state[s] if s >= 0 else 0.0 for s in self.state_dims])
 
+    def _checked(self, points: np.ndarray) -> np.ndarray:
+        points = np.asarray(points, dtype=np.float64)[:, : self.action_dim]
+        if points.shape != (self.action_horizon, self.action_dim):
+            raise ValueError(f"points {points.shape}, expected ({self.action_horizon}, {self.action_dim})")
+        return points
+
     def __call__(self, points: np.ndarray, state: np.ndarray) -> np.ndarray:
         """Absolute (H, >=D) points and the state they were predicted from -> (n, D) per-frame targets.
 
         Model padding past action_dim is dropped. `points` must be absolute targets, i.e. after the
         policy has undone normalization and delta encoding.
         """
-        points = np.asarray(points, dtype=np.float64)[:, : self.action_dim]
-        if points.shape != (self.action_horizon, self.action_dim):
-            raise ValueError(f"points {points.shape}, expected ({self.action_horizon}, {self.action_dim})")
-        return to_frames(points, self.current_pose(state), self.frames(), self.command_dims)
+        return to_frames(self._checked(points), self.current_pose(state), self.frames(), self.command_dims)
+
+    def after_latency(self, points: np.ndarray, commanded: np.ndarray, elapsed_frames: int) -> np.ndarray:
+        """The same points arriving `elapsed_frames` after the observation, rebuilt from the (D,) pose the
+        robot is commanded to at arrival (action layout) -> (n, D) targets for the frames after the arrival;
+        n = 0: hold the commanded pose."""
+        commanded = np.asarray(commanded, dtype=np.float64)[: self.action_dim]
+        return after_latency(self._checked(points), self.frames(), commanded, elapsed_frames, self.command_dims)

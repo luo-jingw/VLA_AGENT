@@ -1,13 +1,27 @@
 """Execute the LABELS closed loop, the way the deployment executes model output, for several execution lengths.
 
 Per episode, starting at frame 0: take the label of the observed frame, place and interpolate it as the
-server does at execution rate r (arc_interp.point_frames, to_frames), execute the first e targets, then
-observe again at the recorded
-frame nearest to the executed pose. The search runs forward from the last observation, up to three frames
-past the label's last point, among frames whose recorded command state equals the executed one, so a
-gripper that has closed is not observed again before its recorded close; frames at the same distance (a
-still stretch) are resolved towards the frame r * e steps after the last observation. The executed targets are what a
-perfect model would make the robot do; for static tasks they are judged by geometry, not timing:
+server does at execution rate r (arc_interp.point_frames, to_frames) from the pose at the observation,
+execute e targets, then observe again at the recorded frame nearest to the executed pose. The search runs
+forward from the last observation, up to three frames past the label's last point, among frames whose
+recorded command state equals the executed one, so a gripper that has closed is not observed again before
+its recorded close; frames at the same distance (a still stretch) are resolved towards the frame the
+recording would have reached after the chunk targets executed since the observation.
+
+Inference latency d control frames (closed_loop's latency_frames; 0 by default):
+  sync         at every observation the robot holds its pose for d frames, then executes the chunk's first e
+               targets (fewer when the chunk is shorter)
+  async        an observation is taken every e frames (e >= d: one inference in flight). Its chunk arrives d
+               frames later and is rebuilt from the pose commanded at arrival (arc_interp.after_latency: the
+               points not yet passed, their times shifted by d), then executed until the next chunk arrives:
+               e - d targets before the next observation and d during its inference. The first chunk is
+               built from the observed pose and starts at target 0 after the robot has held still for d
+               frames (with e = d the second observation is then the first frame again: the robot has not
+               moved); a chunk that runs out holds its last target. A chunk must keep a target after the
+               latency: floor(last point frame) > d
+With d = 0 and e no longer than the chunk both modes are the same. `executed` is the wall-clock sequence of targets, one per control frame,
+holds included. The executed targets are what a perfect model would make the robot do; for static tasks
+they are judged by geometry, not timing:
 
   path         distance of every executed target to the recorded path segment its chunk covers
                (the observed state followed by actions up to three frames past the label's last point):
@@ -34,11 +48,14 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
+import typing
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 
 from vla_tools import arc_core
+from vla_tools.arc_interp import after_latency
 from vla_tools.arc_interp import point_frames
 from vla_tools.arc_interp import to_frames
 from vla_tools.episodes import Episode
@@ -52,13 +69,24 @@ from vla_tools.robot_spec import RobotSpec
 PATH_MARGIN_FRAMES = 3
 HOLD_TOLERANCE = 0.25  # path steps
 
+Mode = Literal["sync", "async"]
+
 
 @dataclasses.dataclass(frozen=True)
 class EpisodeReplay:
     executed: np.ndarray  # (n, action_dim) executed targets in order
     observations: list[int]  # observed frame of every chunk
-    distances: np.ndarray  # (n,) each executed target's distance to its chunk's recorded segment (rad)
+    distances: np.ndarray  # (m,) each executed chunk target's distance to its chunk's recorded segment (rad)
     seams: list[float]  # rad, between consecutive chunks
+    stall_frames: int  # frames held for inference latency or because a chunk ran out
+
+
+@dataclasses.dataclass(frozen=True)
+class EdgeCheck:
+    positions: list[float]  # rad, per executed command switch: its joints against the recorded edge's
+    holds: list[int]  # executed frames held at each executed switch (within the hold tolerance)
+    recorded_holds: list[int]  # frames the recording holds at the same edges
+    missed: int  # recorded edges never switched
 
 
 @dataclasses.dataclass(frozen=True)
@@ -101,32 +129,73 @@ def _observe(
 
 
 def closed_loop(
-    e: Episode, spec: RobotSpec, record: KeyframeRecord, config: ResampleConfig, execute: int, rate: float
+    e: Episode,
+    spec: RobotSpec,
+    record: KeyframeRecord,
+    config: ResampleConfig,
+    execute: int,
+    rate: float,
+    latency_frames: int = 0,
+    mode: Mode = "sync",
 ) -> EpisodeReplay:
+    if mode not in typing.get_args(Mode):
+        raise ValueError(f"mode must be one of {typing.get_args(Mode)}, got {mode!r}")
+    if execute < 1 or latency_frames < 0:
+        raise ValueError(f"execute must be >= 1 and latency_frames >= 0, got {execute}, {latency_frames}")
+    if mode == "async" and execute < latency_frames:
+        raise ValueError(
+            f"async needs execute >= latency_frames (one inference in flight), got {execute} < {latency_frames}"
+        )
+    times = point_frames(config.span_frames, config.action_horizon, config.anchor, rate)
+    if np.floor(times[-1]) < 1 or (mode == "async" and np.floor(times[-1]) - latency_frames < 1):
+        raise ValueError(
+            f"a chunk of {times[-1]:.2f} frames keeps no target after {latency_frames if mode == 'async' else 0}"
+            " frames of latency"
+        )
     joints, commands = list(spec.joint_dims), list(spec.command_dims)
     actions = e.actions
     poses = np.stack([spec.current_pose(s) for s in e.states])
     _, ch = arc_core.chunks(actions, spec, config, record.windows(e.index), e.real)
-    times = point_frames(config.span_frames, config.action_horizon, config.anchor, rate)
     last_frame = e.real - 1
     t, pose = 0, poses[0]
     executed, observations, distances, seams = [], [], [], []
+    stalls = 0
     while t < last_frame and len(observations) <= 4 * len(actions):
         observations.append(t)
-        targets = to_frames(ch.points[t], pose, times, spec.command_dims)[:execute]
+        arrival = latency_frames if mode == "async" and executed else 0  # observation to the first target
+        if arrival:
+            chunk = after_latency(ch.points[t], times, executed[-1], arrival, spec.command_dims)
+        else:
+            chunk = to_frames(ch.points[t], pose, times, spec.command_dims)
+        run = list(chunk[:execute])
+        if mode == "async" and len(run) < execute:
+            held = run[-1] if run else executed[-1]
+            stalls += execute - len(run)
+            run += [held.copy() for _ in range(execute - len(run))]
+        targets = np.array(run)
         if executed:
             seams.append(float(np.linalg.norm(targets[0, joints] - executed[-1][joints])))
+        if mode == "sync" or not executed:
+            executed.extend(pose.copy() for _ in range(latency_frames))
+            stalls += latency_frames
         end = min(len(actions), int(np.ceil(ch.frames[t, -1])) + PATH_MARGIN_FRAMES)
         segment = np.concatenate([poses[t, joints][None, :], actions[t:end, joints]])
         distances.append(distance_to_path(targets[:, joints], segment))
-        executed.extend(targets)
-        pose = targets[-1].copy()
-        t = _observe(pose, poses, joints, commands, t, min(last_frame, end), t + round(rate * len(targets)))
+        split = len(targets) - latency_frames if mode == "async" else len(targets)
+        executed.extend(targets[:split])
+        pose = executed[-1].copy()
+        if arrival + split > 0:
+            expected = t + round(rate * (arrival + split))
+            t = _observe(pose, poses, joints, commands, t, min(last_frame, end), expected)
+        # else: async back to back (e = d) right after the first inference; the robot has not moved, so the
+        # next observation is the same frame
+        executed.extend(targets[split:])
     return EpisodeReplay(
         executed=np.array(executed),
         observations=observations,
         distances=np.concatenate(distances) if distances else np.zeros(0),
         seams=seams,
+        stall_frames=stalls,
     )
 
 
@@ -146,6 +215,27 @@ def _hold(executed: np.ndarray, joints: list[int], index: int, tolerance: float)
     return count
 
 
+def edge_check(e: Episode, spec: RobotSpec, executed: np.ndarray, tolerance: float) -> EdgeCheck:
+    """Executed command switches against the recorded edges of every command dim, in order; holds within
+    `tolerance` (rad) of the joints at the switch."""
+    joints = list(spec.joint_dims)
+    recorded_rows = e.actions[: e.real]
+    positions: list[float] = []
+    holds: list[int] = []
+    recorded_holds: list[int] = []
+    missed = 0
+    for dim in spec.command_dims:
+        done = _switches(executed[:, dim]) if len(executed) else []
+        for k, edge in enumerate(arc_core.command_edges(recorded_rows, dim)):
+            if k >= len(done):
+                missed += 1
+                continue
+            positions.append(float(np.linalg.norm(executed[done[k], joints] - e.actions[edge, joints])))
+            holds.append(_hold(executed, joints, done[k], tolerance))
+            recorded_holds.append(_hold(recorded_rows, joints, edge, tolerance))
+    return EdgeCheck(positions=positions, holds=holds, recorded_holds=recorded_holds, missed=missed)
+
+
 def replay(
     episodes: list[Episode], spec: RobotSpec, record: KeyframeRecord, config: ResampleConfig, execute: int,
     rate: float, path_step: float, reference_step: float,
@@ -163,15 +253,10 @@ def replay(
         if len(run.executed) > 1:
             steps = np.linalg.norm(np.diff(run.executed[:, joints], axis=0), axis=1)
             speeds.append(float(steps.max()) / reference_step)
-        for dim in spec.command_dims:
-            recorded = [edge for edge in arc_core.command_edges(e.actions[: e.real], dim)]
-            done = _switches(run.executed[:, dim]) if len(run.executed) else []
-            for k, edge in enumerate(recorded):
-                if k >= len(done):
-                    missed += 1
-                    continue
-                kf.append(float(np.linalg.norm(run.executed[done[k], joints] - e.actions[edge, joints])))
-                holds.append(_hold(run.executed, joints, done[k], HOLD_TOLERANCE * path_step))
+        edges = edge_check(e, spec, run.executed, HOLD_TOLERANCE * path_step)
+        missed += edges.missed
+        kf += edges.positions
+        holds += edges.holds
     pooled = np.concatenate(distances) if distances else np.zeros(1)
     nan2 = (float("nan"), float("nan"))
     return ReplayRow(

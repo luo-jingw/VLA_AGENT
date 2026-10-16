@@ -19,6 +19,8 @@ class RobotSpec:
     state_dims     for every action dim, the state dim holding the same quantity, or -1 when the
                    state has none. The current pose a chunk starts from is read through it
     image_keys     camera columns, used by visual review and image descriptors
+    joint_velocity_limits      per joint dim, the robot's joint velocity limit (rad/s); empty when unknown
+    joint_acceleration_limits  per joint dim, the robot's joint acceleration limit (rad/s^2); empty when unknown
     """
 
     action_dim: int
@@ -29,6 +31,8 @@ class RobotSpec:
     action_key: str = "action"
     state_key: str = "observation.state"
     image_keys: tuple[str, ...] = ()
+    joint_velocity_limits: tuple[float, ...] = ()
+    joint_acceleration_limits: tuple[float, ...] = ()
 
     def __post_init__(self) -> None:
         dims = sorted((*self.joint_dims, *self.command_dims))
@@ -38,6 +42,12 @@ class RobotSpec:
             raise ValueError(f"state_dims needs one entry per action dim ({self.action_dim})")
         if any(self.state_dims[d] < 0 for d in self.joint_dims):
             raise ValueError("every joint dim needs a state counterpart")
+        for name in ("joint_velocity_limits", "joint_acceleration_limits"):
+            limits = getattr(self, name)
+            if limits and (len(limits) != len(self.joint_dims) or min(limits) <= 0.0):
+                raise ValueError(
+                    f"{name} needs one positive entry per joint dim ({len(self.joint_dims)}), got {limits}"
+                )
 
     @property
     def joint_state_dims(self) -> tuple[int, ...]:
@@ -59,4 +69,6 @@ class RobotSpec:
             action_key=str(raw.get("action_key", "action")),
             state_key=str(raw.get("state_key", "observation.state")),
             image_keys=tuple(str(k) for k in raw.get("image_keys", [])),
+            joint_velocity_limits=tuple(float(v) for v in raw.get("joint_velocity_limits", [])),
+            joint_acceleration_limits=tuple(float(v) for v in raw.get("joint_acceleration_limits", [])),
         )
