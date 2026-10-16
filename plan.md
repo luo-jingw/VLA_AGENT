@@ -268,7 +268,7 @@ Result: LIBERO, every span-40 cell on the same 2917 inference frames (stride 2);
 
 ## Phase 3
 
-Phase Status: active
+Phase Status: completed
 
 Round: 1
 
@@ -300,9 +300,21 @@ Episodes, buildings and collectors kept; length distribution; audit findings (in
 value distribution, jumps, idle); keyframe issue list; timing report; operators' speed against curvature
 (slope, R²) and window progress p90 / p10, against LIBERO's −0.31 and 1.3×.
 
+Result: lerobot/droid_1.0.1 revision 0eabc778, files 000, 078 and 155: 2335 episodes, 1951 successful, 891
+pick-and-place instructions, 580 with one grasp and one release; 60 kept from 44 buildings and 38
+collectors, 63–743 frames (median 216). The measured joints follow the commands about 4 frames later
+(ISSUE-005), so the extracted state is the command echo and action[t] = state[t + 1] holds exactly; the
+gripper command is thresholded at 0.5. Audit: 17 jumps above 8× the median step (10 discontinuities, 6
+continuing, 1 isolated) in 10 episodes; the recordings reach median 0.54 of the velocity limit at their
+fastest frame, 5 episodes exceed it (1.41 max, all at jumps) and are left out by `rate_ceiling`. Timing:
+leading still frames trimmed (37 episodes, up to 41 frames), trailing (8, up to 41), pauses kept, 256
+padding rows. Keyframes: grasp and release from the command edges, 60 / 60 each; 5 open phase / interval
+outliers, left open (no camera review; edges are exact). Operators' speed against curvature: slope −0.39,
+R² 0.26 (LIBERO −0.31, 0.45); window progress p90 / p10 at span 32 3.9× (LIBERO at span 40: 1.3×).
+
 ## Phase 4
 
-Phase Status: pending
+Phase Status: active
 
 Round: 2
 

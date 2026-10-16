@@ -164,7 +164,8 @@ observation runs ahead of the executed pose.
 LIBERO, `curvature-s40-d2`, rate 1: at e = 1 the replay executes 7074 frames for 7758 recorded, with path
 deviation max 1.97 and keyframe position max 4.73 path steps, against max 0.42–0.57 and 1.12–3.13 for
 e = 2–40; at rate 2, e = 1 gives max 0.53 and 1.97. The e = 1, rate 1 row overstates the error of the
-labels.
+labels. `rate_ceiling` replays the same loop: where an execution length covers less than one recorded
+frame of path, the forced advance shortens the wall-clock duration and overstates the speed-up.
 
 ## Evidence
 
@@ -181,5 +182,41 @@ is then needed so the loop still ends.
 
 Replay e = 1 and 2 at rates 1 and 2 with the search starting at t, and compare executed frames and path
 deviation with the current rows.
+
+## Resolution
+
+# ISSUE-005
+
+Status: Open
+
+Area: `rate_ceiling` execution model on real robots
+
+## Observation
+
+DROID's measured joint and gripper positions follow the commanded targets about 4 control frames later
+(15 Hz; median best lag 4 frames, 10th–90th percentile 4–5, residual median 0.042 rad ≈ 1.7 path steps at
+the best lag, 301 successful episodes of file-000). The rate ceiling treats the executed commands as the
+robot's motion: tracking lag and tracking error are not modelled.
+
+## Impact
+
+At r times the recorded speed a joint impedance controller tracks the commands with a larger error and
+lag than in the recording; the rate ceiling within the velocity limits is an upper bound on what the
+robot executes faithfully.
+
+## Evidence
+
+`FTpi05/reports/rate-ceiling-src/extract_droid.py` docstring; measurement on
+`FTpi05/data/droid-raw/data/chunk-000/file-000.parquet` (lerobot/droid_1.0.1 revision 0eabc778), 2026-10-16.
+
+## Hypotheses
+
+The tracking error grows roughly with the commanded velocity and acceleration; DROID's recorded
+command / measured pairs at different operator speeds would give that relation.
+
+## Next Experiment
+
+Per DROID episode, fit measured(t) against the command shifted by the lag, and relate the residual to the
+command's speed; extrapolate the residual to the speeds the rate ceiling reaches.
 
 ## Resolution
