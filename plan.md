@@ -234,7 +234,7 @@ replay JSONs unchanged under the defaults; LIBERO rate ceiling printed for `time
 
 ## Phase 2
 
-Phase Status: active
+Phase Status: completed
 
 Round: 1
 
@@ -262,9 +262,13 @@ None.
 
 Equal frame count across the cells of a span; LIBERO selection and cell table before / after.
 
+Result: LIBERO, every span-40 cell on the same 2917 inference frames (stride 2); `curvature` cells unchanged,
+`time` s40 d2 path full median 0.092 → 0.096 path steps, d0 0.123 → 0.133; selection unchanged
+(`curvature` s40 d2, 0.082), shortlist unchanged.
+
 ## Phase 3
 
-Phase Status: pending
+Phase Status: active
 
 Round: 1
 

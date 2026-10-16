@@ -4,7 +4,8 @@ Every cell is scored on what the deployed system executes: the label points plac
 assumed times and interpolated onto frames (arc_interp.to_frames), compared with the recording by
 geometry. For static tasks the timing along the demonstrated path does not matter; where the deployed
 targets go and where they switch a command does. Scored at every --stride-th recorded frame t whose
-label has no padded point:
+label has no padded point in any cell of the same span, so the cells of one span are compared on the same
+frames (frames: their count):
 
   reach        median frames from the current state to the last point, in recorded time
   path head    largest distance of the first --head deployed targets to the recorded path segment: the
@@ -86,6 +87,7 @@ class CellResult:
     head_err: tuple[float, float]
     full_err: tuple[float, float]
     edge_shift: tuple[float, float, float]  # time-indexed, informational: median, p10, p90 (frames)
+    frames: int  # inference frames scored
 
 
 @dataclasses.dataclass(frozen=True)
@@ -156,15 +158,32 @@ def _stats(values: list[float], percentile: float) -> tuple[float, float]:
     return float(np.median(values)), float(np.percentile(values, percentile))
 
 
+def unpadded_frames(
+    episodes: list[Episode], spec: RobotSpec, record: KeyframeRecord, config: ResampleConfig, stride: int
+) -> dict[int, set[int]]:
+    """Per episode, the inference frames (every stride-th recorded frame) whose label has no padded point."""
+    out: dict[int, set[int]] = {}
+    for e in episodes:
+        _, ch = arc_core.chunks(e.actions, spec, config, record.windows(e.index), e.real)
+        out[e.index] = {t for t in range(0, e.real, stride) if not ch.padded[t].any()}
+    return out
+
+
+def common_frames(per_cell: list[dict[int, set[int]]]) -> dict[int, list[int]]:
+    """Per episode, the frames every cell scores, ascending."""
+    return {i: sorted(set.intersection(*(cell[i] for cell in per_cell))) for i in per_cell[0]}
+
+
 def evaluate(
     episodes: list[Episode],
     spec: RobotSpec,
     record: KeyframeRecord,
     config: ResampleConfig,
     head: int,
-    stride: int,
+    frames: dict[int, list[int]],
     scale: PathScale,
 ) -> CellResult:
+    """`frames`: per episode, the inference frames to score (common_frames of the cells compared)."""
     joints = list(spec.joint_dims)
     assumed = point_frames(config.span_frames, config.action_horizon, config.anchor, 1.0)  # path geometry: rate-free
     reach: list[float] = []
@@ -192,9 +211,7 @@ def evaluate(
                 after = bool(actions[edge, dim] > 0.5)
                 window = ch.points[max(edge - config.action_horizon, 0) : edge + 1, :, dim] > 0.5
                 kept += bool(np.any(window == after))
-        for t in range(0, e.real, stride):  # inference on recorded frames only; padding is scored by replay
-            if ch.padded[t].any():
-                continue
+        for t in frames[e.index]:  # inference on recorded frames only; padding is scored by replay
             true_times = ch.frames[t] - t + 1.0  # action index -> frames after state[t]
             reach.append(float(true_times[-1]))
             exact = to_frames(ch.points[t], poses[t], true_times, spec.command_dims)
@@ -239,6 +256,7 @@ def evaluate(
         edge_shift=(float(np.median(shifts)), float(np.percentile(shifts, 10)), float(np.percentile(shifts, 90)))
         if shifts
         else (float("nan"),) * 3,
+        frames=sum(len(f) for f in frames.values()),
     )
 
 
@@ -303,34 +321,43 @@ def main() -> None:
     print("path head / path full / kf pos: median/p90 in path steps; speed: median/p95 of the reference step")
     header = (
         f"{'metric':>9} {'span':>4} {'dens':>4} {'reach':>5} {'path head':>10} {'path full':>10} {'kf pos':>10} "
-        f"{'speed':>10} {'jump':>5} {'pad':>5} {'kept':>7} ok"
+        f"{'speed':>10} {'jump':>5} {'pad':>5} {'kept':>7} {'frames':>6} ok"
     )
     print(header)
     print("-" * len(header))
+    configs = [
+        ResampleConfig(
+            metric=metric,
+            span_frames=span,
+            action_horizon=args.horizon,
+            event_density=density,
+            anchor=args.anchor,
+            curvature_length=curvature_length if metric == "curvature" else None,
+        )
+        for metric in args.metrics
+        for span in args.spans
+        for density in args.event_density
+    ]
+    frames_by_span = {
+        span: common_frames(
+            [unpadded_frames(episodes, spec, record, c, args.stride) for c in configs if c.span_frames == span]
+        )
+        for span in args.spans
+    }
     cells: list[CellResult] = []
     oks: list[bool] = []
-    for metric in args.metrics:
-        for span in args.spans:
-            for density in args.event_density:
-                config = ResampleConfig(
-                    metric=metric,
-                    span_frames=span,
-                    action_horizon=args.horizon,
-                    event_density=density,
-                    anchor=args.anchor,
-                    curvature_length=curvature_length if metric == "curvature" else None,
-                )
-                cell = evaluate(episodes, spec, record, config, args.head, args.stride, scale)
-                ok = admissible(cell, bounds, scale.path_step)
-                cells.append(cell)
-                oks.append(ok)
-                print(
-                    f"{metric:>9} {span:>4} {density:>4g} {cell.reach_frames:>5.1f} "
-                    f"{_pair(cell.path_head, scale.path_step):>10} {_pair(cell.path_full, scale.path_step):>10} "
-                    f"{_pair(cell.kf_position, scale.path_step):>10} {_pair(cell.speed_ratio, 1.0):>10} "
-                    f"{cell.jump_steps:>5.1f} {cell.pad_fraction:>5.1%} {cell.edges_kept:>3}/{cell.edges_total:<3}"
-                    f"{'  Y' if ok else '  -'}"
-                )
+    for config in configs:
+        cell = evaluate(episodes, spec, record, config, args.head, frames_by_span[config.span_frames], scale)
+        ok = admissible(cell, bounds, scale.path_step)
+        cells.append(cell)
+        oks.append(ok)
+        print(
+            f"{config.metric:>9} {config.span_frames:>4} {config.event_density:>4g} {cell.reach_frames:>5.1f} "
+            f"{_pair(cell.path_head, scale.path_step):>10} {_pair(cell.path_full, scale.path_step):>10} "
+            f"{_pair(cell.kf_position, scale.path_step):>10} {_pair(cell.speed_ratio, 1.0):>10} "
+            f"{cell.jump_steps:>5.1f} {cell.pad_fraction:>5.1%} {cell.edges_kept:>3}/{cell.edges_total:<3} "
+            f"{cell.frames:>6}{'  Y' if ok else '  -'}"
+        )
 
     shortlist: dict[int, CellResult] = {}
     for cell, ok in zip(cells, oks, strict=True):
