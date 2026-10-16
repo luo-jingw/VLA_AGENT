@@ -1,6 +1,6 @@
 # Plan
 
-Plan Status: approved
+Plan Status: proposed
 
 # Problem
 
@@ -44,6 +44,26 @@ The current evidence does not measure that rate:
   - every recorded gripper edge is executed in every run;
   - the executed targets exceed the Panda's nominal acceleration limits already for the per-frame labels at
     rate 1 (1.24×, the recording's own frame-to-frame changes).
+
+- Measured during phase 4 (2026-10-16), DROID subset (55 episodes after the velocity exclusion) and LIBERO:
+  - velocity bounds of the recorded paths (`velocity_bound.py`): uniform replay feasible on every episode
+    up to 1.07× on DROID (per episode median 1.88×), 1.96× on LIBERO (3.30×); every step at the limit of its
+    binding joint 7.65× and 5.95×. The fastest DROID recordings reach 0.84–0.93 of the limit at rate 1;
+  - DROID sweep: `curvature` beats `time` at span 32 (path full median 0.31 against 0.34–0.37 path steps)
+    and 64 (0.78 against 1.01–1.07); spans 128 and 256 are inadmissible (path head median 1.4–4.5); selected
+    `curvature` s64 d2;
+  - without a path bound the rate ceiling rewards cutting corners: at spans 64–256 with e = 1, rate 1, the
+    replay finishes 1.3–1.9× faster than recorded while the end effector leaves the recorded path by a
+    median 3.5–14 mm and up to 113 mm; closed loop at small e drifts farther than the open-loop sweep
+    measures;
+  - wall-clock time counts the hold rows a long last chunk executes after the recording's end, and at L = 0
+    with e = 1 the replay stops one row short of the final recorded pose;
+  - "feasible on every episode" is decided by one frame of one episode: on DROID the result jumps between
+    neighbouring latencies (`curvature` s64 d2 with a 2-path-step bound and completion timing: L = 0 1.34×,
+    L = 0.05 0.89×, L = 0.1 none, L = 0.2 0.87×);
+  - with one execution rate, every window of span recorded frames runs in span / r frames, so the fastest
+    window of the recording sets the ceiling whatever the label metric; `curvature` placement moves faster
+    on straights, where the velocity limit binds.
 
 ## Problem
 
@@ -314,7 +334,7 @@ R² 0.26 (LIBERO −0.31, 0.45); window progress p90 / p10 at span 32 3.9× (LIB
 
 ## Phase 4
 
-Phase Status: active
+Phase Status: blocked
 
 Round: 2
 

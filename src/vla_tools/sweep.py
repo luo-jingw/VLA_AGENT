@@ -26,7 +26,8 @@ show median / p90 over inference frames; speed shows median / p95.
 
 The JSON also keeps the time-indexed figures for information: true / head / full, the worst-joint error
 against actions[t + j] frame by frame with the points' true or assumed times, and edge_shift, the signed
-shift in frames of the first command edge inside the head.
+shift in frames of the first command edge inside the head. `true` leaves out labels whose points share a
+true time (at frame 0 the points inside the first segment are placed at action 0).
 
 Admissible: path head median <= --max-head, kf position median <= --max-kf (no edge passes), all edges
 kept, and when given speed p95 <= --max-speed-ratio, jump <= --max-jump (the controller's limit) and
@@ -214,10 +215,11 @@ def evaluate(
         for t in frames[e.index]:  # inference on recorded frames only; padding is scored by replay
             true_times = ch.frames[t] - t + 1.0  # action index -> frames after state[t]
             reach.append(float(true_times[-1]))
-            exact = to_frames(ch.points[t], poses[t], true_times, spec.command_dims)
-            n_true = min(int(np.floor(true_times[-1])), len(exact), len(actions) - t)
-            if n_true >= 1:  # otherwise the whole chunk falls inside one recorded frame
-                true_err.append(float(np.abs(exact[:n_true, joints] - actions[t : t + n_true, joints]).max()))
+            if np.all(np.diff(true_times) > 0.0):
+                exact = to_frames(ch.points[t], poses[t], true_times, spec.command_dims)
+                n_true = min(int(np.floor(true_times[-1])), len(exact), len(actions) - t)
+                if n_true >= 1:  # otherwise the whole chunk falls inside one recorded frame
+                    true_err.append(float(np.abs(exact[:n_true, joints] - actions[t : t + n_true, joints]).max()))
 
             rec = to_frames(ch.points[t], poses[t], assumed, spec.command_dims)  # what the server executes
             n_head = min(head, len(rec), len(actions) - t)

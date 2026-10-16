@@ -220,3 +220,71 @@ Per DROID episode, fit measured(t) against the command shifted by the lag, and r
 command's speed; extrapolate the residual to the speeds the rate ceiling reaches.
 
 ## Resolution
+
+# ISSUE-006
+
+Status: Open
+
+Area: `arc_core` label points at frame 0
+
+## Observation
+
+Points are placed at fractional action indices, the observed state sitting at index t − 1. At t = 0 the
+state is at −1 and placements below 0 are clamped to 0, so every point that falls inside the first segment
+(state → action 0) lands on action 0. With a first segment that carries more than one point spacing of
+progress, two or more points of the frame-0 label coincide.
+
+## Impact
+
+The frame-0 label holds the first action for one or more points; the deployed chunk dwells there instead of
+following the first segment. One label in the DROID subset (episode 37, `curvature` span 10) has two points
+at action 0; `sweep`'s time-indexed `true` figure leaves such labels out.
+
+## Evidence
+
+`FTpi05/runs/droid_pick_place`, `data/droid-pick-place-timed`, 2026-10-16: true times of episode 37,
+frame 0, `curvature` s10: 0, 1, 1, 1.41, 1.88, …; no other frame of the 60 episodes at spans 10–64.
+
+## Hypotheses
+
+Placing the frame-0 points inside the first segment by interpolating between the state and action 0, as
+for t ≥ 1, removes the coincident points.
+
+## Next Experiment
+
+Count coincident points per dataset and span; compare frame-0 labels with interpolated placement.
+
+## Resolution
+
+# ISSUE-007
+
+Status: Open
+
+Area: `sweep` jump column with long end padding
+
+## Observation
+
+`jump` is the median over every row of the episode, padding rows included, of the first point's distance
+from the current state. Padding rows repeat the final target, so their jump is 0; when an episode has more
+padding rows than recorded rows, the median is 0.
+
+## Impact
+
+DROID subset (256 padding rows, median 216 recorded rows): `jump` is 0.0 path steps in every cell. A
+`--max-jump` bound would pass every cell. The column is not used for admissibility unless `--max-jump` is
+given.
+
+## Evidence
+
+`FTpi05/runs/droid_pick_place/sweep.json`, 2026-10-16.
+
+## Hypotheses
+
+Taking the median over recorded rows only gives the intended figure.
+
+## Next Experiment
+
+Recompute `jump` over recorded rows for LIBERO (40 padding rows) and DROID and compare with the current
+column.
+
+## Resolution
