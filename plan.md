@@ -411,7 +411,7 @@ tolerance); per-frame labels complete in 190, 95, 64 frames at rates 1, 2, 3.
 
 ## Phase 5
 
-Phase Status: active
+Phase Status: completed
 
 Round: 3
 
@@ -446,9 +446,45 @@ rate and speed-up median / p10, the reported acceleration and switch step, path 
 steps, end effector mm); against the per-frame baseline and the time-optimal bound. LIBERO replay rows
 before / after the end rule.
 
+Result (2026-10-17; path bound 2 path steps, 90% of the episodes; DROID 55 episodes, path step 0.0241 rad;
+LIBERO 50, 0.0306 rad). Largest speed-up feasible on ≥ 90%, asynchronous / synchronous, with the end
+effector's deviation (median / p90 / max, mm) at the asynchronous setting:
+
+| L (s) | DROID best | DROID per-frame | LIBERO best | LIBERO per-frame |
+|---|---|---|---|---|
+| 0 | 1.96 `time` s32 d0, r2 e16 (0.3 / 0.9 / 6.0) | 1.59 | 2.44 `curvature` s64 d2, r3 e21 (0.3 / 1.2 / 8.5) | 1.99 |
+| 0.05 | 1.96 / 1.84 | 1.50 / 1.28 | 2.87 `curvature` s64 d0 / 2.32 | 1.97 / 1.66 |
+| 0.1 | 1.93 / 1.73 | 1.48 / 1.12 | 2.65 `curvature` s128 d0 (2.0 / 5.5 / 18.5) / 2.21 | 1.94 / 1.42 |
+| 0.2 | 1.45 r1.5 (… / 15.6) / 1.64 | 0.99 / 0.99 | 2.29 `curvature` s64 d2 / 2.09 | 0.97 / 1.10 |
+| 0.4 | 0.97 r1 / 1.40 | none / 0.74 | 2.03 `curvature` s128 d2 / 1.88 | none / 0.76 |
+
+- DROID: `time` s32 d0 is the best configuration at every latency in both modes; `curvature` s32 reaches
+  rate 1.5 (1.30–1.45), spans 64–256 are infeasible on more than 10% of the episodes at every rate below
+  their velocity limit (path bound; `curvature` s64 d0 at L = 0: 43–47 of 55 at rates 1–2), except
+  `curvature` s64 at L = 0.1–0.2 (rate 1–1.5, 50 of 55). The next rate fails on velocity (36–38 episodes at
+  rate 3 for `time` s32).
+- LIBERO: `curvature` at spans 64 and 128 reaches rate 3 (2.0–2.9×) where `time` labels stay at rate 2
+  (1.8–2.1×); per-frame labels fall to rate 1 at L = 0.2 s and have no asynchronous run at 0.4 s.
+- The selected settings sit at the threshold: most have exactly 50 of 55 (DROID) or 45–46 of 50 (LIBERO)
+  feasible episodes, and the result moves between neighbouring latencies where a grid rate gains or loses
+  one episode (LIBERO `curvature` s64 d0: 1.95, 2.87, 1.91 at L = 0, 0.05, 0.1). The largest feasible
+  speed-up per episode varies smoothly: DROID `time` s32 d0 asynchronous median 2.07, 2.00, 1.96, 1.95,
+  1.86; per-frame 2.00, 1.98, 1.95, 1.47, 0. Per episode, `curvature` s64 d0 reaches a median of 2.98 on
+  DROID at L = 0 with a setting that differs between episodes.
+- At L ≥ 0.2 s the DROID asynchronous figure drops below the synchronous one: at rate 2 asynchronous
+  execution is feasible on 49 of 55 episodes (5 velocity, 1 path), synchronous on 50.
+- Velocity bounds (`velocity_bound.py`, unchanged): uniform replay of the recording on every episode 1.07×
+  (DROID), 1.96× (LIBERO); per episode median 1.88×, 3.30×; time-optimal 7.65×, 5.95×.
+- End-effector deviation at the selected settings: median 0.3–2.0 mm, p90 0.9–5.5 mm, max 6–18.5 mm (2
+  path steps of joint deviation reach up to 15.6 mm on DROID).
+- LIBERO replays with the end rule: path, keyframe, seam and speed figures unchanged; one more inference per
+  episode (the last recorded frame), more at e = 1; per-frame labels complete in the recorded 7702 frames at
+  every e (before: 7708–7930 executed for 7758 recorded rows); `curvature` s40 d2 at rate 1 completes in
+  9304–9654 frames for e ≥ 2, at rate 2 in 4663–4768.
+
 ## Phase 6
 
-Phase Status: pending
+Phase Status: active
 
 Round: 4
 
