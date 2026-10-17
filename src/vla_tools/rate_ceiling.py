@@ -19,8 +19,9 @@ without limits; a deployed controller's acceleration is a setting) and seams (th
 first target, path steps).
 
 Completion (label_replay.completion_frames): frames until a sequence reaches the final recorded row and stays
-within the final tolerance (label_replay.HOLD_TOLERANCE path steps) of it, for the executed targets (holds
-included) and the recorded actions alike. Speed-up = recorded / executed completion frames.
+within the final tolerance (label_replay.HOLD_TOLERANCE path steps) of it and, with switch holds, the hold
+of its last command switch is over, for the executed targets (holds included) and the recorded actions
+alike. Speed-up = recorded / executed completion frames.
 
 Episodes whose recording itself exceeds a velocity limit (the recorded actions from the first state, the same
 differences) are left out of every case and listed: no label can be held to a limit the demonstration breaks.
@@ -205,7 +206,9 @@ def check(
         inferences=len(run.observations),
         completion_frames=run.completion_frames,
         stall_frames=run.stall_frames,
-        recorded_frames=label_replay.completion_frames(e.actions[: e.real], e.actions[e.real - 1], spec, tolerance),
+        recorded_frames=label_replay.completion_frames(
+            e.actions[: e.real], e.actions[e.real - 1], spec, tolerance, timing
+        ),
         holds=_median_min(edges.holds),
         recorded_holds=_median_min(edges.recorded_holds),
     )

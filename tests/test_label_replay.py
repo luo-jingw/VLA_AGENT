@@ -133,6 +133,8 @@ def test_completion_counts_frames_until_the_final_row_is_reached_for_good() -> N
     assert completion_frames(rows[:2], rows[1], SPEC, 0.1) == 2
     with pytest.raises(ValueError, match="not at the final row"):
         completion_frames(rows[:3], final, SPEC, 0.1)
+    timing = VelocityTiming(velocity_limits=(1.0, 1.0), fraction=1.0, fps=10.0, rise_hold_s=0.5, fall_hold_s=0.2)
+    assert completion_frames(rows, final, SPEC, 0.1, timing) == 3 + 1 + 5  # the rise at row 3 holds 5 more
 
 
 def test_velocity_timing_with_latency_stays_within_the_limit_and_holds_at_switches() -> None:

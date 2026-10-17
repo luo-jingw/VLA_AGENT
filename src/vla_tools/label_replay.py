@@ -31,9 +31,10 @@ the frames of the latency the robot did not spend holding (arc_interp.arrival_ti
 
 End: the chunk of the last recorded frame is always executed; from there the robot keeps observing that frame
 until the executed pose is within the final tolerance (closed_loop's final_tolerance, rad) of the final
-recorded row with its command state. `executed` is the wall-clock sequence of targets, one per control frame,
+recorded row with its command state, and no switch hold is still owed. `executed` is the wall-clock sequence of targets, one per control frame,
 holds included; its completion is the number of frames until the targets reach the final row and stay there
-(completion_frames), counted the same way for the recorded actions. The executed targets are what a perfect
+and, with switch holds, the hold of the last command switch is over (completion_frames), counted the same
+way for the recorded actions. The executed targets are what a perfect
 model would make the robot do; for static tasks they are judged by geometry, not timing:
 
   path         distance of every executed target to the recorded path segment its chunk covers
@@ -129,14 +130,26 @@ def _away(rows: np.ndarray, final: np.ndarray, spec: RobotSpec, tolerance: float
     return away
 
 
-def completion_frames(targets: np.ndarray, final: np.ndarray, spec: RobotSpec, tolerance: float) -> int:
+def completion_frames(
+    targets: np.ndarray, final: np.ndarray, spec: RobotSpec, tolerance: float, timing: VelocityTiming | None = None
+) -> int:
     """Frames until (N, D) `targets`, one per control frame, reach the (D,) `final` row and stay within
-    `tolerance` (rad) of its joints with its command state up to the last target."""
+    `tolerance` (rad) of its joints with its command state up to the last target; with a timing, also until
+    the switch hold of the last command switch in `targets` is over."""
     away = _away(targets, final, spec, tolerance)
     if len(away) == 0 or away[-1]:
         raise ValueError("the last target is not at the final row")
     off = np.flatnonzero(away)
-    return int(off[-1]) + 2 if len(off) else 1
+    settled = int(off[-1]) + 2 if len(off) else 1
+    commands = list(spec.command_dims)
+    if timing is None or not commands:
+        return settled
+    state = targets[:, commands] > 0.5
+    switches = np.flatnonzero((state[1:] != state[:-1]).any(axis=1)) + 1
+    if len(switches) == 0:
+        return settled
+    k = int(switches[-1])
+    return max(settled, k + 1 + timing.hold_frames(targets[k - 1, commands], targets[k, commands]))
 
 
 def _observe(
@@ -243,7 +256,8 @@ def closed_loop(
             following = _observe(pose, poses, joints, commands, t, min(last_frame, end), expected)
         executed.extend(targets[split:])
         if t == last_frame and not _away(np.array(executed[-1:]), final, spec, final_tolerance)[0]:
-            break
+            if timing is None or timing.owed_hold([poses[0], *executed], spec.command_dims) == 0:
+                break
         t = following
     out = np.array(executed)
     return EpisodeReplay(
@@ -252,7 +266,7 @@ def closed_loop(
         distances=np.concatenate(distances),
         seams=seams,
         stall_frames=stalls,
-        completion_frames=completion_frames(out, final, spec, final_tolerance),
+        completion_frames=completion_frames(out, final, spec, final_tolerance, timing),
     )
 
 
