@@ -1,6 +1,6 @@
 # Plan
 
-Plan Status: proposed
+Plan Status: approved
 
 # Problem
 
@@ -45,20 +45,24 @@ the labels' keyframe density gives the gripper at a switch.
   value on intervals of 1/16 frame; one target at each s = 1, 2, …, ⌊s(T_end)⌋; commands from the nearest
   point in T. A chunk is never faster than rate r (the cap) and never moves a joint faster than α of its
   limit along the spline. Without velocity timing the server is unchanged.
-- Switch hold: at the first target whose command differs from the previous target (or from the pose the
-  chunk starts at), the arm stays for ⌈h · fps⌉ further frames at that target before the chunk continues; h
-  in seconds, a deployment setting like r.
+- Switch hold: a fixed still segment at each command switch. At the first target whose command differs from
+  the previous target (or from the pose the chunk starts at), the arm stays for round(h · fps) further frames at
+  that target before the chunk continues, h = h_rise for a command that rises above 0.5 and h_fall for one
+  that falls below it (close and open on DROID and LIBERO); seconds, a deployment setting like r. The hold
+  replaces the time that uniform timing gives the nearly still stretch around a switch through the labels'
+  keyframe density.
 - Arrival rebuild with velocity timing: a chunk observed at commanded pose p_obs and arriving d frames later
   keeps the points whose T exceeds T_d by more than half a point spacing, T_d the chunk time of target d of
   the chunk timed from p_obs (holds included); the knots shift by T_d and the chunk is rebuilt from the pose
   commanded at arrival and timed the same way. With uniform timing T_d = d, as now.
-- Rate ceiling with velocity timing: α = 1, h ∈ {0, 0.53 s} (none; DROID's median close time), the same
+- Rate ceiling with velocity timing: α = 1, holds (h_rise, h_fall) ∈ {(0, 0), (0.53 s, 0.67 s)} (none;
+  DROID's median close and open times: 8 and 10 frames at 15 Hz, 11 and 13 at LIBERO's 20 Hz), the same
   configurations (per-frame; `time` and `curvature` at DROID spans 32, 64, 128, 256 and LIBERO spans 32, 40,
   64, 128, 256; density 0 and 2), latencies, modes, rate grid (now the cap), execution lengths, path bound
   and 90% summary. Feasibility unchanged: velocity is still checked over all executed targets, switches and
   holds included. Reported, not constrained: the executed frames held at each command switch against the
   recording's (`EdgeCheck.holds`, 0.25 path steps), median / min.
-- Per data set: uniform timing against velocity timing with h = 0 and h = 0.53 s per latency and mode,
+- Per data set: uniform timing against velocity timing without and with the holds per latency and mode,
   per-episode speed-up, end-effector deviation, against the time-optimal bound.
 
 # Structure
@@ -96,7 +100,8 @@ and execution lengths and reports holds. Deployment wiring (`vla_openpi.launch`)
 ## Interfaces
 
 - `arc_interp.VelocityTiming(velocity_limits: tuple[float, ...], fraction: float, fps: float,
-  switch_hold_s: float)`: frozen dataclass; one limit per non-command dim in dim order (rad/s).
+  rise_hold_s: float, fall_hold_s: float)`: frozen dataclass; one limit per non-command dim in dim order
+  (rad/s).
 - `arc_interp.to_frames(points, current, times, command_dims, timing: VelocityTiming | None = None) ->
   np.ndarray`: (n, D) targets; n = ⌊times[-1]⌋ without timing, at least that with it (plus holds).
 - `arc_interp.target_times(points, current, times, command_dims, timing: VelocityTiming | None = None) ->
@@ -110,8 +115,8 @@ and execution lengths and reports holds. Deployment wiring (`vla_openpi.launch`)
 - `label_replay.closed_loop(..., *, final_tolerance: float, timing: VelocityTiming | None = None)`.
 - `rate_ceiling`: `Case.timing: VelocityTiming | None`; `check(..., timing)`; `RateCheck.holds`,
   `recorded_holds: tuple[float, float]` (median, min frames); `CaseResult.velocity_fraction`,
-  `switch_hold_s`, `holds`, `recorded_holds`; CLI `--velocity-fraction α` (velocity timing for every case)
-  and `--switch-hold <s> [<s> ...]`.
+  `switch_hold_s: tuple[float, float]` (rise, fall), `holds`, `recorded_holds`; CLI `--velocity-fraction α`
+  (velocity timing for every case) and `--switch-hold <rise s> <fall s>`, repeatable, one case set each.
 
 ## Inputs
 
@@ -131,8 +136,9 @@ None beyond the outputs.
 
 ## Main Flow
 
-`gripper_actuation.py` → h. `rate_ceiling --velocity-fraction 1 --switch-hold 0 0.53` per data set: per
-case, `closed_loop(timing=VelocityTiming(limits, 1, fps, h))` → per chunk `to_frames` (first chunk, sync
+`gripper_actuation.py` → (h_rise, h_fall). `rate_ceiling --velocity-fraction 1 --switch-hold 0 0
+--switch-hold 0.53 0.67` per data set: per case, `closed_loop(timing=VelocityTiming(limits, 1, fps, h_rise,
+h_fall))` → per chunk `to_frames` (first chunk, sync
 chunks) or `target_times` on the observation pose then `after_latency` (async arrivals) → checks → summary.
 `ee_deviation.py` on the velocity results → comparison table with the uniform results.
 
@@ -157,7 +163,7 @@ Server timing → `ArcInterpolator.timing` (`arc_interp.py`), `Case.timing` (`ra
 
 ## Phase 1
 
-Phase Status: pending
+Phase Status: active
 
 Round: 1
 
@@ -186,7 +192,8 @@ None.
 Tests, measured values printed: without timing the targets are unchanged; a straight constant-speed chunk
 whose rate-r speed exceeds α of a limit runs at α of it (frame count against the closed form); a still
 chunk takes ⌊times[-1]⌋ frames (the cap); the largest per-frame joint speed over random splines as a
-fraction of α · v (≤ 1); a command switch holds ⌈h · fps⌉ further frames; `target_times` matches
+fraction of α · v (≤ 1); a rising and a falling command switch hold round(h_rise · fps) and round(h_fall · fps)
+further frames; `target_times` matches
 `to_frames`; the velocity-timed arrival rebuild starts at the commanded pose and keeps the points past T_d.
 
 ## Phase 2
@@ -254,8 +261,8 @@ Phase 2.
 
 ### Observation
 
-Per data set, latency and mode: speed-up under uniform timing and under velocity timing with h = 0 and
-0.53 s, cap and e, episodes feasible, constraints failing at the next cap, per-episode speed-up median /
+Per data set, latency and mode: speed-up under uniform timing and under velocity timing without and with
+the holds, cap and e, episodes feasible, constraints failing at the next cap, per-episode speed-up median /
 p10, holds at switches against the recording's, end-effector deviation; against the time-optimal bound.
 
 ## Phase 4
