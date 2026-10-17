@@ -455,12 +455,12 @@ effector's deviation (median / p90 / max, mm) at the asynchronous setting:
 | 0 | 1.96 `time` s32 d0, r2 e16 (0.3 / 0.9 / 6.0) | 1.59 | 2.44 `curvature` s64 d2, r3 e21 (0.3 / 1.2 / 8.5) | 1.99 |
 | 0.05 | 1.96 / 1.84 | 1.50 / 1.28 | 2.87 `curvature` s64 d0 / 2.32 | 1.97 / 1.66 |
 | 0.1 | 1.93 / 1.73 | 1.48 / 1.12 | 2.65 `curvature` s128 d0 (2.0 / 5.5 / 18.5) / 2.21 | 1.94 / 1.42 |
-| 0.2 | 1.45 r1.5 (… / 15.6) / 1.64 | 0.99 / 0.99 | 2.29 `curvature` s64 d2 / 2.09 | 0.97 / 1.10 |
+| 0.2 | 1.45 r1.5 e9 (0.3 / 0.9 / 15.6) / 1.64 | 0.99 / 0.99 | 2.29 `curvature` s64 d2 / 2.09 | 0.97 / 1.10 |
 | 0.4 | 0.97 r1 / 1.40 | none / 0.74 | 2.03 `curvature` s128 d2 / 1.88 | none / 0.76 |
 
 - DROID: `time` s32 d0 is the best configuration at every latency in both modes; `curvature` s32 reaches
   rate 1.5 (1.30–1.45), spans 64–256 are infeasible on more than 10% of the episodes at every rate below
-  their velocity limit (path bound; `curvature` s64 d0 at L = 0: 43–47 of 55 at rates 1–2), except
+  their velocity limit (path bound; `curvature` s64 at L = 0: 43–47 of 55 at rates 1–2), except
   `curvature` s64 at L = 0.1–0.2 (rate 1–1.5, 50 of 55). The next rate fails on velocity (36–38 episodes at
   rate 3 for `time` s32).
 - LIBERO: `curvature` at spans 64 and 128 reaches rate 3 (2.0–2.9×) where `time` labels stay at rate 2
