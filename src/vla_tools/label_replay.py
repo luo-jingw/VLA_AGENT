@@ -19,9 +19,14 @@ Inference latency d control frames (closed_loop's latency_frames; 0 by default):
                frames (with e = d the second observation is then the first frame again: the robot has not
                moved); a chunk that runs out holds its last target. A chunk must keep a target after the
                latency: floor(last point frame) > d
-With d = 0 and e no longer than the chunk both modes are the same. `executed` is the wall-clock sequence of targets, one per control frame,
-holds included. The executed targets are what a perfect model would make the robot do; for static tasks
-they are judged by geometry, not timing:
+With d = 0 and e no longer than the chunk both modes are the same.
+
+End: the chunk of the last recorded frame is always executed; from there the robot keeps observing that frame
+until the executed pose is within the final tolerance (closed_loop's final_tolerance, rad) of the final
+recorded row with its command state. `executed` is the wall-clock sequence of targets, one per control frame,
+holds included; its completion is the number of frames until the targets reach the final row and stay there
+(completion_frames), counted the same way for the recorded actions. The executed targets are what a perfect
+model would make the robot do; for static tasks they are judged by geometry, not timing:
 
   path         distance of every executed target to the recorded path segment its chunk covers
                (the observed state followed by actions up to three frames past the label's last point):
@@ -31,12 +36,12 @@ they are judged by geometry, not timing:
                switches and the recorded joints at the edge; an edge never switched counts as missed
   hold         executed frames that stay within a quarter path step around each command switch
   speed        largest per-frame step of the executed targets / the reference step
-  inferences   chunks executed; frames: executed targets / recorded frames
+  inferences   chunks executed; frames: completion of the executed targets / of the recorded actions
 
 Distances are joint-space Euclidean (rad), printed in path steps (median non-zero recorded per-frame
-step); the reference step is the 95th percentile of the same steps. With metric "time" and
-span = horizon the labels are the recording itself, every observation lands e frames later and the path
-deviation is 0.
+step); the reference step is the 95th percentile of the same steps; the final tolerance is the hold
+tolerance. With metric "time" and span = horizon the labels are the recording itself, every observation
+lands e frames later and the path deviation is 0.
 
 Usage:
     python -m vla_tools.label_replay --dataset <dir> --spec robot_spec.json --keyframes keyframes.json \
@@ -67,7 +72,7 @@ from vla_tools.resample_config import ResampleConfig
 from vla_tools.robot_spec import RobotSpec
 
 PATH_MARGIN_FRAMES = 3
-HOLD_TOLERANCE = 0.25  # path steps
+HOLD_TOLERANCE = 0.25  # path steps; also the final tolerance
 
 Mode = Literal["sync", "async"]
 
@@ -79,6 +84,7 @@ class EpisodeReplay:
     distances: np.ndarray  # (m,) each executed chunk target's distance to its chunk's recorded segment (rad)
     seams: list[float]  # rad, between consecutive chunks
     stall_frames: int  # frames held for inference latency or because a chunk ran out
+    completion_frames: int  # frames until the executed targets reach the final recorded row and stay there
 
 
 @dataclasses.dataclass(frozen=True)
@@ -99,8 +105,28 @@ class ReplayRow:
     hold_frames: tuple[float, float]  # median, min over command switches
     speed_ratio: tuple[float, float]  # median, max over episodes
     inferences: int
-    executed_frames: int
-    recorded_frames: int
+    executed_frames: int  # completion frames, summed over episodes
+    recorded_frames: int  # completion frames of the recorded actions, summed over episodes
+
+
+def _away(rows: np.ndarray, final: np.ndarray, spec: RobotSpec, tolerance: float) -> np.ndarray:
+    """(N, D) rows -> (N,) True where a row is farther than `tolerance` (rad) from the (D,) final row's joints
+    or has another command state."""
+    joints, commands = list(spec.joint_dims), list(spec.command_dims)
+    away = np.linalg.norm(rows[:, joints] - final[joints], axis=1) > tolerance
+    if commands:
+        away |= ((rows[:, commands] > 0.5) != (final[commands] > 0.5)).any(axis=1)
+    return away
+
+
+def completion_frames(targets: np.ndarray, final: np.ndarray, spec: RobotSpec, tolerance: float) -> int:
+    """Frames until (N, D) `targets`, one per control frame, reach the (D,) `final` row and stay within
+    `tolerance` (rad) of its joints with its command state up to the last target."""
+    away = _away(targets, final, spec, tolerance)
+    if len(away) == 0 or away[-1]:
+        raise ValueError("the last target is not at the final row")
+    off = np.flatnonzero(away)
+    return int(off[-1]) + 2 if len(off) else 1
 
 
 def _observe(
@@ -137,6 +163,8 @@ def closed_loop(
     rate: float,
     latency_frames: int = 0,
     mode: Mode = "sync",
+    *,
+    final_tolerance: float,
 ) -> EpisodeReplay:
     if mode not in typing.get_args(Mode):
         raise ValueError(f"mode must be one of {typing.get_args(Mode)}, got {mode!r}")
@@ -156,11 +184,13 @@ def closed_loop(
     actions = e.actions
     poses = np.stack([spec.current_pose(s) for s in e.states])
     _, ch = arc_core.chunks(actions, spec, config, record.windows(e.index), e.real)
-    last_frame = e.real - 1
+    last_frame, final = e.real - 1, actions[e.real - 1]
     t, pose = 0, poses[0]
     executed, observations, distances, seams = [], [], [], []
     stalls = 0
-    while t < last_frame and len(observations) <= 4 * len(actions):
+    while True:
+        if len(observations) > 4 * len(actions):
+            raise RuntimeError(f"episode {e.index}: not at the final row after {len(observations)} inferences")
         observations.append(t)
         arrival = latency_frames if mode == "async" and executed else 0  # observation to the first target
         if arrival:
@@ -184,18 +214,23 @@ def closed_loop(
         split = len(targets) - latency_frames if mode == "async" else len(targets)
         executed.extend(targets[:split])
         pose = executed[-1].copy()
-        if arrival + split > 0:
+        following = t  # the last recorded frame is observed again; so is the first after an inference back
+        # to back (e = d), where the robot has not moved yet
+        if t < last_frame and arrival + split > 0:
             expected = t + round(rate * (arrival + split))
-            t = _observe(pose, poses, joints, commands, t, min(last_frame, end), expected)
-        # else: async back to back (e = d) right after the first inference; the robot has not moved, so the
-        # next observation is the same frame
+            following = _observe(pose, poses, joints, commands, t, min(last_frame, end), expected)
         executed.extend(targets[split:])
+        if t == last_frame and not _away(np.array(executed[-1:]), final, spec, final_tolerance)[0]:
+            break
+        t = following
+    out = np.array(executed)
     return EpisodeReplay(
-        executed=np.array(executed),
+        executed=out,
         observations=observations,
-        distances=np.concatenate(distances) if distances else np.zeros(0),
+        distances=np.concatenate(distances),
         seams=seams,
         stall_frames=stalls,
+        completion_frames=completion_frames(out, final, spec, final_tolerance),
     )
 
 
@@ -243,17 +278,18 @@ def replay(
     joints = list(spec.joint_dims)
     distances, seams, kf, holds, speeds = [], [], [], [], []
     missed = inferences = executed_frames = recorded_frames = 0
+    tolerance = HOLD_TOLERANCE * path_step
     for e in episodes:
-        run = closed_loop(e, spec, record, config, execute, rate)
+        run = closed_loop(e, spec, record, config, execute, rate, final_tolerance=tolerance)
         distances.append(run.distances)
         seams += [s / path_step for s in run.seams]
         inferences += len(run.observations)
-        executed_frames += len(run.executed)
-        recorded_frames += e.real
+        executed_frames += run.completion_frames
+        recorded_frames += completion_frames(e.actions[: e.real], e.actions[e.real - 1], spec, tolerance)
         if len(run.executed) > 1:
             steps = np.linalg.norm(np.diff(run.executed[:, joints], axis=0), axis=1)
             speeds.append(float(steps.max()) / reference_step)
-        edges = edge_check(e, spec, run.executed, HOLD_TOLERANCE * path_step)
+        edges = edge_check(e, spec, run.executed, tolerance)
         missed += edges.missed
         kf += edges.positions
         holds += edges.holds

@@ -18,7 +18,9 @@ from tool_runner import run_tool
 from vla_tools.arc_interp import ArcInterpolator
 from vla_tools.episodes import load_episodes
 from vla_tools.keyframe_record import KeyframeRecord
+from vla_tools.label_replay import HOLD_TOLERANCE
 from vla_tools.label_replay import closed_loop
+from vla_tools.path_metrics import step_statistics
 from vla_tools.resample_config import ResampleConfig
 
 JOINTS = list(SPEC.joint_dims)
@@ -191,23 +193,26 @@ def test_label_replay_reports_each_execution_length(chain: ChainRun) -> None:
     assert all(r["inferences"] > 0 and r["executed_frames"] > 0 for r in replay["rows"])
 
 
-def _replay_inputs(chain: ChainRun) -> tuple[list, KeyframeRecord]:
+def _replay_inputs(chain: ChainRun) -> tuple[list, KeyframeRecord, float]:
+    """Episodes, keyframes and the final tolerance (rad), as label_replay.replay sets it."""
     record = KeyframeRecord.load(chain.keyframes)
-    return load_episodes(chain.timed, SPEC, only=sorted(record.episodes)), record
+    episodes = load_episodes(chain.timed, SPEC, only=sorted(record.episodes))
+    path_step, _ = step_statistics([e.actions[: e.real, JOINTS] for e in episodes])
+    return episodes, record, HOLD_TOLERANCE * path_step
 
 
 def test_closed_loop_replay_of_frame_labels_is_the_recording(chain: ChainRun) -> None:
-    episodes, record = _replay_inputs(chain)
+    episodes, record, tolerance = _replay_inputs(chain)
     config = ResampleConfig(metric="time", span_frames=HORIZON, action_horizon=HORIZON, anchor="state")
     execute = 4
     for e in episodes:
-        run = closed_loop(e, SPEC, record, config, execute, 1.0)
+        run = closed_loop(e, SPEC, record, config, execute, 1.0, final_tolerance=tolerance)
         assert float(run.distances.max()) < 1e-9
-        assert run.observations == list(range(0, e.real - 1, execute))
+        assert run.observations == [*range(0, e.real - 1, execute), e.real - 1]
 
 
 def test_closed_loop_observations_move_forward_for_progress_labels(chain: ChainRun) -> None:
-    episodes, record = _replay_inputs(chain)
+    episodes, record, tolerance = _replay_inputs(chain)
     config = ResampleConfig(
         metric="curvature",
         span_frames=SPAN,
@@ -218,10 +223,12 @@ def test_closed_loop_observations_move_forward_for_progress_labels(chain: ChainR
     )
     counts = []
     for e in episodes:
-        run = closed_loop(e, SPEC, record, config, 8, 1.0)
-        assert all(b > a for a, b in zip(run.observations, run.observations[1:], strict=False))
-        counts.append((len(run.observations), len(run.executed), e.real))
-    print("curvature span", SPAN, "execute 8: (inferences, executed frames, recorded frames) per episode", counts)
+        run = closed_loop(e, SPEC, record, config, 8, 1.0, final_tolerance=tolerance)
+        last = e.real - 1  # observed again until the robot is at the final row
+        assert all(b > a or a == b == last for a, b in zip(run.observations, run.observations[1:], strict=False))
+        assert run.observations[-1] == last
+        counts.append((len(run.observations), run.completion_frames, e.real))
+    print("curvature span", SPAN, "execute 8: (inferences, completion frames, recorded frames) per episode", counts)
 
 
 def test_train_and_eval_label_datasets(chain: ChainRun) -> None:
@@ -260,12 +267,12 @@ def test_train_and_eval_label_datasets(chain: ChainRun) -> None:
 
 
 def test_closed_loop_at_rate_two_skips_every_other_recorded_frame(chain: ChainRun) -> None:
-    episodes, record = _replay_inputs(chain)
+    episodes, record, tolerance = _replay_inputs(chain)
     config = ResampleConfig(metric="time", span_frames=HORIZON, action_horizon=HORIZON, anchor="state")
     execute, executed, recorded = 4, 0, 0
     for e in episodes:
-        run = closed_loop(e, SPEC, record, config, execute, 2.0)
+        run = closed_loop(e, SPEC, record, config, execute, 2.0, final_tolerance=tolerance)
         assert float(run.distances.max()) < 1e-9
-        assert run.observations == list(range(0, e.real - 1, 2 * execute))
-        executed, recorded = executed + len(run.executed), recorded + e.real
-    print(f"rate 2, time span {HORIZON}, execute {execute}: {executed} executed frames for {recorded} recorded")
+        assert run.observations == [*range(0, e.real - 1, 2 * execute), e.real - 1]
+        executed, recorded = executed + run.completion_frames, recorded + e.real
+    print(f"rate 2, time span {HORIZON}, execute {execute}: {executed} completion frames for {recorded} recorded")

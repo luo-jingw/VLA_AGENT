@@ -288,3 +288,37 @@ Recompute `jump` over recorded rows for LIBERO (40 padding rows) and DROID and c
 column.
 
 ## Resolution
+
+# ISSUE-008
+
+Status: Open
+
+Area: Deck JavaScript port of `label_replay.closed_loop`
+
+## Observation
+
+`closed_loop` executes the chunk of the last recorded frame and keeps observing that frame until the
+executed pose is within the final tolerance of the final recorded row. The deck's JavaScript port
+(`FTpi05/reports/action-sparsification-src/deck/core.js`, `closedLoop`) still stops when an observation
+reaches the last recorded frame, without executing its chunk.
+
+## Impact
+
+The two no longer give the same observed frames and executed targets at the end of a run: the port ends one
+chunk earlier and, at small e, short of the final pose. The published deck's figures come from the port and
+are unaffected until the deck is rebuilt; `check_core.py` parity would fail on the final chunk.
+
+## Evidence
+
+`label_replay.py` end rule and `test_label_replay.py::test_sparse_chunks_keep_observing_the_last_frame_until_at_the_final_row`
+(2026-10-17); `core.js` `while (t < lastFrame ...)`.
+
+## Hypotheses
+
+Porting the end rule (final tolerance from the port's path step) restores parity.
+
+## Next Experiment
+
+Port the end rule, run `check_core.py` against `closed_loop` on the synthetic recordings.
+
+## Resolution

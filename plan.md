@@ -1,6 +1,6 @@
 # Plan
 
-Plan Status: proposed
+Plan Status: approved
 
 # Problem
 
@@ -70,6 +70,10 @@ The current evidence does not measure that rate:
 1. Nothing measures the quantity the labels are for: the highest task completion speed-up a robot reaches
    with asynchronous inference at a given inference latency, on real teleoperation data.
 2. `sweep` compares cells on different frames.
+3. The rate ceiling as defined in phase 1 does not measure that speed-up faithfully: it admits runs that cut
+   corners (no path bound), counts the hold rows after the task is done and stops one recorded row short of
+   the final pose at small e (completion), and lets one frame of one episode decide the result (every
+   episode feasible).
 
 ## Goal
 
@@ -84,33 +88,48 @@ actions and gripper; LeRobot v3.0), per label configuration (per-frame baseline 
     first chunk, built from the observed pose, is executed from target 0 after the robot has held still for d
     frames; a chunk that runs out holds its last target; a rate whose chunk keeps no target after the latency
     has no run;
-  - synchronous: the robot holds still for d frames at every observation, then executes e targets.
-  L = 0 gives the current replay in both modes.
+  - synchronous: the robot holds still for d frames at every observation, then executes e targets;
+  - end: once an observation reaches the last recorded frame, its chunk is executed and the robot keeps
+    observing that frame until the executed pose is within the final tolerance (0.25 path steps, the hold
+    tolerance) of the final recorded pose with the final command state; the chunk of the last recorded frame
+    is always executed.
+  L = 0 gives the same switching in both modes.
 - Arrival rebuild (async, d > 0): when a chunk arrives d frames after its observation, the server rebuilds it
   from the currently commanded pose: knots = the commanded pose at 0 and the points whose time minus d exceeds
   half a point spacing, at their times minus d; the same not-a-knot spline. The switch is continuous in
   position. A chunk with no point left holds the commanded pose.
-- Feasible: the executed targets (one per control frame) stay within the Panda's joint velocity limits
-  (finite differences at the dataset rate, chunk switches and holds included) and every recorded gripper edge
-  is executed. The gripper's timing near an edge is carried by the labels' keyframe density; the rate scales
-  it with the rest of the motion.
+- Completion: frames until a joint sequence reaches the final recorded pose and stays there (within the final
+  tolerance, final command state), counted the same way for the executed targets (holds included) and for
+  the recorded actions. Speed-up = recorded completion frames / executed completion frames; the rows the
+  robot holds after completion are not counted.
+- Feasible run: the executed targets (one per control frame, the first observed pose before them) stay within
+  the Panda's joint velocity limits (finite differences at the dataset rate, chunk switches and holds
+  included); every recorded gripper edge is executed; the closed-loop path deviation (each executed chunk
+  target to the recorded segment its chunk covers) stays within 2 path steps on the whole episode (about
+  10 mm of end-effector motion on DROID). The gripper's timing near an edge is carried by the labels'
+  keyframe density; the rate scales it with the rest of the motion.
 - Reported, not constrained: the largest acceleration as a fraction of the Panda's nominal limits and the
   largest per-frame step at a chunk switch. A deployed controller's acceleration is a setting; the measured
   quantity is the speed-up within the velocity limits.
-- Episodes whose recording exceeds a velocity limit are left out of every case and listed.
-- Rates 1, 1.5, 2, 3, 4, 6, 8, 12, 16; e either max(d, 1) (inference back to back) or ⌊span / rate⌋ − d (the
-  whole chunk).
-- Result per configuration, latency L ∈ {0, 0.05, 0.1, 0.2, 0.4} s and mode: the largest rate feasible on every
-  episode and the completion speed-up there (recorded duration / wall-clock duration, holds included); the
-  maximum asynchronous speed-up at each latency is the headline figure, the synchronous one is reported beside
-  it; per-episode largest feasible rate, median / p10.
+- Episodes whose recording exceeds a velocity limit are left out of every case and listed. Path step and
+  curvature chord length come from all episodes, as in `sweep`.
+- Rates 1, 1.5, 2, 3, 4, 6, 8, 12, 16; e either max(d, 1) (inference back to back), half or all of the targets
+  left after the latency (async), half or all of the chunk (sync). Per episode the search stops after two
+  consecutive rates without a run within the velocity limit.
+- Result per configuration, latency L ∈ {0, 0.05, 0.1, 0.2, 0.4} s and mode: the (rate, e) with the largest
+  speed-up among those feasible on at least 90% of the episodes, the speed-up summed over the episodes
+  feasible there, and those left out; per episode the largest feasible rate and the largest feasible
+  speed-up, median / p10. The maximum asynchronous speed-up at each latency is the headline figure, the
+  synchronous one is reported beside it.
 - Upper bound: the time-optimal traversal of each recorded path under the same velocity limits: every
   recorded step at the speed of its limiting joint, duration Σ_k max_j |Δq_kj| / v_j.
-- Path deviation of the executed targets in joint space and of the end effector in mm (Panda forward
-  kinematics).
+- Path deviation of the executed targets up to completion in joint space and of the end effector in mm
+  (Panda forward kinematics), on the episodes feasible at the headline setting.
 - The same on LIBERO (also a Panda) for comparison.
 - `sweep`: cells of the same span scored on the frames every cell of that span leaves unpadded (with spans up to
   256 a common set over all spans would keep only the first frames of each episode); the LIBERO sweep re-run.
+- `label_replay` (geometric replay) uses the same end rule; its frame counts are completion frames. The
+  LIBERO replays are re-run.
 
 # Structure
 
@@ -118,9 +137,9 @@ actions and gripper; LeRobot v3.0), per label configuration (per-frame baseline 
 
 - Robot limits: `src/vla_tools/robot_spec.py`.
 - Server rebuild: `src/vla_tools/arc_interp.py` (arrival rebuild from the commanded pose).
-- Execution model: `src/vla_tools/label_replay.py` (`closed_loop` with latency and mode; per-episode edge and
-  hold check).
-- Rate ceiling: `src/vla_tools/rate_ceiling.py` (new), built on `label_replay`.
+- Execution model: `src/vla_tools/label_replay.py` (`closed_loop` with latency, mode and the end rule;
+  completion frames; per-episode edge check).
+- Rate ceiling: `src/vla_tools/rate_ceiling.py`, built on `label_replay`.
 - Sweep: `src/vla_tools/sweep.py`.
 - DROID subset: `FTpi05/reports/rate-ceiling-src/extract_droid.py`; data in `FTpi05/data/droid-pick-place*`;
   run in `FTpi05/runs/droid_pick_place/`.
@@ -132,11 +151,12 @@ actions and gripper; LeRobot v3.0), per label configuration (per-frame baseline 
 ## Responsibilities
 
 `robot_spec` holds the robot's joint limits: velocity is a constraint, acceleration is reported. `arc_interp`
-owns every rebuild of a chunk into per-frame targets, including the arrival rebuild. `label_replay` owns the execution model (observation rule,
-latency, synchronous / asynchronous switching) and the edge and hold check. `rate_ceiling` searches rates and
-execution lengths, applies the velocity limit and the edge check and computes the speed-ups. `sweep` keeps its scores and
-selection rule. The FTpi05 scripts prepare the DROID subset and compute the reference figures; they are not
-part of the package.
+owns every rebuild of a chunk into per-frame targets, including the arrival rebuild. `label_replay` owns the
+execution model (observation rule, latency, synchronous / asynchronous switching, the end rule), completion
+frames and the edge check. `rate_ceiling` searches rates and execution lengths, applies the velocity limit,
+the edge check and the path bound, and computes the speed-ups and the 90% summary. `sweep` keeps its scores
+and selection rule. The FTpi05 scripts prepare the DROID subset and compute the reference figures; they are
+not part of the package.
 
 ## State Ownership
 
@@ -153,20 +173,30 @@ part of the package.
 - `arc_interp.after_latency(points, times, commanded, elapsed, command_dims) -> np.ndarray`: per-frame targets
   from the commanded pose, `elapsed` frames after the observation; `ArcInterpolator.after_latency(points,
   commanded, elapsed_frames)` for serving.
-- `label_replay.closed_loop(e, spec, record, config, execute, rate, latency_frames: int = 0, mode: str = "sync")
-  -> EpisodeReplay`: `EpisodeReplay.executed` is the wall-clock sequence of targets (holds included);
-  `EpisodeReplay.stall_frames` counts the frames held for latency or an exhausted chunk. Defaults reproduce the
-  current replay exactly.
+- `label_replay.closed_loop(e, spec, record, config, execute, rate, latency_frames: int = 0, mode: str = "sync",
+  *, final_tolerance: float) -> EpisodeReplay`: `EpisodeReplay.executed` is the wall-clock sequence of targets
+  (holds included) ending within `final_tolerance` (rad) of the final recorded pose;
+  `EpisodeReplay.completion_frames` its completion; `EpisodeReplay.stall_frames` counts the frames held for
+  latency or an exhausted chunk.
+- `label_replay.completion_frames(targets, final, spec, tolerance) -> int`: frames until `targets` reach the
+  (D,) `final` row and stay within `tolerance` of its joints with its command state; raises when the last
+  target is not there.
 - `label_replay.edge_check(e, spec, executed, tolerance) -> EdgeCheck`: per recorded command edge, the executed
   position error and hold frames, the recording's own hold frames, and the edges never switched; used by
   `replay` and `rate_ceiling`.
-- `rate_ceiling.check(e, spec, record, config, rate, execute, latency_frames, mode, path_step) -> RateCheck`:
-  velocity ratio (max |Δq · fps| / limit) over the executed targets preceded by the first observed pose, edges
-  missed; reported: acceleration ratio (max |Δ²q · fps²| / nominal limit), largest switch step and path max
-  (path steps), inferences, wall-clock and stalled frames.
-- CLI: `python -m vla_tools.rate_ceiling --dataset --spec --keyframes --horizon --metrics --spans
-  --event-density --rates --latency --modes --out`; prints per configuration, latency and mode the largest
-  rate feasible on every episode, its execution length, the binding constraint and the speed-up.
+- `label_replay.ReplayRow.executed_frames`, `recorded_frames`: completion frames summed over episodes.
+- `rate_ceiling.check(e, spec, record, config, rate, execute, latency_frames, mode, path_step, path_bound)
+  -> RateCheck`: velocity ratio (max |Δq · fps| / limit) over the executed targets preceded by the first
+  observed pose, edges missed, path max (path steps) against `path_bound`, executed and recorded completion
+  frames; reported: acceleration ratio (max |Δ²q · fps²| / nominal limit), largest switch step (path steps),
+  inferences, stalled frames.
+- `rate_ceiling.summarize(case, checks, episodes, fps, rates, feasible_fraction) -> CaseResult`: the
+  largest-speed-up (rate, e) feasible on at least `feasible_fraction` of the episodes, the episodes left out
+  there, per-episode largest rate and speed-up.
+- CLI: `python -m vla_tools.rate_ceiling --dataset --spec --keyframes --horizon --per-frame --metrics --spans
+  --event-density --rates --latency --modes --path-bound 2 --feasible-fraction 0.9 --out`; prints per
+  configuration, latency and mode the selected rate, its execution length, the episodes feasible there, the
+  speed-up and the constraints failing at the next rate.
 - `sweep`: CLI unchanged; the cells of one span are scored on the intersection of their unpadded frames; the
   JSON records that frame count per cell.
 
@@ -182,8 +212,8 @@ part of the package.
 
 `data/droid-pick-place` (extracted) and its timed version; `runs/droid_pick_place/`: `robot_spec.json`,
 `audit.json`, `keyframes.json`, `timing_plan.json`, `sweep.json`, `rate_ceiling.json`,
-`velocity_bound.json`, `ee_deviation.json`; `runs/libero_alphabet_soup/sweep.json` (re-run),
-`rate_ceiling.json`.
+`velocity_bound.json`, `ee_deviation.json`; `runs/libero_alphabet_soup/`: `sweep.json` (re-run),
+`rate_ceiling.json`, `ee_deviation.json`, `velocity_bound.json`, the five `replay_*.json` (re-run).
 
 ## State Changes
 
@@ -196,19 +226,22 @@ None beyond the outputs.
 DROID files → `extract_droid.py` (LeRobot v2.1 layout, low-dimensional columns) → `audit` →
 `keyframe_detect` (gripper edges; no camera review, videos are not downloaded) → `episode_timing` (still
 ends trimmed, end padding ≥ the largest span) → `keyframe_detect` on the timed version → `sweep` (common
-frames) → `rate_ceiling` per configuration → `velocity_bound.py`, `ee_deviation.py` → one table per data set.
+frames) → `rate_ceiling` per configuration (path bound, completion, 90% summary) → `velocity_bound.py`,
+`ee_deviation.py` at the selected settings → one table per data set.
 
 # Code Mapping
 
 ## Modules
 
-Robot limits → `src/vla_tools/robot_spec.py`; rate ceiling → `src/vla_tools/rate_ceiling.py`; sweep →
-`src/vla_tools/sweep.py`; DROID subset and reference figures → `FTpi05/reports/rate-ceiling-src/`.
+Robot limits → `src/vla_tools/robot_spec.py`; execution model → `src/vla_tools/label_replay.py`; rate
+ceiling → `src/vla_tools/rate_ceiling.py`; sweep → `src/vla_tools/sweep.py`; DROID subset and reference
+figures → `FTpi05/reports/rate-ceiling-src/`.
 
 ## Interfaces
 
-`RobotSpec` limits → `robot_spec.py`; `after_latency` → `arc_interp.py`; `closed_loop`, `edge_check`, `EdgeCheck` → `label_replay.py`; `check`,
-`RateCheck` → `rate_ceiling.py`; common-frame scoring → `sweep.py`.
+`RobotSpec` limits → `robot_spec.py`; `after_latency` → `arc_interp.py`; `closed_loop`, `completion_frames`,
+`edge_check`, `EdgeCheck`, `ReplayRow` → `label_replay.py`; `check`, `summarize`, `RateCheck`, `CaseResult` →
+`rate_ceiling.py`; common-frame scoring → `sweep.py`.
 
 ## State
 
@@ -334,19 +367,64 @@ R² 0.26 (LIBERO −0.31, 0.45); window progress p90 / p10 at span 32 3.9× (LIB
 
 ## Phase 4
 
-Phase Status: blocked
+Phase Status: completed
 
 Round: 2
 
 ### Goal
 
-DROID rate ceiling for every configuration, upper bound, end-effector deviation; LIBERO rate ceiling.
+The end rule and completion frames in `label_replay`; the path bound, completion speed-up, velocity-based
+early stop, all-episode path step and the 90% summary in `rate_ceiling`.
 
 ### Files
 
-`FTpi05/reports/rate-ceiling-src/panda_kinematics.py`, `velocity_bound.py`, `ee_deviation.py`,
-`FTpi05/runs/droid_pick_place/{sweep,rate_ceiling,velocity_bound,ee_deviation}.json`,
-`FTpi05/runs/libero_alphabet_soup/rate_ceiling.json`.
+`src/vla_tools/label_replay.py`, `src/vla_tools/rate_ceiling.py`, `tests/test_label_replay.py`,
+`tests/test_rate_ceiling.py`, `tests/test_pipeline_chain.py`.
+
+### Structures
+
+`EpisodeReplay.completion_frames`, `RateCheck` (path bound, completion frames), `CaseResult` (episodes left
+out, per-episode speed-up).
+
+### Affected Modules
+
+Execution model, rate ceiling.
+
+### Dependencies
+
+Phases 1, 2 and 3.
+
+### Observation
+
+Tests: per-frame `time` labels at rate 1, e = 1 and L = 0 execute every recorded action including the last
+and complete in the recorded frames (speed-up 1); a sparse chunk at small e keeps observing the last frame
+until it settles; a run beyond the path bound fails on "path"; the summary selects a rate feasible on 90%
+but not all episodes. Printed: completion and executed frames per test run.
+
+Result: 129 passed, 1 skipped. Per-frame labels at rate 1, e = 1: 80 executed targets equal the 80 recorded
+actions, completion 80 = recorded completion. `time` span 40 at e = max(d, 1): the last frame is observed
+5 times (d = 0, sync), 2 (d = 2, async: 84 executed, completion 83) and 2 (d = 2, sync). Corner, `time`
+span 40, H = 2, e = 10: path max 3.23 path steps, fails on "path"; per-frame 0.00. Ten minimum-jerk
+episodes, one 1.5× faster: every episode feasible up to rate 2 (speed-up 2.00), 90% up to rate 3 (2.97, the
+fast one left out). Minimum-jerk recording of 200 frames completes in 190 (the last 10 within the final
+tolerance); per-frame labels complete in 190, 95, 64 frames at rates 1, 2, 3.
+
+## Phase 5
+
+Phase Status: active
+
+Round: 3
+
+### Goal
+
+DROID and LIBERO rate ceilings for every configuration, end-effector deviation at the selected settings,
+velocity bounds; LIBERO replays re-run.
+
+### Files
+
+`FTpi05/reports/rate-ceiling-src/ee_deviation.py`,
+`FTpi05/runs/droid_pick_place/{rate_ceiling,velocity_bound,ee_deviation}.json`,
+`FTpi05/runs/libero_alphabet_soup/{rate_ceiling,velocity_bound,ee_deviation,replay_*}.json`.
 
 ### Structures
 
@@ -358,20 +436,21 @@ None in the package.
 
 ### Dependencies
 
-Phases 1, 2 and 3.
+Phase 4.
 
 ### Observation
 
 Per configuration and latency: the maximum asynchronous speed-up (and the synchronous one), its rate and
-execution length, the binding constraint (velocity, edge), per-episode largest rate median / p10, the
-reported acceleration and switch step, path deviation (joint path steps, end effector mm);
-against the per-frame baseline and the time-optimal bound.
+execution length, episodes feasible there, the constraints failing at the next rate, per-episode largest
+rate and speed-up median / p10, the reported acceleration and switch step, path deviation (joint path
+steps, end effector mm); against the per-frame baseline and the time-optimal bound. LIBERO replay rows
+before / after the end rule.
 
-## Phase 5
+## Phase 6
 
 Phase Status: pending
 
-Round: 3
+Round: 4
 
 ### Goal
 
@@ -392,8 +471,8 @@ Knowledge.
 
 ### Dependencies
 
-Phase 4.
+Phase 5.
 
 ### Observation
 
-The tables match the phase 2 and 4 artifacts; the rate is chosen by `rate_ceiling` in the S7 procedure.
+The tables match the phase 2 and 5 artifacts; the rate is chosen by `rate_ceiling` in the S7 procedure.

@@ -5,23 +5,30 @@ For every label configuration, inference latency L (s) and execution mode, each 
 loop (label_replay.closed_loop, latency d = ceil(L * fps) control frames, modes sync and async) at every
 rate of the grid and execution length e: for async e in {max(d, 1), usable // 2, usable}, usable = the
 chunk's floor(span / rate) targets minus d; for sync e in {usable // 2, usable}, usable = all of them. A rate
-whose chunk keeps no target (async: none after the latency) has no run. A run is feasible when
+whose chunk keeps no target (async: none after the latency) has no run. Per episode the rates are searched
+upwards until two consecutive rates have no run within the velocity limit. A run is feasible when
 
   velocity      max over control frames and joints of |dq * fps| / the joint's velocity limit <= 1
                 (q: the first observed pose followed by the executed targets, holds included)
   edges         every recorded command edge is switched
+  path          the largest distance of an executed chunk target to the recorded segment its chunk covers
+                <= the path bound (path steps)
 
 Reported, not constrained: acceleration max |d2q * fps^2| / the joint's nominal acceleration limit (nan
-without limits; a deployed controller's acceleration is a setting), path deviation (executed chunk targets
-to the recorded segment each chunk covers) and seams (the step into each chunk's first target), in path
-steps.
+without limits; a deployed controller's acceleration is a setting) and seams (the step into each chunk's
+first target, path steps).
+
+Completion (label_replay.completion_frames): frames until a sequence reaches the final recorded row and stays
+within the final tolerance (label_replay.HOLD_TOLERANCE path steps) of it, for the executed targets (holds
+included) and the recorded actions alike. Speed-up = recorded / executed completion frames.
 
 Episodes whose recording itself exceeds a velocity limit (the recorded actions from the first state, the same
 differences) are left out of every case and listed: no label can be held to a limit the demonstration breaks.
-Per configuration, latency and mode: the (rate, e) with the largest speed-up among those feasible on every
-remaining episode. Speed-up = recorded duration / wall-clock duration (holds included), summed over episodes.
-The largest rate feasible per episode (best e) is reported as median / p10; for the next rate of the grid the
-constraints that failed are counted.
+Per configuration, latency and mode: the (rate, e) with the largest speed-up among those feasible on at least
+the feasible fraction of the remaining episodes; its speed-up is summed over the episodes feasible there and
+the others are listed. Per episode the largest feasible rate and the largest feasible speed-up (any e) are
+reported as median / p10; for the next rate of the grid the constraints that failed are counted. Path step
+and curvature chord length come from all episodes, as in sweep.
 
 Finite differences are taken at the dataset's control rate: the targets are what a serving loop at that rate
 sends; a robot controller running faster interpolates between them.
@@ -29,7 +36,8 @@ sends; a robot controller running faster interpolates between them.
 Usage:
     python -m vla_tools.rate_ceiling --dataset <dir> --spec robot_spec.json --keyframes keyframes.json \
         --horizon 10 --per-frame --metrics time curvature --spans 32 64 128 256 --event-density 0 2 \
-        --latency 0 0.05 0.1 0.2 0.4 --modes async sync --out rate_ceiling.json
+        --latency 0 0.05 0.1 0.2 0.4 --modes async sync --path-bound 2 --feasible-fraction 0.9 \
+        --out rate_ceiling.json
 """
 
 from __future__ import annotations
@@ -64,11 +72,12 @@ class RateCheck:
     acceleration_ratio: float  # max |d2q * fps^2| / nominal limit; reported only
     edges_missed: int
     path_max: float  # path steps
+    path_bound: float  # path steps
     seam_max: float  # path steps
     inferences: int
-    wall_frames: int
+    completion_frames: int
     stall_frames: int
-    recorded_frames: int
+    recorded_frames: int  # completion frames of the recorded actions
 
     @property
     def failures(self) -> tuple[str, ...]:
@@ -77,7 +86,13 @@ class RateCheck:
             names.append("velocity")
         if self.edges_missed:
             names.append("edge")
+        if self.path_max > self.path_bound:
+            names.append("path")
         return tuple(names)
+
+    @property
+    def speedup(self) -> float:
+        return self.recorded_frames / self.completion_frames
 
     @property
     def feasible(self) -> bool:
@@ -97,19 +112,23 @@ class CaseResult:
     latency_s: float
     latency_frames: int
     mode: str
-    rate: float  # largest-speed-up feasible rate on every episode; 0 when none
+    rate: float  # largest-speed-up rate feasible on at least the feasible fraction of episodes; 0 when none
     execute: int
-    speedup: float  # recorded / wall-clock duration at (rate, execute); 0 when none
-    inferences: int
+    speedup: float  # recorded / executed completion frames at (rate, execute) over its feasible episodes
+    feasible_episodes: int
+    left_out: list[int]  # episodes not feasible at (rate, execute)
+    inferences: int  # the rest: over the feasible episodes at (rate, execute)
     stall_frames: int
-    velocity_ratio: float  # max over episodes at (rate, execute)
-    acceleration_ratio: float
-    seam_max: float  # path steps, max over episodes
+    velocity_ratio: float  # max
+    acceleration_ratio: float  # max
+    seam_max: float  # path steps, max
     path: tuple[float, float]  # path steps, median and max over episodes of the episode's max
     next_rate_failures: dict[str, int]  # episodes failing each constraint at the next grid rate (best e per
-    # episode); "latency": the chunk keeps no target after the latency
+    # episode); "latency": the chunk keeps no target after the latency; an episode whose search stopped
+    # below that rate counts as velocity
     episode_rate: tuple[float, float]  # largest feasible rate per episode: median, p10
-    by_rate: list[dict[str, float | int]]  # per rate: best e, episodes feasible, speed-up
+    episode_speedup: tuple[float, float]  # largest feasible speed-up per episode: median, p10
+    by_rate: list[dict[str, float | int]]  # per rate: best e, episodes feasible, speed-up over them
 
 
 def latency_frames(latency_s: float, fps: float) -> int:
@@ -149,14 +168,14 @@ def recording_ratios(e: Episode, spec: RobotSpec) -> tuple[float, float]:
 
 def check(
     e: Episode, spec: RobotSpec, record: KeyframeRecord, config: ResampleConfig, rate: float, execute: int,
-    latency: int, mode: label_replay.Mode, path_step: float,
+    latency: int, mode: label_replay.Mode, path_step: float, path_bound: float,
 ) -> RateCheck:  # fmt: skip
     joints = list(spec.joint_dims)
-    run = label_replay.closed_loop(e, spec, record, config, execute, rate, latency, mode)
+    tolerance = label_replay.HOLD_TOLERANCE * path_step
+    run = label_replay.closed_loop(e, spec, record, config, execute, rate, latency, mode, final_tolerance=tolerance)
     first = spec.current_pose(e.states[0])[joints]
-    q = np.concatenate([first[None, :], run.executed[:, joints]]) if len(run.executed) else first[None, :]
-    v_ratio, a_ratio = limit_ratios(spec, q)
-    edges = label_replay.edge_check(e, spec, run.executed, label_replay.HOLD_TOLERANCE * path_step)
+    v_ratio, a_ratio = limit_ratios(spec, np.concatenate([first[None, :], run.executed[:, joints]]))
+    edges = label_replay.edge_check(e, spec, run.executed, tolerance)
     return RateCheck(
         episode=e.index,
         rate=rate,
@@ -164,12 +183,13 @@ def check(
         velocity_ratio=v_ratio,
         acceleration_ratio=a_ratio,
         edges_missed=edges.missed,
-        path_max=float(run.distances.max()) / path_step if len(run.distances) else 0.0,
+        path_max=float(run.distances.max()) / path_step,
+        path_bound=path_bound,
         seam_max=max(run.seams) / path_step if run.seams else 0.0,
         inferences=len(run.observations),
-        wall_frames=len(run.executed),
+        completion_frames=run.completion_frames,
         stall_frames=run.stall_frames,
-        recorded_frames=e.real,
+        recorded_frames=label_replay.completion_frames(e.actions[: e.real], e.actions[e.real - 1], spec, tolerance),
     )
 
 
@@ -181,11 +201,12 @@ class EpisodeJob:
     case: Case
     rates: tuple[float, ...]
     path_step: float
+    path_bound: float
 
 
 def episode_checks(job: EpisodeJob) -> list[RateCheck]:
-    """Every (rate, e) of one episode and case, rates ascending, until two consecutive rates have no feasible
-    run."""
+    """Every (rate, e) of one episode and case, rates ascending, until two consecutive rates have no run within
+    the velocity limit."""
     latency = latency_frames(job.case.latency_s, job.spec.fps)
     out: list[RateCheck] = []
     misses = 0
@@ -193,68 +214,71 @@ def episode_checks(job: EpisodeJob) -> list[RateCheck]:
         lengths = execution_lengths(job.case.config, rate, latency, job.case.mode)
         checks = [
             check(job.episode, job.spec, job.record, job.case.config, rate, n, latency, job.case.mode,
-                  job.path_step)
+                  job.path_step, job.path_bound)
             for n in lengths
         ]  # fmt: skip
         out += checks
-        misses = 0 if any(c.feasible for c in checks) else misses + 1
+        misses = 0 if any(c.velocity_ratio <= 1.0 for c in checks) else misses + 1
         if misses == 2:
             break
     return out
 
 
 def summarize(
-    case: Case, checks: list[RateCheck], episodes: list[int], fps: float, rates: tuple[float, ...]
-) -> CaseResult:
+    case: Case, checks: list[RateCheck], episodes: list[int], fps: float, rates: tuple[float, ...],
+    feasible_fraction: float,
+) -> CaseResult:  # fmt: skip
     """`rates`: the grid searched; a grid rate without runs keeps no target after the latency."""
     latency = latency_frames(case.latency_s, fps)
+    needed = math.ceil(feasible_fraction * len(episodes) - 1e-9)
     table: dict[tuple[float, int], dict[int, RateCheck]] = {}
     for c in checks:
         table.setdefault((c.rate, c.execute), {})[c.episode] = c
+
+    def feasible_runs(key: tuple[float, int]) -> list[RateCheck]:
+        return [table[key][i] for i in episodes if i in table[key] and table[key][i].feasible]
+
+    def speedup(runs: list[RateCheck]) -> float:
+        return sum(c.recorded_frames for c in runs) / sum(c.completion_frames for c in runs) if runs else 0.0
+
     by_rate: list[dict[str, float | int]] = []
-    best: tuple[float, float, int] | None = None  # speed-up, rate, execute
     for rate in sorted({k[0] for k in table}):
-        rows = []
-        for (r, n), runs in table.items():
-            if r != rate:
-                continue
-            ok = sum(runs[i].feasible for i in episodes if i in runs)
-            wall = sum(runs[i].wall_frames for i in episodes if i in runs)
-            recorded = sum(runs[i].recorded_frames for i in episodes if i in runs)
-            rows.append((ok, recorded / wall if wall else 0.0, n, len(runs)))
-        if not rows:
-            continue
-        ok, speedup, n, total = max(rows)
-        by_rate.append({"rate": rate, "execute": n, "feasible_episodes": ok, "speedup": speedup})
-        if ok == len(episodes) and total == len(episodes) and (best is None or speedup > best[0]):
-            best = (speedup, rate, n)
-    per_episode = []
+        ok, best, n = max((len(feasible_runs(k)), speedup(feasible_runs(k)), k[1]) for k in table if k[0] == rate)
+        by_rate.append({"rate": rate, "execute": n, "feasible_episodes": ok, "speedup": best})
+    admissible = [k for k in table if len(feasible_runs(k)) >= needed]
+    per_rate, per_speedup = [], []
     for i in episodes:
-        feasible = [c.rate for c in checks if c.episode == i and c.feasible]
-        per_episode.append(max(feasible) if feasible else 0.0)
-    if best is None:
+        mine = [c for c in checks if c.episode == i and c.feasible]
+        per_rate.append(max((c.rate for c in mine), default=0.0))
+        per_speedup.append(max((c.speedup for c in mine), default=0.0))
+    episode_rate = (float(np.median(per_rate)), float(np.percentile(per_rate, 10)))
+    episode_speedup = (float(np.median(per_speedup)), float(np.percentile(per_speedup, 10)))
+    if not admissible:
+        nan, nan2 = float("nan"), (float("nan"), float("nan"))
         return CaseResult(
             config=case.config.to_dict(), latency_s=case.latency_s, latency_frames=latency, mode=case.mode,
-            rate=0.0, execute=0, speedup=0.0, inferences=0, stall_frames=0, velocity_ratio=float("nan"),
-            acceleration_ratio=float("nan"), seam_max=float("nan"), path=(float("nan"), float("nan")),
-            next_rate_failures={},
-            episode_rate=(float(np.median(per_episode)), float(np.percentile(per_episode, 10))), by_rate=by_rate,
+            rate=0.0, execute=0, speedup=0.0, feasible_episodes=0, left_out=[], inferences=0, stall_frames=0,
+            velocity_ratio=nan, acceleration_ratio=nan, seam_max=nan, path=nan2, next_rate_failures={},
+            episode_rate=episode_rate, episode_speedup=episode_speedup, by_rate=by_rate,
         )  # fmt: skip
-    speedup, rate, n = best
-    runs = table[(rate, n)]
-    paths = [runs[i].path_max for i in episodes]
+    rate, n = max(admissible, key=lambda k: speedup(feasible_runs(k)))
+    runs = feasible_runs((rate, n))
+    done = {c.episode for c in runs}
+    paths = [c.path_max for c in runs]
     higher = [r for r in sorted(rates) if r > rate]
     failures: dict[str, int] = {}
-    if higher and higher[0] not in {k[0] for k in table}:
+    if higher and not execution_lengths(case.config, higher[0], latency, case.mode):
         failures["latency"] = len(episodes)
     elif higher:
         nxt = higher[0]
         for i in episodes:
             options = [c for c in checks if c.episode == i and c.rate == nxt]
-            if not options or any(c.feasible for c in options):
+            if any(c.feasible for c in options):
                 continue
-            least = min(options, key=lambda c: (len(c.failures), c.velocity_ratio))
-            for name in least.failures:
+            names = (
+                min(options, key=lambda c: (len(c.failures), c.velocity_ratio)).failures if options else ("velocity",)
+            )
+            for name in names:
                 failures[name] = failures.get(name, 0) + 1
     return CaseResult(
         config=case.config.to_dict(),
@@ -263,15 +287,18 @@ def summarize(
         mode=case.mode,
         rate=rate,
         execute=n,
-        speedup=speedup,
-        inferences=sum(runs[i].inferences for i in episodes),
-        stall_frames=sum(runs[i].stall_frames for i in episodes),
-        velocity_ratio=max(runs[i].velocity_ratio for i in episodes),
-        acceleration_ratio=max(runs[i].acceleration_ratio for i in episodes),
-        seam_max=max(runs[i].seam_max for i in episodes),
+        speedup=speedup(runs),
+        feasible_episodes=len(runs),
+        left_out=[i for i in episodes if i not in done],
+        inferences=sum(c.inferences for c in runs),
+        stall_frames=sum(c.stall_frames for c in runs),
+        velocity_ratio=max(c.velocity_ratio for c in runs),
+        acceleration_ratio=max(c.acceleration_ratio for c in runs),
+        seam_max=max(c.seam_max for c in runs),
         path=(float(np.median(paths)), float(np.max(paths))),
         next_rate_failures=failures,
-        episode_rate=(float(np.median(per_episode)), float(np.percentile(per_episode, 10))),
+        episode_rate=episode_rate,
+        episode_speedup=episode_speedup,
         by_rate=by_rate,
     )
 
@@ -311,6 +338,10 @@ def main() -> None:
     parser.add_argument("--rates", nargs="+", type=float, default=list(RATES))
     parser.add_argument("--latency", nargs="+", type=float, default=[0.0], help="inference latency (s)")
     parser.add_argument("--modes", nargs="+", choices=["async", "sync"], default=["async", "sync"])
+    parser.add_argument("--path-bound", type=float, default=2.0,
+                        help="largest closed-loop path deviation of a feasible run (path steps)")  # fmt: skip
+    parser.add_argument("--feasible-fraction", type=float, default=0.9,
+                        help="fraction of the episodes a selected (rate, e) must be feasible on")  # fmt: skip
     parser.add_argument("--workers", type=int, default=16)
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
@@ -325,7 +356,7 @@ def main() -> None:
     excluded = {i: r for i, r in ratios.items() if r[0] > 1.0}
     episodes = [e for e in loaded if e.index not in excluded]
     joints = list(spec.joint_dims)
-    path_step, _ = step_statistics([e.actions[: e.real, joints] for e in episodes])
+    path_step, _ = step_statistics([e.actions[: e.real, joints] for e in loaded])
     curvature_length = (
         args.curvature_length if args.curvature_length is not None else CURVATURE_LENGTH_STEPS * path_step
     )
@@ -348,25 +379,28 @@ def main() -> None:
         f"left out (recording beyond the velocity limit): {len(excluded)} of {len(loaded)} "
         + (", ".join(f"{i} (v {v:.2f})" for i, (v, _) in sorted(excluded.items())) or "none")
     )
-    print(f"{len(episodes)} episodes, fps {spec.fps:g}, path step {path_step:.4f} rad, "
+    print(f"{len(episodes)} episodes, fps {spec.fps:g}, path step {path_step:.4f} rad (all {len(loaded)} episodes), "
+          f"path bound {args.path_bound:g} path steps, feasible fraction {args.feasible_fraction:g}, "
           f"{len(configs)} configurations, {len(cases)} cases")  # fmt: skip
-    print(f"{'metric':>9} {'span':>4} {'dens':>4} {'L(s)':>5} {'mode':>5} {'rate':>5} {'e':>4} {'speed-up':>8} "
-          f"{'vel':>5} {'acc':>5} {'seam':>5} {'path med/max':>12} {'ep rate med/p10':>15}  "
+    print(f"{'metric':>9} {'span':>4} {'dens':>4} {'L(s)':>5} {'mode':>5} {'rate':>5} {'e':>4} {'ok':>3} {'speed-up':>8} "
+          f"{'vel':>5} {'acc':>5} {'seam':>5} {'path med/max':>12} {'ep rate med/p10':>15} {'ep speed-up':>11}  "
           "next rate fails")  # fmt: skip
     ids = [e.index for e in episodes]
     results = []
     rates = tuple(sorted(args.rates))
     with multiprocessing.get_context("fork").Pool(args.workers) as pool:
         for case in cases:
-            jobs = [EpisodeJob(e, spec, record, case, rates, path_step) for e in episodes]
+            jobs = [EpisodeJob(e, spec, record, case, rates, path_step, args.path_bound) for e in episodes]
             checks = [c for part in pool.map(episode_checks, jobs) for c in part]
-            r = summarize(case, checks, ids, spec.fps, rates)
+            r = summarize(case, checks, ids, spec.fps, rates, args.feasible_fraction)
             results.append(r)
             c = case.config
             fails = ", ".join(f"{k} {v}" for k, v in sorted(r.next_rate_failures.items())) or "-"
             print(f"{c.metric:>9} {c.span_frames:>4} {c.event_density:>4g} {case.latency_s:>5g} {case.mode:>5} "
-                  f"{r.rate:>5g} {r.execute:>4} {r.speedup:>8.2f} {r.velocity_ratio:>5.2f} {r.acceleration_ratio:>5.2f} "
-                  f"{r.seam_max:>5.2f} {r.path[0]:>5.2f}/{r.path[1]:<6.2f} {r.episode_rate[0]:>7g}/{r.episode_rate[1]:<7g}  {fails}", flush=True)  # fmt: skip
+                  f"{r.rate:>5g} {r.execute:>4} {r.feasible_episodes:>3} {r.speedup:>8.2f} {r.velocity_ratio:>5.2f} "
+                  f"{r.acceleration_ratio:>5.2f} {r.seam_max:>5.2f} {r.path[0]:>5.2f}/{r.path[1]:<6.2f} "
+                  f"{r.episode_rate[0]:>7g}/{r.episode_rate[1]:<7g} {r.episode_speedup[0]:>5.2f}/{r.episode_speedup[1]:<5.2f}  "
+                  f"{fails}", flush=True)  # fmt: skip
     payload = {
         "dataset": str(args.dataset),
         "keyframes": str(args.keyframes),
@@ -375,6 +409,8 @@ def main() -> None:
         "excluded": sorted(excluded),
         "fps": spec.fps,
         "path_step_rad": path_step,
+        "path_bound": args.path_bound,
+        "feasible_fraction": args.feasible_fraction,
         "joint_velocity_limits": list(spec.joint_velocity_limits),
         "joint_acceleration_limits": list(spec.joint_acceleration_limits),
         "rates": sorted(args.rates),
