@@ -147,8 +147,10 @@ def test_velocity_timing_with_latency_stays_within_the_limit_and_holds_at_switch
         q = np.concatenate([e.states[:1, :2], run.executed[:, :2]])
         ratio = float(np.abs(np.diff(q, axis=0)).max() * 10.0 / 0.5)
         holds = edge_check(e, SPEC, run.executed, tolerance=1e-9).holds
+        repeated = sum(a == b for a, b in zip(run.observations, run.observations[1:], strict=False))
         print(f"e {execute}: {len(run.executed)} executed, completion {run.completion_frames}, velocity ratio "
-              f"{ratio:.4f}, holds at the edges {holds}")  # fmt: skip
+              f"{ratio:.4f}, holds at the edges {holds}, path max {run.distances.max():.4f} rad, "
+              f"observations repeated {repeated}")  # fmt: skip
         assert ratio <= 1.0
         assert holds[0] >= 6 and holds[1] >= 3
 

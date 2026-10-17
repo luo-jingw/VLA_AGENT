@@ -23,7 +23,9 @@ With d = 0 and e no longer than the chunk both modes are the same.
 
 Server timing (closed_loop's timing): None is the uniform timing at rate r; an arc_interp.VelocityTiming
 times every chunk by the joint velocity limits with r as the cap and holds the arm at command switches. A
-chunk that replaces one before its hold is over starts with the rest of the hold (owed_hold). An arriving
+chunk that replaces one before its hold is over starts with the rest of the hold (owed_hold). When every frame
+since the previous observation was held for a switch, the arm has not moved and the same frame is observed
+again instead of the next. An arriving
 chunk skips the chunk time that the chunk timed from the pose commanded at the observation reaches after
 the frames of the latency the robot did not spend holding (arc_interp.arrival_time).
 
@@ -198,6 +200,7 @@ def closed_loop(
     executed, observations, distances, seams = [], [], [], []
     stalls = 0
     owed_at_observation = 0  # hold frames still owed when the pending chunk was observed
+    observed_at = 0  # executed frames at that observation
     while True:
         if len(observations) > 4 * len(actions):
             raise RuntimeError(f"episode {e.index}: not at the final row after {len(observations)} inferences")
@@ -230,10 +233,12 @@ def closed_loop(
         split = len(targets) - latency_frames if mode == "async" else len(targets)
         executed.extend(targets[:split])
         pose = executed[-1].copy()
+        holding = owed_at_observation >= len(executed) - observed_at > 0  # held for a switch since the last one
         owed_at_observation = timing.owed_hold([poses[0], *executed], spec.command_dims) if timing is not None else 0
+        observed_at = len(executed)
         following = t  # the last recorded frame is observed again; so is the first after an inference back
-        # to back (e = d), where the robot has not moved yet
-        if t < last_frame and arrival + split > 0:
+        # to back (e = d), where the robot has not moved yet, and one after a switch hold
+        if t < last_frame and arrival + split > 0 and not holding:
             expected = t + round(rate * (arrival + split))
             following = _observe(pose, poses, joints, commands, t, min(last_frame, end), expected)
         executed.extend(targets[split:])
