@@ -165,7 +165,10 @@ LIBERO, `curvature-s40-d2`, rate 1: at e = 1 the replay executes 7074 frames for
 deviation max 1.97 and keyframe position max 4.73 path steps, against max 0.42–0.57 and 1.12–3.13 for
 e = 2–40; at rate 2, e = 1 gives max 0.53 and 1.97. The e = 1, rate 1 row overstates the error of the
 labels. `rate_ceiling` replays the same loop: where an execution length covers less than one recorded
-frame of path, the forced advance shortens the wall-clock duration and overstates the speed-up.
+frame of path, the forced advance shortens the wall-clock duration and overstates the speed-up. Under velocity timing with switch holds the advance ran the observation ahead of the arm standing still at
+a command switch and counted the held pose as path deviation (DROID, `curvature` s64 d0, cap 8, e 4: every
+path failure on a held target); `closed_loop` now observes the same frame after a switch hold, which leaves
+the general case open.
 
 ## Evidence
 
