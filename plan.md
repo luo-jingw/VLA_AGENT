@@ -1,219 +1,127 @@
 # Plan
 
-Plan Status: completed
+Plan Status: proposed
 
 # Problem
 
 ## Current
 
-Resampled labels exist to raise the execution rate a deployed policy runs at: a chunk that covers
-`span_frames` recorded frames is executed r times faster than the recording, with fewer inferences per task.
-The current evidence does not measure that rate:
+`rate_ceiling` executes every chunk at one uniform execution rate r: a chunk that covers `span_frames`
+recorded frames takes span / r control frames, whatever its geometry. A run is feasible when the executed
+targets stay within the Panda's joint velocity limits, every gripper edge is executed and the closed-loop
+path deviation stays within 2 path steps; the result is the largest completion speed-up feasible on 90% of
+the episodes.
 
-- Data: LIBERO only, simulated demonstrations. Its operators' speed follows the path shape (log speed against
-  log κ: slope −0.31, R² 0.45; window progress p90 / p10 1.3×), so `time` and `curvature` place the same
-  point 1.25 recorded frames apart (median) and rebuild alike: on the frames both leave unpadded, s40 d2
-  spline rebuild p50 / p90 / max 0.10 / 0.21 / 1.02 path steps for `time`, 0.09 / 0.21 / 0.72 for `curvature`.
-- Rate: `label_replay` reports the largest executed step against the demonstration's p95 step. No robot
-  velocity or acceleration limit, gripper actuation time or inference latency enters any figure; no maximum
-  rate is computed.
-- Selection: `sweep` scores each cell on its own unpadded frames. `time` labels count end-padding rows as
-  rows, `curvature` labels count points on them as padded, so s40 d2 is scored on 7708 frames for `time` and
-  6313 for `curvature`; the 1395 extra frames lie at the recording's end (rebuild p50 0.06). The selected
-  cell beat `time` s40 d2 by 0.01 path steps on these different sets.
-- Span: all 30 cells (spans 10–40) are admissible; the largest-admissible-span rule returns the grid's top.
-- Latency: the replay is synchronous with zero latency: the robot waits for no inference and a chunk is never
-  older than the pose it starts from.
-- Measured on LIBERO (50 episodes) against the Panda's libfranka velocity limits (2.175 rad/s joints 1–4,
-  2.61 rad/s joints 5–7), finite differences at 20 Hz:
-  - the recordings reach median 0.30, max 0.51 of the velocity limit at their fastest frame;
-  - with latency, a chunk planned from a pose d frames old and started at its target d does not meet the
-    commanded pose at the switch (prototype, `curvature` s40 d2, rate 1, d = 2 frames: largest per-frame step
-    6.0 path steps, 3.4 with the arrival rebuild below; at d = 4, rate 2 feasible on 47 of 50 episodes without
-    the rebuild, 50 with it);
-  - `rate_ceiling` (phase 1), rate feasible on every episode and speed-up there, asynchronous / synchronous:
-
-    | labels | L = 0 | L = 0.1 s | L = 0.2 s | L = 0.4 s |
-    |---|---|---|---|---|
-    | per-frame `time` s10 | 1.5, 1.48 | 1.5, 1.45 / 1.5, 1.11 | 1, 0.95 / 1.5, 0.89 | none / 1.5, 0.63 |
-    | `curvature` s40 d2 | 2, 1.57 | 2, 1.52 / 2, 1.38 | 2, 1.48 / 2, 1.27 | 1.5, 1.08 / 2, 1.09 |
-
-    the next rate fails on velocity; per-frame rate 2 fails on one episode at 1.02 of the limit. A span-10
-    chunk keeps 0.5 s of motion: at L = 0.2 s it runs out above rate 1, the robot holds and catches up with
-    a step beyond the limit; at L = 0.4 s no asynchronous rate is feasible;
-  - every recorded gripper edge is executed in every run;
-  - the executed targets exceed the Panda's nominal acceleration limits already for the per-frame labels at
-    rate 1 (1.24×, the recording's own frame-to-frame changes).
-
-- Measured during phase 4 (2026-10-16), DROID subset (55 episodes after the velocity exclusion) and LIBERO:
-  - velocity bounds of the recorded paths (`velocity_bound.py`): uniform replay feasible on every episode
-    up to 1.07× on DROID (per episode median 1.88×), 1.96× on LIBERO (3.30×); every step at the limit of its
-    binding joint 7.65× and 5.95×. The fastest DROID recordings reach 0.84–0.93 of the limit at rate 1;
-  - DROID sweep: `curvature` beats `time` at span 32 (path full median 0.31 against 0.34–0.37 path steps)
-    and 64 (0.78 against 1.01–1.07); spans 128 and 256 are inadmissible (path head median 1.4–4.5); selected
-    `curvature` s64 d2;
-  - without a path bound the rate ceiling rewards cutting corners: at spans 64–256 with e = 1, rate 1, the
-    replay finishes 1.3–1.9× faster than recorded while the end effector leaves the recorded path by a
-    median 3.5–14 mm and up to 113 mm; closed loop at small e drifts farther than the open-loop sweep
-    measures;
-  - wall-clock time counts the hold rows a long last chunk executes after the recording's end, and at L = 0
-    with e = 1 the replay stops one row short of the final recorded pose;
-  - "feasible on every episode" is decided by one frame of one episode: on DROID the result jumps between
-    neighbouring latencies (`curvature` s64 d2 with a 2-path-step bound and completion timing: L = 0 1.34×,
-    L = 0.05 0.89×, L = 0.1 none, L = 0.2 0.87×);
-  - with one execution rate, every window of span recorded frames runs in span / r frames, so the fastest
-    window of the recording sets the ceiling whatever the label metric; `curvature` placement moves faster
-    on straights, where the velocity limit binds.
+- Uniform timing, asynchronous, L = 0 / 0.05 / 0.1 / 0.2 / 0.4 s: DROID (55 episodes) best 1.96 / 1.96 /
+  1.93 / 1.45 / 0.97 (`time` s32 d0), LIBERO (50) 2.44 / 2.87 / 2.65 / 2.29 / 2.03 (`curvature` s64–s128).
+  The next rate fails on velocity. The recorded paths allow 7.65× (DROID) and 5.95× (LIBERO) with every
+  recorded step at the speed of its limiting joint; the recording replayed at one rate is feasible on every
+  episode up to 1.07× and 1.96×.
+- At one rate the fastest stretch of a recording sets the rate for all of it: straights, slow segments and
+  pauses run at the pace that keeps the fastest stretch within the limit.
+- Prototype (2026-10-17): each chunk's spline (the uniform knots at rate r) traversed at the joint velocity
+  limit, never faster than rate r; L = 0, asynchronous, path bound 2, 90%. DROID: per-frame 5.47 (r 8,
+  e 1), `time` s32 d0 7.10 (r 16, e 1, 50 of 55), `curvature` s32 d0 7.09 (r 16, e 2, 54), `curvature` s64 d0
+  7.24 (r 12, e 5, 50); `time` s64 none (path bound). Integrating the timing with the trapezoid rule
+  overshot the limit by 0.3%; the larger endpoint per integration interval keeps the targets within it.
+- Gripper: frames the arm stays within 1 path step of the pose at a command switch, median / p10 over 110
+  DROID switches: recording 7 / 3, uniform `time` s32 r 2 e 16 4 / 1, velocity timing at r 16 1 / 1. Under
+  uniform timing the keyframe density holds the arm near a switch for a share of span / r frames; velocity
+  timing traverses those nearly still stretches at the cap. DROID's measured gripper position reaches 90%
+  of its travel a median 8 frames (0.53 s) after a close command (p10 / p90 4 / 10) and 10 frames
+  (0.67 s) after an open command (7 / 11); file 000, 1374 and 1316 edges.
 
 ## Problem
 
-1. Nothing measures the quantity the labels are for: the highest task completion speed-up a robot reaches
-   with asynchronous inference at a given inference latency, on real teleoperation data.
-2. `sweep` compares cells on different frames.
-3. The rate ceiling as defined in phase 1 does not measure that speed-up faithfully: it admits runs that cut
-   corners (no path bound), counts the hold rows after the task is done and stops one recorded row short of
-   the final pose at small e (completion), and lets one frame of one episode decide the result (every
-   episode feasible).
+Uniform timing cannot use the velocity margin of slow segments, so the rate ceiling stays near the
+recording's fastest stretch. Timing each chunk by its geometry removes that limit but also removes the time
+the labels' keyframe density gives the gripper at a switch.
 
 ## Goal
 
-On a small subset of DROID (`lerobot/droid_1.0.1`: Franka Panda, VR teleoperation, 15 Hz, joint position
-actions and gripper; LeRobot v3.0), per label configuration (per-frame baseline `time` span 10; `time` and
-`curvature` at spans 32, 64, 128, 256; keyframe density 0 and 2; H = 10):
-
-- Execution model (closed-loop label replay, the labels standing in for a perfect model), inference latency
-  d = ⌈L · fps⌉ control frames:
-  - asynchronous: an observation is taken every e control frames (e ≥ max(d, 1)); its chunk arrives d frames
-    later, is rebuilt from the commanded pose (arrival rebuild) and executed until the next chunk arrives; the
-    first chunk, built from the observed pose, is executed from target 0 after the robot has held still for d
-    frames; a chunk that runs out holds its last target; a rate whose chunk keeps no target after the latency
-    has no run;
-  - synchronous: the robot holds still for d frames at every observation, then executes e targets;
-  - end: once an observation reaches the last recorded frame, its chunk is executed and the robot keeps
-    observing that frame until the executed pose is within the final tolerance (0.25 path steps, the hold
-    tolerance) of the final recorded pose with the final command state; the chunk of the last recorded frame
-    is always executed.
-  L = 0 gives the same switching in both modes.
-- Arrival rebuild (async, d > 0): when a chunk arrives d frames after its observation, the server rebuilds it
-  from the currently commanded pose: knots = the commanded pose at 0 and the points whose time minus d exceeds
-  half a point spacing, at their times minus d; the same not-a-knot spline. The switch is continuous in
-  position. A chunk with no point left holds the commanded pose.
-- Completion: frames until a joint sequence reaches the final recorded pose and stays there (within the final
-  tolerance, final command state), counted the same way for the executed targets (holds included) and for
-  the recorded actions. Speed-up = recorded completion frames / executed completion frames; the rows the
-  robot holds after completion are not counted.
-- Feasible run: the executed targets (one per control frame, the first observed pose before them) stay within
-  the Panda's joint velocity limits (finite differences at the dataset rate, chunk switches and holds
-  included); every recorded gripper edge is executed; the closed-loop path deviation (each executed chunk
-  target to the recorded segment its chunk covers) stays within 2 path steps on the whole episode (about
-  10 mm of end-effector motion on DROID). The gripper's timing near an edge is carried by the labels'
-  keyframe density; the rate scales it with the rest of the motion.
-- Reported, not constrained: the largest acceleration as a fraction of the Panda's nominal limits and the
-  largest per-frame step at a chunk switch. A deployed controller's acceleration is a setting; the measured
-  quantity is the speed-up within the velocity limits.
-- Episodes whose recording exceeds a velocity limit are left out of every case and listed. Path step and
-  curvature chord length come from all episodes, as in `sweep`.
-- Rates 1, 1.5, 2, 3, 4, 6, 8, 12, 16; e either max(d, 1) (inference back to back), half or all of the targets
-  left after the latency (async), half or all of the chunk (sync). Per episode the search stops after two
-  consecutive rates without a run within the velocity limit.
-- Result per configuration, latency L ∈ {0, 0.05, 0.1, 0.2, 0.4} s and mode: the (rate, e) with the largest
-  speed-up among those feasible on at least 90% of the episodes, the speed-up summed over the episodes
-  feasible there, and those left out; per episode the largest feasible rate and the largest feasible
-  speed-up, median / p10. The maximum asynchronous speed-up at each latency is the headline figure, the
-  synchronous one is reported beside it.
-- Upper bound: the time-optimal traversal of each recorded path under the same velocity limits: every
-  recorded step at the speed of its limiting joint, duration Σ_k max_j |Δq_kj| / v_j.
-- Path deviation of the executed targets up to completion in joint space and of the end effector in mm
-  (Panda forward kinematics), on the episodes feasible at the headline setting.
-- The same on LIBERO (also a Panda) for comparison.
-- `sweep`: cells of the same span scored on the frames every cell of that span leaves unpadded (with spans up to
-  256 a common set over all spans would keep only the first frames of each episode); the LIBERO sweep re-run.
-- `label_replay` (geometric replay) uses the same end rule; its frame counts are completion frames. The
-  LIBERO replays are re-run.
+- Velocity timing on the server: the chunk's joint spline, unchanged (not-a-knot over the knots
+  `(offset + k · span / H) / r` from the pose it starts at), is traversed with chunk time T mapped to control
+  frames s(T) = ∫ max(1, fps · max_j |dq_j/dT| / (α · v_j)) dT, the integrand taken as the larger endpoint
+  value on intervals of 1/16 frame; one target at each s = 1, 2, …, ⌊s(T_end)⌋; commands from the nearest
+  point in T. A chunk is never faster than rate r (the cap) and never moves a joint faster than α of its
+  limit along the spline. Without velocity timing the server is unchanged.
+- Switch hold: at the first target whose command differs from the previous target (or from the pose the
+  chunk starts at), the arm stays for ⌈h · fps⌉ further frames at that target before the chunk continues; h
+  in seconds, a deployment setting like r.
+- Arrival rebuild with velocity timing: a chunk observed at commanded pose p_obs and arriving d frames later
+  keeps the points whose T exceeds T_d by more than half a point spacing, T_d the chunk time of target d of
+  the chunk timed from p_obs (holds included); the knots shift by T_d and the chunk is rebuilt from the pose
+  commanded at arrival and timed the same way. With uniform timing T_d = d, as now.
+- Rate ceiling with velocity timing: α = 1, h ∈ {0, 0.53 s} (none; DROID's median close time), the same
+  configurations (per-frame; `time` and `curvature` at DROID spans 32, 64, 128, 256 and LIBERO spans 32, 40,
+  64, 128, 256; density 0 and 2), latencies, modes, rate grid (now the cap), execution lengths, path bound
+  and 90% summary. Feasibility unchanged: velocity is still checked over all executed targets, switches and
+  holds included. Reported, not constrained: the executed frames held at each command switch against the
+  recording's (`EdgeCheck.holds`, 0.25 path steps), median / min.
+- Per data set: uniform timing against velocity timing with h = 0 and h = 0.53 s per latency and mode,
+  per-episode speed-up, end-effector deviation, against the time-optimal bound.
 
 # Structure
 
 ## Modules
 
-- Robot limits: `src/vla_tools/robot_spec.py`.
-- Server rebuild: `src/vla_tools/arc_interp.py` (arrival rebuild from the commanded pose).
-- Execution model: `src/vla_tools/label_replay.py` (`closed_loop` with latency, mode and the end rule;
-  completion frames; per-episode edge check).
-- Rate ceiling: `src/vla_tools/rate_ceiling.py`, built on `label_replay`.
-- Sweep: `src/vla_tools/sweep.py`.
-- DROID subset: `FTpi05/reports/rate-ceiling-src/extract_droid.py`; data in `FTpi05/data/droid-pick-place*`;
-  run in `FTpi05/runs/droid_pick_place/`.
-- Reference figures: `FTpi05/reports/rate-ceiling-src/panda_kinematics.py` (forward kinematics),
-  `velocity_bound.py` (time-optimal bound), `ee_deviation.py` (end-effector deviation of executed targets).
+- Server rebuild: `src/vla_tools/arc_interp.py` (velocity timing, switch hold, arrival rebuild; standalone,
+  numpy + scipy only).
+- Execution model: `src/vla_tools/label_replay.py` (`closed_loop` passes the server timing; elapsed chunk
+  time at arrival).
+- Rate ceiling: `src/vla_tools/rate_ceiling.py` (velocity-timed cases, switch-hold report).
+- Reference figures (outside the package): `FTpi05/reports/rate-ceiling-src/gripper_actuation.py` (new:
+  DROID gripper close / open time from the measured position), `ee_deviation.py` (server timing from the
+  result).
 - Knowledge: `docs/validation.md`, `.claude/skills/vla-action-labels/` (SKILL.md, references/method.md),
   `README.md`.
 
 ## Responsibilities
 
-`robot_spec` holds the robot's joint limits: velocity is a constraint, acceleration is reported. `arc_interp`
-owns every rebuild of a chunk into per-frame targets, including the arrival rebuild. `label_replay` owns the
-execution model (observation rule, latency, synchronous / asynchronous switching, the end rule), completion
-frames and the edge check. `rate_ceiling` searches rates and execution lengths, applies the velocity limit,
-the edge check and the path bound, and computes the speed-ups and the 90% summary. `sweep` keeps its scores
-and selection rule. The FTpi05 scripts prepare the DROID subset and compute the reference figures; they are
-not part of the package.
+`arc_interp` owns every mapping from points to per-frame targets: uniform timing at rate r or velocity
+timing capped at r, the switch hold and the arrival rebuild. `label_replay` owns the execution model and
+hands the server timing to `arc_interp`; it tracks the commanded pose at each observation for the arrival
+rebuild. `rate_ceiling` builds the server timing from the robot's velocity limits, α and h, searches the cap
+and execution lengths and reports holds. Deployment wiring (`vla_openpi.launch`) is not changed.
 
 ## State Ownership
 
-- Joint limits: each run's `robot_spec.json`, read through `RobotSpec`.
-- Rate ceilings: each run's `rate_ceiling.json`, written by `rate_ceiling`.
+- Server timing (α, h, velocity limits): a deployment setting held by `ArcInterpolator.timing`; in the
+  rate ceiling, built per case from `robot_spec.json` and the CLI; recorded in `rate_ceiling_velocity.json`.
+- Rate ceilings: each run's `rate_ceiling.json` (uniform) and `rate_ceiling_velocity.json` (velocity
+  timing), written by `rate_ceiling`.
 
 # Interface
 
 ## Interfaces
 
-- `RobotSpec.joint_velocity_limits: tuple[float, ...] = ()`, `RobotSpec.joint_acceleration_limits:
-  tuple[float, ...] = ()`: one entry per joint dim (rad/s, rad/s²); empty when unknown; `load` reads them
-  when present and checks their length.
-- `arc_interp.after_latency(points, times, commanded, elapsed, command_dims) -> np.ndarray`: per-frame targets
-  from the commanded pose, `elapsed` frames after the observation; `ArcInterpolator.after_latency(points,
-  commanded, elapsed_frames)` for serving.
-- `label_replay.closed_loop(e, spec, record, config, execute, rate, latency_frames: int = 0, mode: str = "sync",
-  *, final_tolerance: float) -> EpisodeReplay`: `EpisodeReplay.executed` is the wall-clock sequence of targets
-  (holds included) ending within `final_tolerance` (rad) of the final recorded pose;
-  `EpisodeReplay.completion_frames` its completion; `EpisodeReplay.stall_frames` counts the frames held for
-  latency or an exhausted chunk.
-- `label_replay.completion_frames(targets, final, spec, tolerance) -> int`: frames until `targets` reach the
-  (D,) `final` row and stay within `tolerance` of its joints with its command state; raises when the last
-  target is not there.
-- `label_replay.edge_check(e, spec, executed, tolerance) -> EdgeCheck`: per recorded command edge, the executed
-  position error and hold frames, the recording's own hold frames, and the edges never switched; used by
-  `replay` and `rate_ceiling`.
-- `label_replay.ReplayRow.executed_frames`, `recorded_frames`: completion frames summed over episodes.
-- `rate_ceiling.check(e, spec, record, config, rate, execute, latency_frames, mode, path_step, path_bound)
-  -> RateCheck`: velocity ratio (max |Δq · fps| / limit) over the executed targets preceded by the first
-  observed pose, edges missed, path max (path steps) against `path_bound`, executed and recorded completion
-  frames; reported: acceleration ratio (max |Δ²q · fps²| / nominal limit), largest switch step (path steps),
-  inferences, stalled frames.
-- `rate_ceiling.summarize(case, checks, episodes, fps, rates, feasible_fraction) -> CaseResult`: the
-  largest-speed-up (rate, e) feasible on at least `feasible_fraction` of the episodes, the episodes left out
-  there, per-episode largest rate and speed-up.
-- CLI: `python -m vla_tools.rate_ceiling --dataset --spec --keyframes --horizon --per-frame --metrics --spans
-  --event-density --rates --latency --modes --path-bound 2 --feasible-fraction 0.9 --out`; prints per
-  configuration, latency and mode the selected rate, its execution length, the episodes feasible there, the
-  speed-up and the constraints failing at the next rate.
-- `sweep`: CLI unchanged; the cells of one span are scored on the intersection of their unpadded frames; the
-  JSON records that frame count per cell.
+- `arc_interp.VelocityTiming(velocity_limits: tuple[float, ...], fraction: float, fps: float,
+  switch_hold_s: float)`: frozen dataclass; one limit per non-command dim in dim order (rad/s).
+- `arc_interp.to_frames(points, current, times, command_dims, timing: VelocityTiming | None = None) ->
+  np.ndarray`: (n, D) targets; n = ⌊times[-1]⌋ without timing, at least that with it (plus holds).
+- `arc_interp.target_times(points, current, times, command_dims, timing: VelocityTiming | None = None) ->
+  np.ndarray`: (n,) chunk time T of each target of `to_frames` (holds repeat their target's T).
+- `arc_interp.after_latency(points, times, commanded, elapsed: float, command_dims, timing:
+  VelocityTiming | None = None) -> np.ndarray`: `elapsed` becomes the chunk time at arrival (T_d; equal to
+  the elapsed frames with uniform timing).
+- `ArcInterpolator.timing: VelocityTiming | None = None`; `from_report(path, rate=1.0, timing=None)`;
+  `after_latency(points, observed, commanded, elapsed_frames)`: `observed` is the pose commanded at the
+  observation, used for T_d under velocity timing.
+- `label_replay.closed_loop(..., *, final_tolerance: float, timing: VelocityTiming | None = None)`.
+- `rate_ceiling`: `Case.timing: VelocityTiming | None`; `check(..., timing)`; `RateCheck.holds`,
+  `recorded_holds: tuple[float, float]` (median, min frames); `CaseResult.velocity_fraction`,
+  `switch_hold_s`, `holds`, `recorded_holds`; CLI `--velocity-fraction α` (velocity timing for every case)
+  and `--switch-hold <s> [<s> ...]`.
 
 ## Inputs
 
-- DROID: 3 data parquet files (~260 MB, no video) from different parts of the dataset and the episode
-  metadata; successful episodes whose instruction is a pick-and-place, with one gripper close and one open
-  edge; 60 episodes spread over buildings and collectors.
-- Panda joint velocity and acceleration limits: libfranka 0.9.2 `include/franka/rate_limiting.h`.
-- LIBERO run inputs, unchanged.
+DROID and LIBERO timed datasets, keyframes and robot specs as in the uniform runs; DROID raw file 000 for
+the gripper actuation time.
 
 ## Outputs
 
-`data/droid-pick-place` (extracted) and its timed version; `runs/droid_pick_place/`: `robot_spec.json`,
-`audit.json`, `keyframes.json`, `timing_plan.json`, `sweep.json`, `rate_ceiling.json`,
-`velocity_bound.json`, `ee_deviation.json`; `runs/libero_alphabet_soup/`: `sweep.json` (re-run),
-`rate_ceiling.json`, `ee_deviation.json`, `velocity_bound.json`, the five `replay_*.json` (re-run).
+`runs/droid_pick_place/` and `runs/libero_alphabet_soup/`: `rate_ceiling_velocity.json`,
+`ee_deviation_velocity.json`; `runs/droid_pick_place/gripper_actuation.json`.
 
 ## State Changes
 
@@ -223,56 +131,51 @@ None beyond the outputs.
 
 ## Main Flow
 
-DROID files → `extract_droid.py` (LeRobot v2.1 layout, low-dimensional columns) → `audit` →
-`keyframe_detect` (gripper edges; no camera review, videos are not downloaded) → `episode_timing` (still
-ends trimmed, end padding ≥ the largest span) → `keyframe_detect` on the timed version → `sweep` (common
-frames) → `rate_ceiling` per configuration (path bound, completion, 90% summary) → `velocity_bound.py`,
-`ee_deviation.py` at the selected settings → one table per data set.
+`gripper_actuation.py` → h. `rate_ceiling --velocity-fraction 1 --switch-hold 0 0.53` per data set: per
+case, `closed_loop(timing=VelocityTiming(limits, 1, fps, h))` → per chunk `to_frames` (first chunk, sync
+chunks) or `target_times` on the observation pose then `after_latency` (async arrivals) → checks → summary.
+`ee_deviation.py` on the velocity results → comparison table with the uniform results.
 
 # Code Mapping
 
 ## Modules
 
-Robot limits → `src/vla_tools/robot_spec.py`; execution model → `src/vla_tools/label_replay.py`; rate
-ceiling → `src/vla_tools/rate_ceiling.py`; sweep → `src/vla_tools/sweep.py`; DROID subset and reference
-figures → `FTpi05/reports/rate-ceiling-src/`.
+Server rebuild → `src/vla_tools/arc_interp.py`; execution model → `src/vla_tools/label_replay.py`; rate
+ceiling → `src/vla_tools/rate_ceiling.py`; reference figures → `FTpi05/reports/rate-ceiling-src/`.
 
 ## Interfaces
 
-`RobotSpec` limits → `robot_spec.py`; `after_latency` → `arc_interp.py`; `closed_loop`, `completion_frames`,
-`edge_check`, `EdgeCheck`, `ReplayRow` → `label_replay.py`; `check`, `summarize`, `RateCheck`, `CaseResult` →
-`rate_ceiling.py`; common-frame scoring → `sweep.py`.
+`VelocityTiming`, `to_frames`, `target_times`, `after_latency`, `ArcInterpolator` → `arc_interp.py`;
+`closed_loop` → `label_replay.py`; `Case`, `check`, `RateCheck`, `CaseResult`, CLI → `rate_ceiling.py`.
 
 ## State
 
-Joint limits → `runs/*/robot_spec.json`; rate ceilings → `runs/*/rate_ceiling.json`.
+Server timing → `ArcInterpolator.timing` (`arc_interp.py`), `Case.timing` (`rate_ceiling.py`); results →
+`runs/*/rate_ceiling_velocity.json`.
 
 # Implementation
 
 ## Phase 1
 
-Phase Status: completed
+Phase Status: pending
 
 Round: 1
 
 ### Goal
 
-Joint limits in `RobotSpec`; latency and asynchronous switching in `label_replay`; `rate_ceiling` module and
-CLI.
+Velocity timing, switch hold and the velocity-timed arrival rebuild in `arc_interp`.
 
 ### Files
 
-`src/vla_tools/robot_spec.py`, `src/vla_tools/arc_interp.py`, `src/vla_tools/label_replay.py`,
-`src/vla_tools/rate_ceiling.py`, `tests/test_arc_interp.py`, `tests/test_rate_ceiling.py`,
-`tests/test_label_replay.py`.
+`src/vla_tools/arc_interp.py`, `tests/test_arc_interp.py`.
 
 ### Structures
 
-`EdgeCheck`, `RateCheck`.
+`VelocityTiming`; `target_times`.
 
 ### Affected Modules
 
-Robot limits, execution model, rate ceiling.
+Server rebuild.
 
 ### Dependencies
 
@@ -280,111 +183,30 @@ None.
 
 ### Observation
 
-Tests: latency 0 in both modes equals the current replay; asynchronous switching rebuilds each arriving chunk
-from the commanded pose and holds d frames only at the start; a straight constant-speed recording gives velocity ratio r · v / limit;
-`time` span 10 at rate 1 executes the recording; the arrival rebuild starts at the commanded pose. The LIBERO
-replay JSONs unchanged under the defaults; LIBERO rate ceiling printed for `time` s10 and `curvature` s40 d2.
+Tests, measured values printed: without timing the targets are unchanged; a straight constant-speed chunk
+whose rate-r speed exceeds α of a limit runs at α of it (frame count against the closed form); a still
+chunk takes ⌊times[-1]⌋ frames (the cap); the largest per-frame joint speed over random splines as a
+fraction of α · v (≤ 1); a command switch holds ⌈h · fps⌉ further frames; `target_times` matches
+`to_frames`; the velocity-timed arrival rebuild starts at the commanded pose and keeps the points past T_d.
 
 ## Phase 2
 
-Phase Status: completed
-
-Round: 1
-
-### Goal
-
-`sweep` scores the cells of one span on their common unpadded frames; LIBERO sweep re-run.
-
-### Files
-
-`src/vla_tools/sweep.py`, `tests/test_sweep.py`, `FTpi05/runs/libero_alphabet_soup/sweep.json`.
-
-### Structures
-
-None.
-
-### Affected Modules
-
-Sweep.
-
-### Dependencies
-
-None.
-
-### Observation
-
-Equal frame count across the cells of a span; LIBERO selection and cell table before / after.
-
-Result: LIBERO, every span-40 cell on the same 2917 inference frames (stride 2); `curvature` cells unchanged,
-`time` s40 d2 path full median 0.092 → 0.096 path steps, d0 0.123 → 0.133; selection unchanged
-(`curvature` s40 d2, 0.082), shortlist unchanged.
-
-## Phase 3
-
-Phase Status: completed
-
-Round: 1
-
-### Goal
-
-DROID subset through audit, keyframes and timing (end padding ≥ 256 rows).
-
-### Files
-
-`FTpi05/reports/rate-ceiling-src/extract_droid.py`, `FTpi05/data/droid-pick-place*`,
-`FTpi05/runs/droid_pick_place/` (`robot_spec.json`, `audit.json`, `keyframes_spec.json`, `keyframes.json`,
-`keyframe_overrides.json`, `timing_plan.json`).
-
-### Structures
-
-None.
-
-### Affected Modules
-
-DROID subset.
-
-### Dependencies
-
-None.
-
-### Observation
-
-Episodes, buildings and collectors kept; length distribution; audit findings (index convention, gripper
-value distribution, jumps, idle); keyframe issue list; timing report; operators' speed against curvature
-(slope, R²) and window progress p90 / p10, against LIBERO's −0.31 and 1.3×.
-
-Result: lerobot/droid_1.0.1 revision 0eabc778, files 000, 078 and 155: 2335 episodes, 1951 successful, 891
-pick-and-place instructions, 580 with one grasp and one release; 60 kept from 44 buildings and 38
-collectors, 63–743 frames (median 216). The measured joints follow the commands about 4 frames later
-(ISSUE-005), so the extracted state is the command echo and action[t] = state[t + 1] holds exactly; the
-gripper command is thresholded at 0.5. Audit: 17 jumps above 8× the median step (10 discontinuities, 6
-continuing, 1 isolated) in 10 episodes; the recordings reach median 0.54 of the velocity limit at their
-fastest frame, 5 episodes exceed it (1.41 max, all at jumps) and are left out by `rate_ceiling`. Timing:
-leading still frames trimmed (37 episodes, up to 41 frames), trailing (8, up to 41), pauses kept, 256
-padding rows. Keyframes: grasp and release from the command edges, 60 / 60 each; 5 open phase / interval
-outliers, left open (no camera review; edges are exact). Operators' speed against curvature: slope −0.39,
-R² 0.26 (LIBERO −0.31, 0.45); window progress p90 / p10 at span 32 3.9× (LIBERO at span 40: 1.3×).
-
-## Phase 4
-
-Phase Status: completed
+Phase Status: pending
 
 Round: 2
 
 ### Goal
 
-The end rule and completion frames in `label_replay`; the path bound, completion speed-up, velocity-based
-early stop, all-episode path step and the 90% summary in `rate_ceiling`.
+`closed_loop` and `rate_ceiling` with the server timing; hold report.
 
 ### Files
 
 `src/vla_tools/label_replay.py`, `src/vla_tools/rate_ceiling.py`, `tests/test_label_replay.py`,
-`tests/test_rate_ceiling.py`, `tests/test_pipeline_chain.py`.
+`tests/test_rate_ceiling.py`.
 
 ### Structures
 
-`EpisodeReplay.completion_frames`, `RateCheck` (path bound, completion frames), `CaseResult` (episodes left
-out, per-episode speed-up).
+`Case.timing`; `RateCheck` and `CaseResult` hold fields.
 
 ### Affected Modules
 
@@ -392,39 +214,31 @@ Execution model, rate ceiling.
 
 ### Dependencies
 
-Phases 1, 2 and 3.
+Phase 1.
 
 ### Observation
 
-Tests: per-frame `time` labels at rate 1, e = 1 and L = 0 execute every recorded action including the last
-and complete in the recorded frames (speed-up 1); a sparse chunk at small e keeps observing the last frame
-until it settles; a run beyond the path bound fails on "path"; the summary selects a rate feasible on 90%
-but not all episodes. Printed: completion and executed frames per test run.
+Tests: timing None reproduces the uniform results; on the minimum-jerk profile velocity timing at α = 1
+keeps the velocity ratio ≤ 1 at every cap and completes faster than the uniform ceiling (printed); with
+latency the arrival rebuild under velocity timing switches without a jump; the switch hold appears in
+`holds`.
 
-Result: 129 passed, 1 skipped. Per-frame labels at rate 1, e = 1: 80 executed targets equal the 80 recorded
-actions, completion 80 = recorded completion. `time` span 40 at e = max(d, 1): the last frame is observed
-5 times (d = 0, sync), 2 (d = 2, async: 84 executed, completion 83) and 2 (d = 2, sync). Corner, `time`
-span 40, H = 2, e = 10: path max 3.23 path steps, fails on "path"; per-frame 0.00. Ten minimum-jerk
-episodes, one 1.5× faster: every episode feasible up to rate 2 (speed-up 2.00), 90% up to rate 3 (2.97, the
-fast one left out). Minimum-jerk recording of 200 frames completes in 190 (the last 10 within the final
-tolerance); per-frame labels complete in 190, 95, 64 frames at rates 1, 2, 3.
+## Phase 3
 
-## Phase 5
-
-Phase Status: completed
+Phase Status: pending
 
 Round: 3
 
 ### Goal
 
-DROID and LIBERO rate ceilings for every configuration, end-effector deviation at the selected settings,
-velocity bounds; LIBERO replays re-run.
+Gripper actuation time from DROID; DROID and LIBERO velocity-timed rate ceilings; end-effector deviation;
+comparison with uniform timing.
 
 ### Files
 
-`FTpi05/reports/rate-ceiling-src/ee_deviation.py`,
-`FTpi05/runs/droid_pick_place/{rate_ceiling,velocity_bound,ee_deviation}.json`,
-`FTpi05/runs/libero_alphabet_soup/{rate_ceiling,velocity_bound,ee_deviation,replay_*}.json`.
+`FTpi05/reports/rate-ceiling-src/gripper_actuation.py`, `FTpi05/reports/rate-ceiling-src/ee_deviation.py`,
+`FTpi05/runs/droid_pick_place/{gripper_actuation,rate_ceiling_velocity,ee_deviation_velocity}.json`,
+`FTpi05/runs/libero_alphabet_soup/{rate_ceiling_velocity,ee_deviation_velocity}.json`.
 
 ### Structures
 
@@ -436,61 +250,23 @@ None in the package.
 
 ### Dependencies
 
-Phase 4.
+Phase 2.
 
 ### Observation
 
-Per configuration and latency: the maximum asynchronous speed-up (and the synchronous one), its rate and
-execution length, episodes feasible there, the constraints failing at the next rate, per-episode largest
-rate and speed-up median / p10, the reported acceleration and switch step, path deviation (joint path
-steps, end effector mm); against the per-frame baseline and the time-optimal bound. LIBERO replay rows
-before / after the end rule.
+Per data set, latency and mode: speed-up under uniform timing and under velocity timing with h = 0 and
+0.53 s, cap and e, episodes feasible, constraints failing at the next cap, per-episode speed-up median /
+p10, holds at switches against the recording's, end-effector deviation; against the time-optimal bound.
 
-Result (2026-10-17; path bound 2 path steps, 90% of the episodes; DROID 55 episodes, path step 0.0241 rad;
-LIBERO 50, 0.0306 rad). Largest speed-up feasible on ≥ 90%, asynchronous / synchronous, with the end
-effector's deviation (median / p90 / max, mm) at the asynchronous setting:
+## Phase 4
 
-| L (s) | DROID best | DROID per-frame | LIBERO best | LIBERO per-frame |
-|---|---|---|---|---|
-| 0 | 1.96 `time` s32 d0, r2 e16 (0.3 / 0.9 / 6.0) | 1.59 | 2.44 `curvature` s64 d2, r3 e21 (0.3 / 1.2 / 8.5) | 1.99 |
-| 0.05 | 1.96 / 1.84 | 1.50 / 1.28 | 2.87 `curvature` s64 d0 / 2.32 | 1.97 / 1.66 |
-| 0.1 | 1.93 / 1.73 | 1.48 / 1.12 | 2.65 `curvature` s128 d0 (2.0 / 5.5 / 18.5) / 2.21 | 1.94 / 1.42 |
-| 0.2 | 1.45 r1.5 e9 (0.3 / 0.9 / 15.6) / 1.64 | 0.99 / 0.99 | 2.29 `curvature` s64 d2 / 2.09 | 0.97 / 1.10 |
-| 0.4 | 0.97 r1 / 1.40 | none / 0.74 | 2.03 `curvature` s128 d2 / 1.88 | none / 0.76 |
-
-- DROID: `time` s32 d0 is the best configuration at every latency in both modes; `curvature` s32 reaches
-  rate 1.5 (1.30–1.45), spans 64–256 are infeasible on more than 10% of the episodes at every rate below
-  their velocity limit (path bound; `curvature` s64 at L = 0: 43–47 of 55 at rates 1–2), except
-  `curvature` s64 at L = 0.1–0.2 (rate 1–1.5, 50 of 55). The next rate fails on velocity (36–38 episodes at
-  rate 3 for `time` s32).
-- LIBERO: `curvature` at spans 64 and 128 reaches rate 3 (2.0–2.9×) where `time` labels stay at rate 2
-  (1.8–2.1×); per-frame labels fall to rate 1 at L = 0.2 s and have no asynchronous run at 0.4 s.
-- The selected settings sit at the threshold: most have exactly 50 of 55 (DROID) or 45–46 of 50 (LIBERO)
-  feasible episodes, and the result moves between neighbouring latencies where a grid rate gains or loses
-  one episode (LIBERO `curvature` s64 d0: 1.95, 2.87, 1.91 at L = 0, 0.05, 0.1). The largest feasible
-  speed-up per episode varies smoothly: DROID `time` s32 d0 asynchronous median 2.07, 2.00, 1.96, 1.95,
-  1.86; per-frame 2.00, 1.98, 1.95, 1.47, 0. Per episode, `curvature` s64 d0 reaches a median of 2.98 on
-  DROID at L = 0 with a setting that differs between episodes.
-- At L ≥ 0.2 s the DROID asynchronous figure drops below the synchronous one: at rate 2 asynchronous
-  execution is feasible on 49 of 55 episodes (5 velocity, 1 path), synchronous on 50.
-- Velocity bounds (`velocity_bound.py`, unchanged): uniform replay of the recording on every episode 1.07×
-  (DROID), 1.96× (LIBERO); per episode median 1.88×, 3.30×; time-optimal 7.65×, 5.95×.
-- End-effector deviation at the selected settings: median 0.3–2.0 mm, p90 0.9–5.5 mm, max 6–18.5 mm (2
-  path steps of joint deviation reach up to 15.6 mm on DROID).
-- LIBERO replays with the end rule: path, keyframe, seam and speed figures unchanged; one more inference per
-  episode (the last recorded frame), more at e = 1; per-frame labels complete in the recorded 7702 frames at
-  every e (before: 7708–7930 executed for 7758 recorded rows); `curvature` s40 d2 at rate 1 completes in
-  9304–9654 frames for e ≥ 2, at rate 2 in 4663–4768.
-
-## Phase 6
-
-Phase Status: completed
+Phase Status: pending
 
 Round: 4
 
 ### Goal
 
-Documentation of the rate ceiling and the DROID results.
+Documentation of velocity timing, the switch hold and the results.
 
 ### Files
 
@@ -507,14 +283,9 @@ Knowledge.
 
 ### Dependencies
 
-Phase 5.
+Phase 3.
 
 ### Observation
 
-The tables match the phase 2 and 5 artifacts; the rate is chosen by `rate_ceiling` in the S7 procedure.
-
-Result: `docs/validation.md` gains the DROID data, the rate-ceiling definition, commands and results (both
-data sets), test rows for the end rule and `rate_ceiling`, and the LIBERO replay table in completion frames;
-the vla-action-labels skill chooses r and e with `rate_ceiling` at the deployment latency and records the
-DROID figures; `method.md` defines latency, the end rule, completion frames and the rate ceiling; README
-lists the command. 129 passed, 1 skipped.
+Tables match the phase 3 artifacts; the S7 procedure states when velocity timing and the switch hold apply
+and how they are set at deployment.
