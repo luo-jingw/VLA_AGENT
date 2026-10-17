@@ -268,6 +268,7 @@ comparison with uniform timing.
 ### Files
 
 `FTpi05/reports/rate-ceiling-src/gripper_actuation.py`, `FTpi05/reports/rate-ceiling-src/ee_deviation.py`,
+`src/vla_tools/rate_ceiling.py` (all cases' episode jobs submitted to the pool at once; results unchanged),
 `FTpi05/runs/droid_pick_place/{gripper_actuation,rate_ceiling_velocity,ee_deviation_velocity}.json`,
 `FTpi05/runs/libero_alphabet_soup/{rate_ceiling_velocity,ee_deviation_velocity}.json`.
 

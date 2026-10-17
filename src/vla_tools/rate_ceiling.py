@@ -443,10 +443,11 @@ def main() -> None:
     ids = [e.index for e in episodes]
     results = []
     rates = tuple(sorted(args.rates))
+    jobs = [EpisodeJob(e, spec, record, case, rates, path_step, args.path_bound) for case in cases for e in episodes]
     with multiprocessing.get_context("fork").Pool(args.workers) as pool:
+        parts = pool.imap(episode_checks, jobs)  # in order: every case's episodes in turn, all cases in flight
         for case in cases:
-            jobs = [EpisodeJob(e, spec, record, case, rates, path_step, args.path_bound) for e in episodes]
-            checks = [c for part in pool.map(episode_checks, jobs) for c in part]
+            checks = [c for _ in episodes for c in next(parts)]
             r = summarize(case, checks, ids, spec.fps, rates, args.feasible_fraction)
             results.append(r)
             c = case.config
