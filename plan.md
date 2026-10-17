@@ -310,8 +310,8 @@ asynchronous / synchronous:
   s64–s128 on LIBERO, at caps 6–16; the next cap fails on the path bound or keeps no target after the
   latency (cap ≤ span / (d + 1)). Velocity is never the binding constraint (largest ratio 1.00).
 - Per-frame labels under velocity timing: DROID 5.73 at L = 0, 0.82 at 0.4 s (asynchronous); their 10-frame
-  chunks cap the rate at 10 / (d + 1) once there is latency. Spans 32–128 keep 2.4–3.9× (synchronous) at
-  0.4 s.
+  chunks cap the rate at 10 / (d + 1) once there is latency. At 0.4 s the best sparse labels (spans
+  32–128) keep 3.41× without holds and 2.19–2.36× with them (synchronous; LIBERO asynchronous 3.95 and 2.28).
 - Holds at the switches: the arm stays at least 9 frames (DROID) and 12 (LIBERO) at every switch of every
   feasible run (1 + 8 at a close, 1 + 11 on LIBERO); the recordings stay a median 2 and 1–1.5 frames within
   0.25 path steps of the switch pose. Without holds the arm stays 1 frame.
