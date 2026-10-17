@@ -30,6 +30,12 @@ the others are listed. Per episode the largest feasible rate and the largest fea
 reported as median / p10; for the next rate of the grid the constraints that failed are counted. Path step
 and curvature chord length come from all episodes, as in sweep.
 
+Server timing: uniform at each rate of the grid, or with --velocity-fraction velocity timing
+(arc_interp.VelocityTiming: every chunk timed so that no joint exceeds that fraction of its velocity limit,
+the rate of the grid as the cap) with one case set per --switch-hold pair (seconds the arm stays still after
+a command rises / falls). The executed frames held at each command switch (within the hold tolerance) are
+reported against the recording's, not constrained.
+
 Finite differences are taken at the dataset's control rate: the targets are what a serving loop at that rate
 sends; a robot controller running faster interpolates between them.
 
@@ -37,7 +43,7 @@ Usage:
     python -m vla_tools.rate_ceiling --dataset <dir> --spec robot_spec.json --keyframes keyframes.json \
         --horizon 10 --per-frame --metrics time curvature --spans 32 64 128 256 --event-density 0 2 \
         --latency 0 0.05 0.1 0.2 0.4 --modes async sync --path-bound 2 --feasible-fraction 0.9 \
-        --out rate_ceiling.json
+        [--velocity-fraction 1 --switch-hold 0 0 --switch-hold 0.53 0.67] --out rate_ceiling.json
 """
 
 from __future__ import annotations
@@ -52,6 +58,7 @@ from pathlib import Path
 import numpy as np
 
 from vla_tools import label_replay
+from vla_tools.arc_interp import VelocityTiming
 from vla_tools.episodes import Episode
 from vla_tools.episodes import load_episodes
 from vla_tools.keyframe_record import KeyframeRecord
@@ -78,6 +85,8 @@ class RateCheck:
     completion_frames: int
     stall_frames: int
     recorded_frames: int  # completion frames of the recorded actions
+    holds: tuple[float, float]  # executed frames held at the command switches: median, min; reported only
+    recorded_holds: tuple[float, float]  # the recording's at the same edges
 
     @property
     def failures(self) -> tuple[str, ...]:
@@ -104,6 +113,7 @@ class Case:
     config: ResampleConfig
     latency_s: float
     mode: label_replay.Mode
+    timing: VelocityTiming | None  # None: uniform timing at each rate
 
 
 @dataclasses.dataclass(frozen=True)
@@ -112,6 +122,8 @@ class CaseResult:
     latency_s: float
     latency_frames: int
     mode: str
+    velocity_fraction: float | None  # velocity timing; None: uniform
+    switch_hold_s: tuple[float, float] | None  # rise, fall
     rate: float  # largest-speed-up rate feasible on at least the feasible fraction of episodes; 0 when none
     execute: int
     speedup: float  # recorded / executed completion frames at (rate, execute) over its feasible episodes
@@ -123,6 +135,8 @@ class CaseResult:
     acceleration_ratio: float  # max
     seam_max: float  # path steps, max
     path: tuple[float, float]  # path steps, median and max over episodes of the episode's max
+    holds: tuple[float, float]  # frames held at command switches: median of the episodes' medians, min
+    recorded_holds: tuple[float, float]
     next_rate_failures: dict[str, int]  # episodes failing each constraint at the next grid rate (best e per
     # episode); "latency": the chunk keeps no target after the latency; an episode whose search stopped
     # below that rate counts as velocity
@@ -168,11 +182,13 @@ def recording_ratios(e: Episode, spec: RobotSpec) -> tuple[float, float]:
 
 def check(
     e: Episode, spec: RobotSpec, record: KeyframeRecord, config: ResampleConfig, rate: float, execute: int,
-    latency: int, mode: label_replay.Mode, path_step: float, path_bound: float,
+    latency: int, mode: label_replay.Mode, path_step: float, path_bound: float, timing: VelocityTiming | None = None,
 ) -> RateCheck:  # fmt: skip
     joints = list(spec.joint_dims)
     tolerance = label_replay.HOLD_TOLERANCE * path_step
-    run = label_replay.closed_loop(e, spec, record, config, execute, rate, latency, mode, final_tolerance=tolerance)
+    run = label_replay.closed_loop(
+        e, spec, record, config, execute, rate, latency, mode, final_tolerance=tolerance, timing=timing
+    )
     first = spec.current_pose(e.states[0])[joints]
     v_ratio, a_ratio = limit_ratios(spec, np.concatenate([first[None, :], run.executed[:, joints]]))
     edges = label_replay.edge_check(e, spec, run.executed, tolerance)
@@ -190,7 +206,13 @@ def check(
         completion_frames=run.completion_frames,
         stall_frames=run.stall_frames,
         recorded_frames=label_replay.completion_frames(e.actions[: e.real], e.actions[e.real - 1], spec, tolerance),
+        holds=_median_min(edges.holds),
+        recorded_holds=_median_min(edges.recorded_holds),
     )
+
+
+def _median_min(values: list[int]) -> tuple[float, float]:
+    return (float(np.median(values)), float(min(values))) if values else (float("nan"), float("nan"))
 
 
 @dataclasses.dataclass(frozen=True)
@@ -214,7 +236,7 @@ def episode_checks(job: EpisodeJob) -> list[RateCheck]:
         lengths = execution_lengths(job.case.config, rate, latency, job.case.mode)
         checks = [
             check(job.episode, job.spec, job.record, job.case.config, rate, n, latency, job.case.mode,
-                  job.path_step, job.path_bound)
+                  job.path_step, job.path_bound, job.case.timing)
             for n in lengths
         ]  # fmt: skip
         out += checks
@@ -231,6 +253,9 @@ def summarize(
     """`rates`: the grid searched; a grid rate without runs keeps no target after the latency."""
     latency = latency_frames(case.latency_s, fps)
     needed = math.ceil(feasible_fraction * len(episodes) - 1e-9)
+    timing = case.timing
+    fraction = timing.fraction if timing is not None else None
+    holds_s = (timing.rise_hold_s, timing.fall_hold_s) if timing is not None else None
     table: dict[tuple[float, int], dict[int, RateCheck]] = {}
     for c in checks:
         table.setdefault((c.rate, c.execute), {})[c.episode] = c
@@ -257,9 +282,10 @@ def summarize(
         nan, nan2 = float("nan"), (float("nan"), float("nan"))
         return CaseResult(
             config=case.config.to_dict(), latency_s=case.latency_s, latency_frames=latency, mode=case.mode,
-            rate=0.0, execute=0, speedup=0.0, feasible_episodes=0, left_out=[], inferences=0, stall_frames=0,
-            velocity_ratio=nan, acceleration_ratio=nan, seam_max=nan, path=nan2, next_rate_failures={},
-            episode_rate=episode_rate, episode_speedup=episode_speedup, by_rate=by_rate,
+            velocity_fraction=fraction, switch_hold_s=holds_s, rate=0.0, execute=0, speedup=0.0,
+            feasible_episodes=0, left_out=[], inferences=0, stall_frames=0, velocity_ratio=nan,
+            acceleration_ratio=nan, seam_max=nan, path=nan2, holds=nan2, recorded_holds=nan2,
+            next_rate_failures={}, episode_rate=episode_rate, episode_speedup=episode_speedup, by_rate=by_rate,
         )  # fmt: skip
     rate, n = max(admissible, key=lambda k: speedup(feasible_runs(k)))
     runs = feasible_runs((rate, n))
@@ -285,6 +311,8 @@ def summarize(
         latency_s=case.latency_s,
         latency_frames=latency,
         mode=case.mode,
+        velocity_fraction=fraction,
+        switch_hold_s=holds_s,
         rate=rate,
         execute=n,
         speedup=speedup(runs),
@@ -296,11 +324,20 @@ def summarize(
         acceleration_ratio=max(c.acceleration_ratio for c in runs),
         seam_max=max(c.seam_max for c in runs),
         path=(float(np.median(paths)), float(np.max(paths))),
+        holds=_summary_holds([c.holds for c in runs]),
+        recorded_holds=_summary_holds([c.recorded_holds for c in runs]),
         next_rate_failures=failures,
         episode_rate=episode_rate,
         episode_speedup=episode_speedup,
         by_rate=by_rate,
     )
+
+
+def _summary_holds(per_episode: list[tuple[float, float]]) -> tuple[float, float]:
+    """Median of the episodes' median holds and the smallest hold; nan without command switches."""
+    medians = [m for m, _ in per_episode if not math.isnan(m)]
+    smallest = [s for _, s in per_episode if not math.isnan(s)]
+    return (float(np.median(medians)), float(min(smallest))) if medians else (float("nan"), float("nan"))
 
 
 def configs_from_grid(
@@ -342,6 +379,11 @@ def main() -> None:
                         help="largest closed-loop path deviation of a feasible run (path steps)")  # fmt: skip
     parser.add_argument("--feasible-fraction", type=float, default=0.9,
                         help="fraction of the episodes a selected (rate, e) must be feasible on")  # fmt: skip
+    parser.add_argument("--velocity-fraction", type=float, default=None,
+                        help="velocity timing at this fraction of the joint velocity limits, the rate as the cap")  # fmt: skip
+    parser.add_argument("--switch-hold", nargs=2, type=float, action="append", metavar=("RISE_S", "FALL_S"),
+                        help="with --velocity-fraction: seconds held still after a command rises / falls; "
+                             "repeat for several case sets (default 0 0)")  # fmt: skip
     parser.add_argument("--workers", type=int, default=16)
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
@@ -349,6 +391,16 @@ def main() -> None:
     spec = RobotSpec.load(args.spec)
     if not spec.joint_velocity_limits:
         raise SystemExit(f"{args.spec} has no joint_velocity_limits")
+    if args.switch_hold and args.velocity_fraction is None:
+        raise SystemExit("--switch-hold needs --velocity-fraction")
+    if args.velocity_fraction is None:
+        timings: list[VelocityTiming | None] = [None]
+    else:
+        timings = [
+            VelocityTiming(velocity_limits=tuple(spec.joint_velocity_limits), fraction=args.velocity_fraction,
+                           fps=spec.fps, rise_hold_s=rise, fall_hold_s=fall)
+            for rise, fall in (args.switch_hold or [[0.0, 0.0]])
+        ]  # fmt: skip
     record = KeyframeRecord.load(args.keyframes)
     record.check_dataset(args.dataset)
     loaded = load_episodes(args.dataset, spec, only=sorted(record.episodes))
@@ -363,7 +415,8 @@ def main() -> None:
     configs = configs_from_grid(args.horizon, args.per_frame, args.metrics, args.spans, args.event_density,
                                 args.anchor, curvature_length)  # fmt: skip
     cases = [
-        Case(config=c, latency_s=lat, mode=m)
+        Case(config=c, latency_s=lat, mode=m, timing=timing)
+        for timing in timings
         for c in configs
         for lat in args.latency
         for m in args.modes
@@ -382,9 +435,11 @@ def main() -> None:
     print(f"{len(episodes)} episodes, fps {spec.fps:g}, path step {path_step:.4f} rad (all {len(loaded)} episodes), "
           f"path bound {args.path_bound:g} path steps, feasible fraction {args.feasible_fraction:g}, "
           f"{len(configs)} configurations, {len(cases)} cases")  # fmt: skip
-    print(f"{'metric':>9} {'span':>4} {'dens':>4} {'L(s)':>5} {'mode':>5} {'rate':>5} {'e':>4} {'ok':>3} {'speed-up':>8} "
-          f"{'vel':>5} {'acc':>5} {'seam':>5} {'path med/max':>12} {'ep rate med/p10':>15} {'ep speed-up':>11}  "
-          "next rate fails")  # fmt: skip
+    print("timing: " + ("uniform" if args.velocity_fraction is None else
+          f"velocity at {args.velocity_fraction:g} of the limits, holds (rise, fall) {[list(h) for h in (args.switch_hold or [[0.0, 0.0]])]} s"))  # fmt: skip
+    print(f"{'hold':>9} {'metric':>9} {'span':>4} {'dens':>4} {'L(s)':>5} {'mode':>5} {'rate':>5} {'e':>4} {'ok':>3} "
+          f"{'speed-up':>8} {'vel':>5} {'acc':>5} {'seam':>5} {'path med/max':>12} {'ep rate med/p10':>15} "
+          f"{'ep speed-up':>11} {'held/rec':>9}  next rate fails")  # fmt: skip
     ids = [e.index for e in episodes]
     results = []
     rates = tuple(sorted(args.rates))
@@ -396,11 +451,12 @@ def main() -> None:
             results.append(r)
             c = case.config
             fails = ", ".join(f"{k} {v}" for k, v in sorted(r.next_rate_failures.items())) or "-"
-            print(f"{c.metric:>9} {c.span_frames:>4} {c.event_density:>4g} {case.latency_s:>5g} {case.mode:>5} "
+            hold = "-" if r.switch_hold_s is None else f"{r.switch_hold_s[0]:g}/{r.switch_hold_s[1]:g}"
+            print(f"{hold:>9} {c.metric:>9} {c.span_frames:>4} {c.event_density:>4g} {case.latency_s:>5g} {case.mode:>5} "
                   f"{r.rate:>5g} {r.execute:>4} {r.feasible_episodes:>3} {r.speedup:>8.2f} {r.velocity_ratio:>5.2f} "
                   f"{r.acceleration_ratio:>5.2f} {r.seam_max:>5.2f} {r.path[0]:>5.2f}/{r.path[1]:<6.2f} "
-                  f"{r.episode_rate[0]:>7g}/{r.episode_rate[1]:<7g} {r.episode_speedup[0]:>5.2f}/{r.episode_speedup[1]:<5.2f}  "
-                  f"{fails}", flush=True)  # fmt: skip
+                  f"{r.episode_rate[0]:>7g}/{r.episode_rate[1]:<7g} {r.episode_speedup[0]:>5.2f}/{r.episode_speedup[1]:<5.2f} "
+                  f"{r.holds[0]:>4g}/{r.recorded_holds[0]:<4g}  {fails}", flush=True)  # fmt: skip
     payload = {
         "dataset": str(args.dataset),
         "keyframes": str(args.keyframes),
@@ -411,6 +467,8 @@ def main() -> None:
         "path_step_rad": path_step,
         "path_bound": args.path_bound,
         "feasible_fraction": args.feasible_fraction,
+        "velocity_fraction": args.velocity_fraction,
+        "switch_holds": [list(h) for h in (args.switch_hold or [])],
         "joint_velocity_limits": list(spec.joint_velocity_limits),
         "joint_acceleration_limits": list(spec.joint_acceleration_limits),
         "rates": sorted(args.rates),

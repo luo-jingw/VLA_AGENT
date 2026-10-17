@@ -246,3 +246,15 @@ def test_velocity_timed_arrival_rebuild_starts_at_the_commanded_pose() -> None:
           f"first step {step:.3f} of the limit")  # fmt: skip
     assert elapsed < 3.0 and step <= 1.0
     assert len(out) >= len(first) - 3 - 1
+
+
+def test_owed_hold_is_what_remains_of_the_last_switch() -> None:
+    timing = _timing(1.0, rise=0.5, fall=0.2)  # 5 and 2 further frames at 10 fps
+    a, b, c = np.array([0.0, 0.0, 0.0]), np.array([0.1, 0.0, 1.0]), np.array([0.2, 0.0, 1.0])
+    assert timing.owed_hold([a, b], (2,)) == 5
+    assert timing.owed_hold([a, b, b, b], (2,)) == 3
+    assert timing.owed_hold([a, b, *[b] * 7], (2,)) == 0
+    assert timing.owed_hold([a, b, b, c], (2,)) == 0  # moved on
+    assert timing.owed_hold([b, c, c], (2,)) == 0  # no switch
+    assert timing.owed_hold([b], (2,)) == 0
+    assert timing.owed_hold([c, a], (2,)) == 2  # falling

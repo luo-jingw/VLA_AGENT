@@ -3,6 +3,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from vla_tools.arc_interp import VelocityTiming
 from vla_tools.episodes import Episode
 from vla_tools.keyframe_record import KeyframeRecord
 from vla_tools.label_replay import closed_loop
@@ -132,6 +133,24 @@ def test_completion_counts_frames_until_the_final_row_is_reached_for_good() -> N
     assert completion_frames(rows[:2], rows[1], SPEC, 0.1) == 2
     with pytest.raises(ValueError, match="not at the final row"):
         completion_frames(rows[:3], final, SPEC, 0.1)
+
+
+def test_velocity_timing_with_latency_stays_within_the_limit_and_holds_at_switches() -> None:
+    """Span 40 at cap 4 would move up to 1.6 rad/s; timed at a 0.5 rad/s limit, arriving 2 frames late, the
+    executed targets (from the observed pose) stay within it, and the arm stays at least 1 + 5 frames at the
+    close and 1 + 2 at the open (0.5 s and 0.2 s at 10 fps)."""
+    e = _episode()
+    config = ResampleConfig(metric="time", span_frames=40, action_horizon=10)
+    timing = VelocityTiming(velocity_limits=(0.5, 0.5), fraction=1.0, fps=10.0, rise_hold_s=0.5, fall_hold_s=0.2)
+    for execute in (2, 4, 8):
+        run = closed_loop(e, SPEC, RECORD, config, execute, 4.0, 2, "async", final_tolerance=TOLERANCE, timing=timing)
+        q = np.concatenate([e.states[:1, :2], run.executed[:, :2]])
+        ratio = float(np.abs(np.diff(q, axis=0)).max() * 10.0 / 0.5)
+        holds = edge_check(e, SPEC, run.executed, tolerance=1e-9).holds
+        print(f"e {execute}: {len(run.executed)} executed, completion {run.completion_frames}, velocity ratio "
+              f"{ratio:.4f}, holds at the edges {holds}")  # fmt: skip
+        assert ratio <= 1.0
+        assert holds[0] >= 6 and holds[1] >= 3
 
 
 def test_edge_check_counts_missed_edges_and_holds() -> None:

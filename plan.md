@@ -50,7 +50,9 @@ the labels' keyframe density gives the gripper at a switch.
   that target before the chunk continues, h = h_rise for a command that rises above 0.5 and h_fall for one
   that falls below it (close and open on DROID and LIBERO); seconds, a deployment setting like r. The hold
   replaces the time that uniform timing gives the nearly still stretch around a switch through the labels'
-  keyframe density.
+  keyframe density. A chunk that replaces one before its hold is over starts with the rest of the hold, so
+  replanning never shortens it; an arriving chunk's T_d counts only the latency frames the robot was not
+  holding.
 - Arrival rebuild with velocity timing: a chunk observed at commanded pose p_obs and arriving d frames later
   keeps the points whose T exceeds T_d by more than half a point spacing, T_d the chunk time of target d of
   the chunk timed from p_obs (holds included); the knots shift by T_d and the chunk is rebuilt from the pose
@@ -104,6 +106,8 @@ and execution lengths and reports holds. Deployment wiring (`vla_openpi.launch`)
   (rad/s).
 - `arc_interp.to_frames(points, current, times, command_dims, timing: VelocityTiming | None = None) ->
   np.ndarray`: (n, D) targets; n = ⌊times[-1]⌋ without timing, at least that with it (plus holds).
+- `VelocityTiming.owed_hold(history, command_dims) -> int`: hold frames still owed at the last of the
+  commanded poses `history` (oldest first).
 - `arc_interp.target_times(points, current, times, command_dims, timing: VelocityTiming | None = None) ->
   np.ndarray`: (n,) chunk time T of each target of `to_frames` (holds repeat their target's T).
 - `arc_interp.arrival_time(points, observed, times, command_dims, timing, elapsed_frames) -> float`: T_d,
@@ -211,7 +215,7 @@ remain and the first step from the commanded pose is 0.975 of the limit.
 
 ## Phase 2
 
-Phase Status: active
+Phase Status: completed
 
 Round: 2
 
@@ -243,9 +247,16 @@ keeps the velocity ratio ≤ 1 at every cap and completes faster than the unifor
 latency the arrival rebuild under velocity timing switches without a jump; the switch hold appears in
 `holds`.
 
+Result: 138 passed, 1 skipped. Minimum-jerk profile under a limit of 3.5× its largest step: uniform timing
+reaches rate 3 (speed-up 3.00); velocity timing keeps every cap within the limit (largest ratio 1.0000)
+and completes 5.28× faster at cap 8, e 1. Planar arc, span 40, cap 4, limit 0.5 rad/s, 2 frames of latency,
+holds 0.5 / 0.2 s at 10 fps: velocity ratio 0.9999 at e = 2, 4, 8; the arm stays 6 and 3 frames at the close
+and the open. Before the hold was carried into the replacing chunk, e = 2 held 2 and 1 frames: the next
+chunk, built from a pose that already had the new command, saw no switch.
+
 ## Phase 3
 
-Phase Status: pending
+Phase Status: active
 
 Round: 3
 

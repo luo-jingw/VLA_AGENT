@@ -21,6 +21,12 @@ Inference latency d control frames (closed_loop's latency_frames; 0 by default):
                latency: floor(last point frame) > d
 With d = 0 and e no longer than the chunk both modes are the same.
 
+Server timing (closed_loop's timing): None is the uniform timing at rate r; an arc_interp.VelocityTiming
+times every chunk by the joint velocity limits with r as the cap and holds the arm at command switches. A
+chunk that replaces one before its hold is over starts with the rest of the hold (owed_hold). An arriving
+chunk skips the chunk time that the chunk timed from the pose commanded at the observation reaches after
+the frames of the latency the robot did not spend holding (arc_interp.arrival_time).
+
 End: the chunk of the last recorded frame is always executed; from there the robot keeps observing that frame
 until the executed pose is within the final tolerance (closed_loop's final_tolerance, rad) of the final
 recorded row with its command state. `executed` is the wall-clock sequence of targets, one per control frame,
@@ -60,7 +66,9 @@ from typing import Literal
 import numpy as np
 
 from vla_tools import arc_core
+from vla_tools.arc_interp import VelocityTiming
 from vla_tools.arc_interp import after_latency
+from vla_tools.arc_interp import arrival_time
 from vla_tools.arc_interp import point_frames
 from vla_tools.arc_interp import to_frames
 from vla_tools.episodes import Episode
@@ -165,6 +173,7 @@ def closed_loop(
     mode: Mode = "sync",
     *,
     final_tolerance: float,
+    timing: VelocityTiming | None = None,
 ) -> EpisodeReplay:
     if mode not in typing.get_args(Mode):
         raise ValueError(f"mode must be one of {typing.get_args(Mode)}, got {mode!r}")
@@ -188,15 +197,22 @@ def closed_loop(
     t, pose = 0, poses[0]
     executed, observations, distances, seams = [], [], [], []
     stalls = 0
+    owed_at_observation = 0  # hold frames still owed when the pending chunk was observed
     while True:
         if len(observations) > 4 * len(actions):
             raise RuntimeError(f"episode {e.index}: not at the final row after {len(observations)} inferences")
         observations.append(t)
         arrival = latency_frames if mode == "async" and executed else 0  # observation to the first target
-        if arrival:
-            chunk = after_latency(ch.points[t], times, executed[-1], arrival, spec.command_dims)
+        if arrival:  # `pose` is still the pose commanded at this observation
+            moving = arrival - min(owed_at_observation, arrival)
+            elapsed = arrival_time(ch.points[t], pose, times, spec.command_dims, timing, moving)
+            chunk = after_latency(ch.points[t], times, executed[-1], elapsed, spec.command_dims, timing)
         else:
-            chunk = to_frames(ch.points[t], pose, times, spec.command_dims)
+            chunk = to_frames(ch.points[t], pose, times, spec.command_dims, timing)
+        if timing is not None:
+            ahead = latency_frames if mode == "sync" or not executed else 0  # held before the first target
+            owed = max(0, timing.owed_hold([poses[0], *executed], spec.command_dims) - ahead)
+            chunk = np.concatenate([np.repeat(np.asarray(executed[-1:] or [pose]), owed, axis=0), chunk])
         run = list(chunk[:execute])
         if mode == "async" and len(run) < execute:
             held = run[-1] if run else executed[-1]
@@ -214,6 +230,7 @@ def closed_loop(
         split = len(targets) - latency_frames if mode == "async" else len(targets)
         executed.extend(targets[:split])
         pose = executed[-1].copy()
+        owed_at_observation = timing.owed_hold([poses[0], *executed], spec.command_dims) if timing is not None else 0
         following = t  # the last recorded frame is observed again; so is the first after an inference back
         # to back (e = d), where the robot has not moved yet
         if t < last_frame and arrival + split > 0:

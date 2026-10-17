@@ -33,7 +33,8 @@ whose command differs from the previous target, or from the pose the chunk start
 round(hold * fps) further frames at that target (rise_hold_s for a command rising above 0.5, fall_hold_s for
 one falling below it): a fixed still segment for the gripper to act, since velocity timing passes the nearly
 still stretch around a switch at the cap. The start pose's command must then be the commanded value, not a
-lagging echo, or the hold repeats. Arriving after a latency, the chunk time already passed is that of target
+lagging echo, or the hold repeats. A chunk that replaces one before its hold is over starts with the rest of
+the hold (VelocityTiming.owed_hold, from the commanded poses so far). Arriving after a latency, the chunk time already passed is that of target
 d of the chunk timed from the pose commanded at the observation (arrival_time), instead of d.
 """
 
@@ -41,6 +42,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
@@ -96,6 +98,19 @@ class VelocityTiming:
         return max(
             round(self.rise_hold_s * self.fps) if rising else 0, round(self.fall_hold_s * self.fps) if falling else 0
         )
+
+    def owed_hold(self, history: Sequence[np.ndarray], command_dims: tuple[int, ...]) -> int:
+        """Further frames the arm must still stay at the last of the commanded (D,) poses `history` (oldest
+        first): what remains of the hold that the last command switch started, when every pose since the
+        switch repeats the switching target; 0 otherwise. A chunk that replaces one still holding starts with
+        that many copies of the commanded pose."""
+        commands = list(command_dims)
+        last, k = history[-1], len(history) - 1
+        while k > 0 and np.array_equal(history[k - 1], last):
+            k -= 1
+        if k == 0 or not commands or ((history[k - 1][commands] > 0.5) == (last[commands] > 0.5)).all():
+            return 0
+        return max(0, self.hold_frames(history[k - 1][commands], last[commands]) - (len(history) - 1 - k))
 
 
 def _timed(

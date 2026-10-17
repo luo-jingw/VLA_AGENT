@@ -4,6 +4,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from vla_tools.arc_interp import VelocityTiming
 from vla_tools.episodes import Episode
 from vla_tools.keyframe_record import KeyframeRecord
 from vla_tools.rate_ceiling import Case
@@ -68,7 +69,7 @@ def test_largest_rate_within_the_velocity_limit() -> None:
     e = _profile(200, 2.0)
     step = np.abs(np.diff(e.actions[:, 0])).max() * FPS
     spec = _spec(velocity=3.5 * step, acceleration=1e9)
-    case = Case(config=PER_FRAME, latency_s=0.0, mode="async")
+    case = Case(config=PER_FRAME, latency_s=0.0, mode="async", timing=None)
     rates = (1.0, 1.5, 2.0, 3.0, 4.0, 6.0)
     checks = episode_checks(EpisodeJob(e, spec, RECORD, case, rates, STEP, UNBOUNDED))
     result = summarize(case, checks, [0], FPS, rates, 1.0)
@@ -87,7 +88,7 @@ def test_latency_caps_the_rate_of_short_chunks() -> None:
     found = {}
     for span in (10, 40):
         config = dataclasses.replace(PER_FRAME, span_frames=span)
-        case = Case(config=config, latency_s=0.2, mode="async")
+        case = Case(config=config, latency_s=0.2, mode="async", timing=None)
         checks = episode_checks(EpisodeJob(e, spec, RECORD, case, rates, STEP, UNBOUNDED))
         result = summarize(case, checks, [0], FPS, rates, 1.0)
         speedups = {row["rate"]: round(float(row["speedup"]), 2) for row in result.by_rate}
@@ -95,6 +96,25 @@ def test_latency_caps_the_rate_of_short_chunks() -> None:
         found[span] = (result.rate, result.next_rate_failures)
         assert result.stall_frames > 2  # holds beyond the first inference
     assert found == {10: (3.0, {"latency": 1}), 40: (12.0, {"latency": 1})}
+
+
+def test_velocity_timing_keeps_the_limit_and_passes_the_uniform_ceiling() -> None:
+    """The profile of the uniform-rate test (rate 3 within the limit): timed by the velocity limit with the rate
+    as the cap, every cap keeps the targets within the limit and the run completes faster."""
+    e = _profile(200, 2.0)
+    step = np.abs(np.diff(e.actions[:, 0])).max() * FPS
+    spec = _spec(velocity=3.5 * step, acceleration=1e9)
+    timing = VelocityTiming(velocity_limits=spec.joint_velocity_limits, fraction=1.0, fps=FPS, rise_hold_s=0.0,
+                            fall_hold_s=0.0)  # fmt: skip
+    case = Case(config=PER_FRAME, latency_s=0.0, mode="async", timing=timing)
+    rates = (1.0, 1.5, 2.0, 3.0, 4.0, 6.0, 8.0, 12.0, 16.0)
+    checks = episode_checks(EpisodeJob(e, spec, RECORD, case, rates, STEP, UNBOUNDED))
+    result = summarize(case, checks, [0], FPS, rates, 1.0)
+    print(f"largest velocity ratio {max(c.velocity_ratio for c in checks):.4f}; cap {result.rate:g}, e {result.execute}, "
+          f"speed-up {result.speedup:.2f} (uniform: 3.00)")  # fmt: skip
+    assert all(c.velocity_ratio <= 1.0 for c in checks)
+    assert result.speedup > 3.0
+    assert (result.velocity_fraction, result.switch_hold_s) == (1.0, (0.0, 0.0))
 
 
 def test_path_bound_fails_labels_that_cut_a_corner() -> None:
@@ -117,7 +137,7 @@ def test_summary_selects_the_rate_feasible_on_the_given_fraction() -> None:
     episodes = [_profile(200, 2.0, i) for i in range(9)] + [_profile(200, 3.0, 9)]
     step = np.abs(np.diff(episodes[0].actions[:, 0])).max() * FPS
     spec = _spec(velocity=3.5 * step, acceleration=1e9)
-    case = Case(config=PER_FRAME, latency_s=0.0, mode="async")
+    case = Case(config=PER_FRAME, latency_s=0.0, mode="async", timing=None)
     rates = (1.0, 1.5, 2.0, 3.0, 4.0)
     checks = [c for e in episodes for c in episode_checks(EpisodeJob(e, spec, RECORD, case, rates, STEP, UNBOUNDED))]
     ids = list(range(10))
