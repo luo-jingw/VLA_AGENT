@@ -4,8 +4,9 @@ Two kinds of evidence back the tools. Observations on real data were made on two
 dual-arm UR3 dataset (22 episodes, 3223 frames, 15 Hz, parquet-embedded PNG images), in an openpi fork
 whose model, loader and config changes are equivalent to `integrations/openpi/patches`; and one LIBERO
 task (50 demonstrations, simulated Franka Panda, 20 Hz), taken through the data stages S0–S7 with the
-current tools (see [LIBERO run](#libero-run)). The test suite re-checks the mechanisms on synthetic data
-on every run.
+current tools (see [LIBERO run](#libero-run)). A subset of DROID (60 teleoperated pick-and-place episodes,
+Franka Panda, 15 Hz, joint positions only) and the LIBERO task measure the rate ceiling (see
+[Rate ceiling](#rate-ceiling)). The test suite re-checks the mechanisms on synthetic data on every run.
 
 ## Test suite
 
@@ -47,7 +48,10 @@ touching it reach at most span; a window that is still throughout is spaced in t
 command edge inside it; 10 and 40 padding rows give identical progress, per-frame steps and labels of
 unpadded frames under all three metrics. Targets at execution rate 2 equal the rate-1 targets at every
 second frame (difference 0); the closed-loop replay of `time`, span = H labels at rate 2 on the synthetic
-chain observes every 2e frames with path deviation 0 and executes 288 frames for 554 recorded (e = 4).
+chain observes every 2e frames and then the last recorded frame, with path deviation 0, and completes in
+265 frames for 554 recorded rows (e = 4). Per-frame labels at rate 1, e = 1 execute every recorded action
+including the last and complete in the recorded frames; `time` span 40 at e = 1 observes the last recorded
+frame 5 times before the executed pose is within the final tolerance.
 
 ## vla_tools
 
@@ -78,7 +82,9 @@ Real-data observations in this table are on UR3 unless a row names LIBERO.
 | `episode_timing` | audit after end padding | same findings as before padding; keyframe window clipping resolved | `test_pipeline_chain.py::test_audit_after_padding_reports_the_recorded_rows_only`, `::test_final_keyframes_follow_the_dropped_rows` |
 | `episode_timing` | still-run classes, rows kept next to motion, whole keyframe runs, padding rows holding the last target | — | `test_timing_ops.py`; `test_pipeline_chain.py::test_timing_classifies_still_runs_and_pads_ends` |
 | `diversity` | cluster cut on separated and identical descriptors; a stratified split on two block regions | — | `test_diversity_clusters.py`; `test_pipeline_chain.py::test_diversity_split_covers_both_block_regions` |
-| `sweep`, `label_replay` | frame baseline exact; largest admissible span selected by the path criteria; one replay row per execution length; closed-loop replay of `time`, span = H labels reproduces the recording and observes every e frames, and at rate 2 every 2e frames; observations move forward under `curvature` | LIBERO, see [LIBERO run](#libero-run) | `test_pipeline_chain.py::test_sweep_frame_baseline_is_exact_and_largest_admissible_span_is_selected`, `::test_label_replay_reports_each_execution_length`, `::test_closed_loop_replay_of_frame_labels_is_the_recording`, `::test_closed_loop_observations_move_forward_for_progress_labels`, `::test_closed_loop_at_rate_two_skips_every_other_recorded_frame` |
+| `sweep`, `label_replay` | frame baseline exact; largest admissible span selected by the path criteria; one replay row per execution length; closed-loop replay of `time`, span = H labels reproduces the recording and observes every e frames, at rate 2 every 2e frames, then the last recorded frame; observations move forward under `curvature` until the last recorded frame, observed again until the robot is at the final row | LIBERO, see [LIBERO run](#libero-run) | `test_pipeline_chain.py::test_sweep_frame_baseline_is_exact_and_largest_admissible_span_is_selected`, `::test_label_replay_reports_each_execution_length`, `::test_closed_loop_replay_of_frame_labels_is_the_recording`, `::test_closed_loop_observations_move_forward_for_progress_labels`, `::test_closed_loop_at_rate_two_skips_every_other_recorded_frame` |
+| `label_replay` (latency, end, completion) | asynchronous and synchronous latency; the arrival rebuild without a seam for per-frame labels; a chunk that runs out holds; a chunk spent by its arrival is refused; per-frame labels at rate 1, e = 1 complete in the recorded frames; completion counts frames until the final row is reached for good | LIBERO replays, see [LIBERO run](#libero-run) | `test_label_replay.py` |
+| `rate_ceiling` | velocity and acceleration ratios scale with the rate; the largest rate within the velocity limit; latency caps the rate of short chunks; a sparse chunk that cuts a corner fails the path bound; the summary selects a rate feasible on 90% but not all episodes | DROID and LIBERO, see [Rate ceiling](#rate-ceiling) | `test_rate_ceiling.py` |
 | `replay_eval` | against an earlier replay script, same model and episodes | same errors (rad) and gripper shifts | — (needs a served policy) |
 | `lora_merge` | merged attention deltas vs the LoRA forward pass | ≤ 2e-3 against openpi `lora.Einsum` for all four equations (float32 default matmul precision, GPU); a per-head `lora_a @ lora_b` is off by 8.6e-2 on the output projection | `test_lora_merge.py`; `test_openpi_integration.py::test_merged_weight_matches_openpi_lora_einsum` |
 | `lora_to_pytorch` | merged weights in a non-LoRA JAX model vs the LoRA JAX model, same observations and noise | joints 2.2e-3 rad median, 3.5e-3 max; all 160 gripper values equal | — (needs a LoRA checkpoint) |
@@ -148,29 +154,31 @@ full median 0.0799 against 0.0824 for `curvature`. For the selected cell the tim
 kept in `sweep.json` for information, has a median of 5.44 frames of motion with the server's point times
 and 0.10 with the true ones.
 
-Closed-loop replay, distances in path steps:
+Closed-loop replay, distances in path steps; frames are completion frames (until the executed targets, or
+the recorded actions, reach the final recorded row and stay within 0.25 path steps of it):
 
 | labels | e | path median / p90 / max | seam median / max | kf position median / max | missed | hold median | speed median / max | executed / recorded frames |
 |---|---|---|---|---|---|---|---|---|
-| `curvature`-s40-d2, rate 1 | 2 | 0.05 / 0.12 / 0.57 | 0.82 / 3.21 | 0.70 / 3.13 | 0 | 2 | 1.16 / 1.90 | 9460 / 7758 |
-| | 5 | 0.02 / 0.08 / 0.49 | 0.78 / 2.99 | 0.29 / 2.47 | 0 | 3 | 1.10 / 1.77 | 9780 / 7758 |
-| | 10 | 0.02 / 0.07 / 0.43 | 0.85 / 3.04 | 0.29 / 2.93 | 0 | 3 | 1.04 / 1.80 | 9670 / 7758 |
-| | 20 | 0.01 / 0.05 / 0.47 | 0.83 / 2.33 | 0.26 / 1.12 | 0 | 3 | 0.96 / 1.42 | 9900 / 7758 |
-| | 40 | 0.01 / 0.05 / 0.50 | 1.05 / 2.55 | 0.23 / 2.09 | 0 | 3 | 1.00 / 1.67 | 10200 / 7758 |
-| `curvature`-s40-d2, rate 2 | 2 | 0.00 / 0.08 / 0.46 | 1.67 / 5.74 | 0.14 / 1.45 | 0 | 1 | 2.14 / 3.40 | 4792 / 7758 |
-| | 5 | 0.01 / 0.07 / 0.42 | 1.71 / 5.59 | 0.23 / 1.87 | 0 | 1 | 1.99 / 3.30 | 4835 / 7758 |
-| | 10 | 0.00 / 0.05 / 0.47 | 1.66 / 4.25 | 0.20 / 1.56 | 0 | 1 | 1.89 / 2.82 | 4950 / 7758 |
-| | 20 | 0.00 / 0.05 / 0.50 | 2.06 / 4.72 | 0.24 / 2.16 | 0 | 1 | 1.91 / 3.33 | 5100 / 7758 |
-| `curvature`-s40-d0, rate 1 | 10 | 0.02 / 0.10 / 0.57 | 0.94 / 2.60 | 0.50 / 1.89 | 0 | 1 | 1.06 / 1.54 | 8410 / 7758 |
-| `curvature`-s40-d0, rate 2 | 10 | 0.00 / 0.07 / 0.65 | 1.98 / 5.16 | 0.72 / 4.46 | 0 | 1 | 1.98 / 3.05 | 4170 / 7758 |
-| `time`-s10, rate 1 | 2–10 | 0.00 / 0.00 / 0.00 | 1.00–1.01 / 2.93–3.31 | 0.00 / 0.00 | 0 | 1 | 1.08 / 1.98 | 7734–7930 / 7758 |
+| `curvature`-s40-d2, rate 1 | 2 | 0.04 / 0.12 / 0.57 | 0.82 / 3.21 | 0.70 / 3.13 | 0 | 2 | 1.16 / 1.90 | 9460 / 7702 |
+| | 5 | 0.02 / 0.08 / 0.49 | 0.78 / 2.99 | 0.29 / 2.47 | 0 | 3 | 1.10 / 1.77 | 9654 / 7702 |
+| | 10 | 0.02 / 0.07 / 0.43 | 0.85 / 3.04 | 0.29 / 2.93 | 0 | 3 | 1.04 / 1.80 | 9485 / 7702 |
+| | 20 | 0.01 / 0.05 / 0.47 | 0.83 / 2.33 | 0.26 / 1.12 | 0 | 3 | 0.96 / 1.42 | 9415 / 7702 |
+| | 40 | 0.01 / 0.05 / 0.50 | 1.05 / 2.55 | 0.23 / 2.09 | 0 | 3 | 1.00 / 1.67 | 9304 / 7702 |
+| `curvature`-s40-d2, rate 2 | 2 | 0.00 / 0.08 / 0.46 | 1.67 / 5.74 | 0.14 / 1.45 | 0 | 1 | 2.14 / 3.40 | 4768 / 7702 |
+| | 5 | 0.01 / 0.06 / 0.42 | 1.71 / 5.59 | 0.23 / 1.87 | 0 | 1 | 1.99 / 3.30 | 4755 / 7702 |
+| | 10 | 0.00 / 0.05 / 0.47 | 1.66 / 4.25 | 0.20 / 1.56 | 0 | 1 | 1.89 / 2.82 | 4725 / 7702 |
+| | 20 | 0.00 / 0.04 / 0.50 | 2.06 / 4.72 | 0.24 / 2.16 | 0 | 1 | 1.91 / 3.33 | 4663 / 7702 |
+| `curvature`-s40-d0, rate 1 | 10 | 0.02 / 0.10 / 0.57 | 0.94 / 2.60 | 0.50 / 1.89 | 0 | 1 | 1.06 / 1.54 | 8162 / 7702 |
+| `curvature`-s40-d0, rate 2 | 10 | 0.00 / 0.07 / 0.65 | 1.98 / 5.16 | 0.72 / 4.46 | 0 | 1 | 1.98 / 3.05 | 4007 / 7702 |
+| `time`-s10, rate 1 | 2–10 | 0.00 / 0.00 / 0.00 | 1.00–1.01 / 2.93–3.31 | 0.00 / 0.00 | 0 | 1 | 1.08 / 1.98 | 7702 / 7702 |
 
 Path deviation and keyframe position of the selected labels do not grow from e = 2 to e = 40 at either
 rate; the full tables (e = 1, 2, 4, 5, 8, 10, 15, 20, 30, 40) are in the run's
 `replay_curvature-s40-d2.json`, `replay_curvature-s40-d2_r2.json` and data report. At rate 2 a chunk has
-20 targets, so e = 30 and 40 repeat e = 20. At rate 1 the selected labels execute 1.22–1.31× the
-recorded frames; the extra time is spent in the keyframe windows that density 2 fills with more points
-(density 0: 1.08× at e = 10). At rate 2 they execute 0.62–0.66× the recorded frames, with the largest
+20 targets, so e = 30 and 40 repeat e = 20. Per-frame labels complete in the recorded frames at every e. At
+rate 1 the selected labels take 1.21–1.25× the recorded frames (e ≥ 2); the extra time is spent in the
+keyframe windows that density 2 fills with more points (density 0: 1.06× at e = 10). At rate 2 they take
+0.61–0.62× the recorded frames, with the largest
 per-frame step 1.89–2.14× (median) and 2.82–3.40× (max) the recorded p95 step. The e = 1 rows overstate
 the error at rate 1 (path max 1.97 path steps; ISSUE-004). 23–31% of `curvature` points fall past the
 episode end against 2–11% for `time`: labels taken on the 40 padding rows hold the final target and count
@@ -230,10 +238,89 @@ targets (rate 1) of the labels of frames t and t + d over the frames both cover,
 | 2 | per window | 22.9 / 33.6 / 40.0 | 0 / 4.3e-14 | 0.39 / 1.31 / 2.89 | 2.21 / 9.57 / 22.30 |
 
 The episode-wide rows are the labels of one step per episode (chord 4 × each recording's median step,
-PCHIP over the rows), deployed with the same spline rebuild. The closed-loop replay at e = 10 executes
-8040 (episode-wide) and 8410 (per window) frames at density 0 and 9510 and 9670 at density 2 (rate 1),
+PCHIP over the rows), deployed with the same spline rebuild. The closed-loop replay at e = 10, ending when an
+observation reaches the last recorded frame, executes 8040 (episode-wide) and 8410 (per window) frames at density 0 and 9510 and 9670 at density 2 (rate 1),
 4090 / 4170 and 4800 / 4950 at rate 2: with one step per episode the straighter final stretches are
 traversed faster than recorded, while every window takes span frames at rate 1.
+
+## Rate ceiling
+
+The highest task speed-up the labels allow within the robot's joint velocity limits, at an inference
+latency L, with the labels standing in for a perfect model (`rate_ceiling`, closed-loop replay through
+`label_replay`). A run is feasible when the executed targets stay within the velocity limits (finite
+differences at the dataset rate, holds and chunk switches included), every recorded gripper edge is
+executed, and no executed chunk target leaves the recorded segment its chunk covers by more than 2 path
+steps. Speed-up is recorded / executed completion frames (until the final recorded row is reached and held
+within 0.25 path steps). Per configuration, latency and mode the result is the largest speed-up among the
+(rate, e) feasible on at least 90% of the episodes. Acceleration is reported, not constrained.
+
+**Data.** DROID (`lerobot/droid_1.0.1`, revision 0eabc778, LeRobot v3.0), data files 000, 078 and 155:
+2335 episodes, 1951 successful, 891 with a pick-and-place instruction (`put` / `place` … `in` / `on`), 580
+with one grasp and one release; 60 kept, spread over 44 buildings and 38 collectors, 63–743 frames (median
+216). Extracted by a script outside this repository (`extract_droid.py`) to the LeRobot v2.1 layout without
+video: actions are the commanded joint positions and the gripper command thresholded at 0.5; the state is
+the previous command, since DROID's measured joints follow the commands about 4 frames later. Panda limits
+from libfranka 0.9.2 (`rate_limiting.h`): velocity 2.175 rad/s (joints 1–4), 2.61 rad/s (5–7);
+acceleration 15, 7.5, 10, 12.5, 15, 20, 20 rad/s². LIBERO: the run above with the same limits at 20 fps.
+
+| Stage (DROID) | Observed |
+|---|---|
+| audit | `action[t] = state[t+1]` exactly; 17 jumps above 8× the median step in 10 episodes; the recordings reach median 0.54 of the velocity limit at their fastest frame, 5 exceed it (max 1.41, all at jumps) and are left out of the rate ceiling |
+| keyframes | grasp and release from the command edges, 60 / 60 each; 5 interval outliers left open (no camera review) |
+| timing | leading still frames trimmed in 37 episodes (up to 41 frames), trailing in 8 (up to 41), pauses kept, 256 padding rows |
+| sweep | path full median / p90 in path steps (0.0241 rad): span 32 `time` 0.34–0.37 / 0.89–0.94, `curvature` 0.31 / 0.72–0.73; span 64 `time` 1.01–1.07 / 2.46–2.56, `curvature` 0.78–0.79 / 1.70–1.71; spans 128 and 256 inadmissible (path head median 1.4–4.5); selected `curvature` s64 d2 |
+
+**Commands**, DROID (LIBERO: the same `rate_ceiling` call with `--spans 32 40 64 128 256`):
+
+```bash
+python -m vla_tools.audit           --dataset data/droid-pick-place --spec runs/droid_pick_place/robot_spec.json --out runs/droid_pick_place/audit.json
+python -m vla_tools.keyframe_detect --dataset data/droid-pick-place --spec runs/droid_pick_place/robot_spec.json --keyframes-spec runs/droid_pick_place/keyframes_spec.json --out runs/droid_pick_place/keyframes_pass1.json
+python -m vla_tools.episode_timing  --dataset data/droid-pick-place --spec runs/droid_pick_place/robot_spec.json --keyframes runs/droid_pick_place/keyframes_pass1.json --plan runs/droid_pick_place/timing_plan.json --out data/droid-pick-place-timed
+python -m vla_tools.keyframe_detect --dataset data/droid-pick-place-timed --spec runs/droid_pick_place/robot_spec.json --keyframes-spec runs/droid_pick_place/keyframes_spec.json --out runs/droid_pick_place/keyframes.json
+python -m vla_tools.sweep           --dataset data/droid-pick-place-timed --spec runs/droid_pick_place/robot_spec.json --keyframes runs/droid_pick_place/keyframes.json --horizon 10 --head 8 --metrics time curvature --spans 10 32 64 128 256 --event-density 0 2 --anchor state --out runs/droid_pick_place/sweep.json
+python -m vla_tools.rate_ceiling    --dataset data/droid-pick-place-timed --spec runs/droid_pick_place/robot_spec.json --keyframes runs/droid_pick_place/keyframes.json --horizon 10 --per-frame --metrics time curvature --spans 32 64 128 256 --event-density 0 2 --latency 0 0.05 0.1 0.2 0.4 --modes async sync --path-bound 2 --feasible-fraction 0.9 --out runs/droid_pick_place/rate_ceiling.json
+```
+
+**Results.** Largest speed-up feasible on at least 90% of the episodes (DROID 55, LIBERO 50), best
+configuration, asynchronous / synchronous; per-frame labels (`time`, span 10) beside:
+
+| L (s) | DROID best, async | DROID best, sync | DROID per-frame | LIBERO best, async | LIBERO best, sync | LIBERO per-frame |
+|---|---|---|---|---|---|---|
+| 0 | 1.96 `time` s32 d0, rate 2, e 16 (50) | 1.96 | 1.59 | 2.44 `curvature` s64 d2, rate 3, e 21 (46) | 2.44 | 1.99 |
+| 0.05 | 1.96 `time` s32 d0, rate 2, e 15 (50) | 1.84 `time` s32 d0 | 1.50 / 1.28 | 2.87 `curvature` s64 d0, rate 3, e 20 (45) | 2.32 `curvature` s64 d2 | 1.97 / 1.66 |
+| 0.1 | 1.93 `time` s32 d0, rate 2, e 14 (50) | 1.73 `time` s32 d0 | 1.48 / 1.12 | 2.65 `curvature` s128 d0, rate 3, e 40 (45) | 2.21 `curvature` s128 d2 | 1.94 / 1.42 |
+| 0.2 | 1.45 `time` s32 d0, rate 1.5, e 9 (52) | 1.64 `time` s32 d0 | 0.99 / 0.99 | 2.29 `curvature` s64 d2, rate 3, e 17 (45) | 2.09 `curvature` s128 d2 | 0.97 / 1.10 |
+| 0.4 | 0.97 `time` s32 d0, rate 1, e 26 (51) | 1.40 `time` s32 d0 | none / 0.74 | 2.03 `curvature` s128 d2, rate 3, e 34 (45) | 1.88 `curvature` s128 d2 | none / 0.76 |
+
+The figure in parentheses is the number of feasible episodes at the selected setting.
+
+- DROID: `time` s32 d0 is the best configuration at every latency in both modes. `curvature` s32 reaches
+  rate 1.5 (1.30–1.45×); spans 64–256 fail the path bound on more than 10% of the episodes (`curvature` s64
+  at L = 0: 43–47 of 55 feasible at rates 1–2; `time` s64: 30–33), except `curvature` s64 at L = 0.1–0.2 s
+  (rate 1–1.5). The next rate fails on velocity (36–38 episodes at rate 3 for `time` s32).
+- LIBERO: `curvature` at spans 64 and 128 reaches rate 3 (2.0–2.9×) where `time` labels stay at rate 2
+  (1.8–2.1× at density 0, 1.5–1.8× at density 2). Spans 256 fail the path bound on every episode in both data sets (median path max 5.6–9.3
+  path steps at rate 1). Per-frame labels fall to rate 1 at L = 0.2 s; at 0.4 s no asynchronous setting is
+  feasible: a span-10 chunk keeps 2 (LIBERO) or 4 (DROID) targets after the latency, the robot holds once
+  they are spent and the next chunk's catch-up exceeds the velocity limit (median 1.99× and 1.11×).
+- The 90% figure sits at the threshold: most selected settings have exactly 50 of 55 or 45–46 of 50
+  feasible episodes, so it moves between neighbouring latencies where a grid rate gains or loses one episode
+  (LIBERO `curvature` s64 d0: 1.95, 2.87, 1.91 at L = 0, 0.05, 0.1 s). The largest feasible speed-up per
+  episode varies smoothly: DROID `time` s32 d0, asynchronous, median 2.07, 2.00, 1.96, 1.95, 1.86 over the
+  five latencies; per-frame 2.00, 1.98, 1.95, 1.47, 0.
+- On DROID at L ≥ 0.2 s the asynchronous figure is below the synchronous one: at rate 2 asynchronous
+  execution is feasible on 49 of 55 episodes (5 velocity, 1 path), synchronous on 50; per episode the
+  asynchronous median stays higher (1.95 and 1.86 against 1.66 and 1.43).
+- Velocity bounds of the recorded paths (a script outside this repository, `velocity_bound.py`): the
+  recording replayed at one uniform rate is feasible on every episode up to 1.07× (DROID) and 1.96×
+  (LIBERO), per episode median 1.88× and 3.30×; every recorded step at the speed of its limiting joint gives
+  7.65× and 5.95×.
+- End-effector deviation of the executed targets before completion at the selected asynchronous settings
+  (Panda forward kinematics to the Franka Hand's tool centre point; `ee_deviation.py`, outside this
+  repository), median / p90 / max: DROID `time` s32 d0 0.3 / 0.9–1.0 / 6.0–15.6 mm; LIBERO `curvature` s64 0.3–0.4
+  / 1.2–1.3 / 7.3–8.5 mm, s128 1.6–2.0 / 5.4–5.5 / 17.2–18.5 mm.
+- Acceleration at the selected settings, as a fraction of the nominal limits: 2.1–5.2 (DROID), 2.4–5.0
+  (LIBERO); DROID's recordings themselves reach median 2.52, max 5.60.
 
 ## integrations/openpi
 
@@ -252,7 +339,9 @@ traversed faster than recorded, while every window takes span frames at rate 1.
 - a full training run started from `vla_openpi.launch`, and closed-loop robot results of any model
   trained through this harness;
 - execution of resampled labels in the LIBERO simulator, at rate 1 or faster, and any training comparison
-  between `curvature` and `time` labels or between per-window and episode-wide steps; joint speed limits for rates above 1 are not checked against a
-  robot or simulator;
+  between `curvature` and `time` labels or between per-window and episode-wide steps;
+- the rate ceiling on a robot: it holds the commanded targets to the Panda's nominal joint velocity limits
+  in replay; tracking lag and tracking error (DROID's measured joints follow the commands about 4 frames
+  later) and the controller's acceleration are not modelled;
 - the integration in a clean upstream openpi environment with the patches applied (every UR3 check above
   ran on a fork with equivalent changes).

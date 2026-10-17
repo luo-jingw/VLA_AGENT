@@ -23,12 +23,12 @@ split → action labels → a training-ready dataset with a data report, handed 
 | S3、S5 关键帧 | `vla-keyframes` | 按任务与末端执行器定义关键帧；检测、一致性检查、逐类看图核对、记录修正 | `keyframes.json`、核对图 |
 | S4 静止帧与补帧 | `vla-episode-timing` | 静止帧保留或裁掉；末尾补帧，让策略学会完成后保持 | 定时版 |
 | S6 数据评估 | `vla-data-diversity` | 覆盖、聚类、近重复、离群；覆盖各簇的留出集 | `diversity.json` |
-| S7 动作标签 | `vla-action-labels` | 按服务端执行的目标与录制路径的几何差异做网格搜索，用闭环标签回放选执行长度，构建训练版与评估版 | 标签数据集、`arc_resample.json` |
+| S7 动作标签 | `vla-action-labels` | 按服务端执行的目标与录制路径的几何差异做网格搜索，用闭环标签回放和倍数上限（关节速度上限、推理延迟下）选执行长度和执行倍速，构建训练版与评估版 | 标签数据集、`arc_resample.json` |
 | — | `data_report` | S0–S7 都通过后写出数据报告 | `data_report.md` |
 | S8 下游 | `vla-downstream` | 训练、留出集评估、服务端交付 | 见下文 |
 | S9 收尾 | `close` | 已验证的结论写入 `docs/`，未解决的问题写入 `issues.md` | — |
 
-动作标签给每一帧单独取点：它的 H 个输出点取自当前状态之后 span 个录制帧的窗口，落在录制路径上；部署时服务端以当前位姿和这 H 个点为节点，用三次样条重建出逐帧目标。点可以按时间等间隔取（`time`），也可以按几何曲率取：`curvature` 以关节路径几何曲率的立方根乘以路径长度作为进度（曲率的弦长对整个数据集固定），转弯处密、直线处稀，点的位置由路径形状决定，不随示教速度变化；窗口内没有关键帧时，第 H 个点恰好落在窗口末端。服务端按均匀时间放这些节点，整体快慢由部署时的执行倍速 r 决定：r = 1 时每个窗口按录制的节奏走完，r > 1 沿同一条插值路径走得更快，标签和训练不变（LIBERO 上倍速 2 的闭环标签回放用 0.64 倍录制帧走完）。静态任务里沿路径的快慢不影响结果，所以网格搜索和标签回放比较的是执行目标走过的路径与指令切换的位置，而不是逐帧时间。
+动作标签给每一帧单独取点：它的 H 个输出点取自当前状态之后 span 个录制帧的窗口，落在录制路径上；部署时服务端以当前位姿和这 H 个点为节点，用三次样条重建出逐帧目标。点可以按时间等间隔取（`time`），也可以按几何曲率取：`curvature` 以关节路径几何曲率的立方根乘以路径长度作为进度（曲率的弦长对整个数据集固定），转弯处密、直线处稀，点的位置由路径形状决定，不随示教速度变化；窗口内没有关键帧时，第 H 个点恰好落在窗口末端。服务端按均匀时间放这些节点，整体快慢由部署时的执行倍速 r 决定：r = 1 时每个窗口按录制的节奏走完，r > 1 沿同一条插值路径走得更快，标签和训练不变（LIBERO 上倍速 2 的闭环标签回放用 0.61 倍录制帧完成）。静态任务里沿路径的快慢不影响结果，所以网格搜索和标签回放比较的是执行目标走过的路径与指令切换的位置，而不是逐帧时间。
 
 每个阶段的产物只有一个写入者。凡是需要判断的处理都要写明决定和理由，缺少时工具拒绝写出；需要人做的决定写进 `decisions.md`，未决时流程停在该阶段。细节见 `.claude/skills/vla-pipeline/SKILL.md`。
 
@@ -97,6 +97,7 @@ python -m vla_tools.keyframe_review --dataset data/<src>-timed --spec runs/<task
 python -m vla_tools.diversity       --dataset data/<src>-timed --spec runs/<task>/robot_spec.json --keyframes runs/<task>/keyframes.json --holdout 4 --out runs/<task>/diversity.json
 python -m vla_tools.sweep           --dataset data/<src>-timed --spec runs/<task>/robot_spec.json --keyframes runs/<task>/keyframes.json --horizon 10 --spans 10 20 30 --out runs/<task>/sweep.json
 python -m vla_tools.label_replay    --dataset data/<src>-timed --spec runs/<task>/robot_spec.json --keyframes runs/<task>/keyframes.json --config runs/<task>/label_config.json --out runs/<task>/replay_<labels>.json
+python -m vla_tools.rate_ceiling    --dataset data/<src>-timed --spec runs/<task>/robot_spec.json --keyframes runs/<task>/keyframes.json --horizon 10 --per-frame --spans 20 30 --event-density 0 2 --latency <s> --out runs/<task>/rate_ceiling.json
 python -m vla_tools.build_labels    --dataset data/<src>-timed --spec runs/<task>/robot_spec.json --keyframes runs/<task>/keyframes.json --config runs/<task>/label_config.json --exclude <holdout> --out data/<src>-<labels>-train
 python -m vla_tools.build_labels    --dataset data/<src>-timed --spec runs/<task>/robot_spec.json --keyframes runs/<task>/keyframes.json --config runs/<task>/label_config.json --out data/<src>-<labels>-eval
 python -m vla_tools.run_index       runs/<task> --labels <labels> data/<src>-<labels>-train data/<src>-<labels>-eval
@@ -114,7 +115,7 @@ pytest
 
 测试用合成的 LeRobot 数据集（含已知关键帧和人为注入的录制故障）检查各数据工具、整条 S0–S7 链路、`run_status` 对每一类放行条件的判断，以及 LoRA 合并。不需要 GPU 和网络。在 openpi 环境中运行时，还会检查 openpi 相关部分。每项已验证行为对应哪个测试，见 `docs/validation.md`。
 
-真实数据上的观测来自两份数据：一份双臂 UR3 数据，以及一个 LIBERO 仿真抓放任务（50 条 Franka Panda 示教，S0–S7 全部通过，含网格搜索与闭环标签回放的结果），见 `docs/validation.md`。
+真实数据上的观测来自三份数据：一份双臂 UR3 数据；一个 LIBERO 仿真抓放任务（50 条 Franka Panda 示教，S0–S7 全部通过，含网格搜索与闭环标签回放的结果）；DROID 的 60 条遥操抓放（Franka Panda），与 LIBERO 一起测关节速度上限和推理延迟下的倍数上限。见 `docs/validation.md`。
 
 ## 下游
 

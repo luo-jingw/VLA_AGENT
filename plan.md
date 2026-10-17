@@ -1,6 +1,6 @@
 # Plan
 
-Plan Status: approved
+Plan Status: completed
 
 # Problem
 
@@ -484,7 +484,7 @@ effector's deviation (median / p90 / max, mm) at the asynchronous setting:
 
 ## Phase 6
 
-Phase Status: active
+Phase Status: completed
 
 Round: 4
 
@@ -512,3 +512,9 @@ Phase 5.
 ### Observation
 
 The tables match the phase 2 and 5 artifacts; the rate is chosen by `rate_ceiling` in the S7 procedure.
+
+Result: `docs/validation.md` gains the DROID data, the rate-ceiling definition, commands and results (both
+data sets), test rows for the end rule and `rate_ceiling`, and the LIBERO replay table in completion frames;
+the vla-action-labels skill chooses r and e with `rate_ceiling` at the deployment latency and records the
+DROID figures; `method.md` defines latency, the end rule, completion frames and the rate ceiling; README
+lists the command. 129 passed, 1 skipped.
