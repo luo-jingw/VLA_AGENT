@@ -106,6 +106,9 @@ and execution lengths and reports holds. Deployment wiring (`vla_openpi.launch`)
   np.ndarray`: (n, D) targets; n = ⌊times[-1]⌋ without timing, at least that with it (plus holds).
 - `arc_interp.target_times(points, current, times, command_dims, timing: VelocityTiming | None = None) ->
   np.ndarray`: (n,) chunk time T of each target of `to_frames` (holds repeat their target's T).
+- `arc_interp.arrival_time(points, observed, times, command_dims, timing, elapsed_frames) -> float`: T_d,
+  the chunk time of target `elapsed_frames` of the chunk timed from `observed` (the elapsed frames with
+  uniform timing); used by `ArcInterpolator.after_latency` and `closed_loop`.
 - `arc_interp.after_latency(points, times, commanded, elapsed: float, command_dims, timing:
   VelocityTiming | None = None) -> np.ndarray`: `elapsed` becomes the chunk time at arrival (T_d; equal to
   the elapsed frames with uniform timing).
@@ -151,7 +154,8 @@ ceiling → `src/vla_tools/rate_ceiling.py`; reference figures → `FTpi05/repor
 
 ## Interfaces
 
-`VelocityTiming`, `to_frames`, `target_times`, `after_latency`, `ArcInterpolator` → `arc_interp.py`;
+`VelocityTiming`, `to_frames`, `target_times`, `arrival_time`, `after_latency`, `ArcInterpolator` →
+`arc_interp.py`;
 `closed_loop` → `label_replay.py`; `Case`, `check`, `RateCheck`, `CaseResult`, CLI → `rate_ceiling.py`.
 
 ## State
@@ -163,7 +167,7 @@ Server timing → `ArcInterpolator.timing` (`arc_interp.py`), `Case.timing` (`ra
 
 ## Phase 1
 
-Phase Status: active
+Phase Status: completed
 
 Round: 1
 
@@ -196,9 +200,18 @@ fraction of α · v (≤ 1); a rising and a falling command switch hold round(h_
 further frames; `target_times` matches
 `to_frames`; the velocity-timed arrival rebuild starts at the commanded pose and keeps the points past T_d.
 
+Result: 135 passed, 1 skipped. Without a binding limit the velocity-timed targets equal the uniform ones
+(difference 0, 10 targets at rate 2); a 2 rad straight in 10 frames at 80% of 0.5 rad/s takes 50 frames of
+0.040000 rad; a still chunk takes ⌊times[-1]⌋ = 8 frames at rate 4; 60 random chunks at rates 1, 4, 16:
+largest joint speed 0.9999 of 90% of the limit, 12–36 targets per span-32 chunk (sampling the integrand per
+1/16 chunk-time unit instead reached 1.026 at rate 16, where one unit spans many control frames); a rise and
+a fall hold 5 and 2 further frames (0.5 s, 0.2 s at 10 fps), 20 → 27 targets, a switch against the start
+pose holds too; arriving 3 frames late at rate 4 the chunk time passed is 0.302 of 8, 27 of 30 targets
+remain and the first step from the commanded pose is 0.975 of the limit.
+
 ## Phase 2
 
-Phase Status: pending
+Phase Status: active
 
 Round: 2
 
