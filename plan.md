@@ -1,6 +1,6 @@
 # Plan
 
-Plan Status: approved
+Plan Status: completed
 
 # Problem
 
@@ -325,7 +325,7 @@ asynchronous / synchronous:
 
 ## Phase 4
 
-Phase Status: active
+Phase Status: completed
 
 Round: 4
 
@@ -354,3 +354,8 @@ Phase 3.
 
 Tables match the phase 3 artifacts; the S7 procedure states when velocity timing and the switch hold apply
 and how they are set at deployment.
+
+Result: `docs/validation.md` gains test rows for velocity timing and a velocity-timing section (gripper
+actuation, results table, bounds, holds, latency); `method.md` defines velocity timing, the switch hold and
+its carry-over; the vla-action-labels skill states how to run and deploy it and records the DROID and LIBERO
+figures; README lists the command; OPT-008 records the serving wiring. 138 passed, 1 skipped.

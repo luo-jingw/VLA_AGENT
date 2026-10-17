@@ -83,8 +83,10 @@ Real-data observations in this table are on UR3 unless a row names LIBERO.
 | `episode_timing` | still-run classes, rows kept next to motion, whole keyframe runs, padding rows holding the last target | — | `test_timing_ops.py`; `test_pipeline_chain.py::test_timing_classifies_still_runs_and_pads_ends` |
 | `diversity` | cluster cut on separated and identical descriptors; a stratified split on two block regions | — | `test_diversity_clusters.py`; `test_pipeline_chain.py::test_diversity_split_covers_both_block_regions` |
 | `sweep`, `label_replay` | frame baseline exact; largest admissible span selected by the path criteria; one replay row per execution length; closed-loop replay of `time`, span = H labels reproduces the recording and observes every e frames, at rate 2 every 2e frames, then the last recorded frame; observations move forward under `curvature` until the last recorded frame, observed again until the robot is at the final row | LIBERO, see [LIBERO run](#libero-run) | `test_pipeline_chain.py::test_sweep_frame_baseline_is_exact_and_largest_admissible_span_is_selected`, `::test_label_replay_reports_each_execution_length`, `::test_closed_loop_replay_of_frame_labels_is_the_recording`, `::test_closed_loop_observations_move_forward_for_progress_labels`, `::test_closed_loop_at_rate_two_skips_every_other_recorded_frame` |
+| `arc_interp` (velocity timing) | without a binding limit the targets equal the uniform ones; a fast straight slowed to the fraction of the limit (50 frames of 0.040000 rad against the closed form); a still chunk at the rate; 60 random chunks at rates 1, 4, 16 within the limit (largest 0.9999); rise and fall holds of 5 and 2 frames, also against the start pose; the owed hold after a switch; the arrival chunk time from the observed pose | DROID and LIBERO, see [Velocity timing](#velocity-timing) | `test_arc_interp.py::test_velocity_timing_without_a_binding_limit_is_the_uniform_timing`, `::test_velocity_timing_slows_a_fast_straight_to_the_fraction_of_the_limit`, `::test_still_chunk_runs_at_the_rate`, `::test_velocity_timing_keeps_every_joint_within_the_fraction`, `::test_command_switches_hold_the_arm`, `::test_owed_hold_is_what_remains_of_the_last_switch`, `::test_velocity_timed_arrival_rebuild_starts_at_the_commanded_pose` |
+| `label_replay` (velocity timing) | arriving 2 frames late at cap 4 under a 0.5 rad/s limit: velocity ratio 0.9999 at e = 2, 4, 8, the arm stays 6 and 3 frames at the close and the open, observations repeat during the holds; completion lasts until the last hold is over | DROID and LIBERO, see [Velocity timing](#velocity-timing) | `test_label_replay.py::test_velocity_timing_with_latency_stays_within_the_limit_and_holds_at_switches`, `::test_completion_counts_frames_until_the_final_row_is_reached_for_good` |
 | `label_replay` (latency, end, completion) | asynchronous and synchronous latency; the arrival rebuild without a seam for per-frame labels; a chunk that runs out holds; a chunk spent by its arrival is refused; per-frame labels at rate 1, e = 1 complete in the recorded frames; completion counts frames until the final row is reached for good | LIBERO replays, see [LIBERO run](#libero-run) | `test_label_replay.py` |
-| `rate_ceiling` | velocity and acceleration ratios scale with the rate; the largest rate within the velocity limit; latency caps the rate of short chunks; a sparse chunk that cuts a corner fails the path bound; the summary selects a rate feasible on 90% but not all episodes | DROID and LIBERO, see [Rate ceiling](#rate-ceiling) | `test_rate_ceiling.py` |
+| `rate_ceiling` | velocity timing keeps every cap within the limit and passes the uniform ceiling (5.28 against 3.00 on a minimum-jerk profile); velocity and acceleration ratios scale with the rate; the largest rate within the velocity limit; latency caps the rate of short chunks; a sparse chunk that cuts a corner fails the path bound; the summary selects a rate feasible on 90% but not all episodes | DROID and LIBERO, see [Rate ceiling](#rate-ceiling) | `test_rate_ceiling.py` |
 | `replay_eval` | against an earlier replay script, same model and episodes | same errors (rad) and gripper shifts | — (needs a served policy) |
 | `lora_merge` | merged attention deltas vs the LoRA forward pass | ≤ 2e-3 against openpi `lora.Einsum` for all four equations (float32 default matmul precision, GPU); a per-head `lora_a @ lora_b` is off by 8.6e-2 on the output projection | `test_lora_merge.py`; `test_openpi_integration.py::test_merged_weight_matches_openpi_lora_einsum` |
 | `lora_to_pytorch` | merged weights in a non-LoRA JAX model vs the LoRA JAX model, same observations and noise | joints 2.2e-3 rad median, 3.5e-3 max; all 160 gripper values equal | — (needs a LoRA checkpoint) |
@@ -322,6 +324,50 @@ The figure in parentheses is the number of feasible episodes at the selected set
 - Acceleration at the selected settings, as a fraction of the nominal limits: 2.1–5.2 (DROID), 2.4–5.0
   (LIBERO); DROID's recordings themselves reach median 2.52, max 5.60.
 
+### Velocity timing
+
+With `--velocity-fraction` the server times every chunk by its geometry (`arc_interp.VelocityTiming`): the
+chunk's spline is traversed so that no joint exceeds that fraction of its velocity limit, never faster than
+the rate, which becomes a cap on the slow and still stretches. Each command switch holds the arm still for
+the gripper to act; a chunk that replaces one still holding starts with the rest of the hold, the
+re-observation stays on its frame while the arm holds, and a run ends, and completes, only once the last
+hold is over (for the recorded actions too: last recorded edge plus its hold).
+
+**Gripper actuation.** DROID's measured gripper position reaches 90% of its travel a median 8 frames after
+a close command (p10 / p90 4 / 10; 1374 edges of file 000) and 10 frames after an open command (7 / 11;
+1316 edges), measured by a script outside this repository (`gripper_actuation.py`). Holds 0.533 s (close,
+rising command) and 0.667 s (open): 8 and 10 frames at 15 Hz, 11 and 13 at LIBERO's 20 Hz. LIBERO's
+simulated gripper has no measured counterpart; the DROID times are applied to it.
+
+**Commands**: the rate-ceiling call above with `--velocity-fraction 1 --switch-hold 0 0 --switch-hold 0.533
+0.667 --out runs/<task>/rate_ceiling_velocity.json`.
+
+**Results.** Largest speed-up feasible on at least 90% of the episodes, asynchronous / synchronous (one
+figure at L = 0, where both are the same); α = 1:
+
+| L (s) | DROID uniform | DROID velocity | DROID velocity + holds | LIBERO uniform | LIBERO velocity | LIBERO velocity + holds |
+|---|---|---|---|---|---|---|
+| 0 | 1.96 | 7.46 | 4.58 | 2.44 | 5.83 | 2.94 |
+| 0.05 | 1.96 / 1.84 | 7.20 / 5.89 | 4.53 / 3.52 | 2.87 / 2.32 | 5.60 / 5.11 | 2.87 / 2.71 |
+| 0.1 | 1.93 / 1.73 | 5.77 / 4.89 | 3.91 / 3.49 | 2.65 / 2.21 | 5.38 / 4.71 | 2.83 / 2.58 |
+| 0.2 | 1.45 / 1.64 | 5.55 / 4.41 | 3.27 / 2.84 | 2.29 / 2.09 | 4.97 / 4.18 | 2.69 / 2.39 |
+| 0.4 | 0.97 / 1.40 | 1.39 / 3.41 | 1.54 / 2.36 | 2.03 / 1.88 | 3.95 / 3.41 | 2.28 / 2.19 |
+
+- Bounds: every recorded step at the speed of its limiting joint gives 7.65× (DROID) and 5.95× (LIBERO);
+  with the same holds at every recorded edge, 4.68× and 2.96×. At L = 0 velocity timing reaches 98% of each.
+- Best configurations: `curvature` s32–s64 and `time` s32 on DROID, `curvature` s64–s128 on LIBERO, at caps
+  6–16. The next cap fails on the path bound or keeps no target after the latency (cap ≤ span / (d + 1));
+  velocity never binds (largest ratio 1.00).
+- Per-frame labels: DROID 5.73× at L = 0 and 0.82× at 0.4 s (asynchronous); a 10-frame chunk caps the rate
+  at 10 / (d + 1). At 0.4 s the best labels of spans 32–128 keep 3.41× without holds and 2.19–2.36× with
+  them (synchronous; LIBERO asynchronous 3.95× and 2.28×).
+- With holds the arm stays at least 9 frames (DROID) and 12 (LIBERO) at every switch of every feasible run;
+  the recordings stay a median 2 and 1–1.5 frames within 0.25 path steps of the switch pose; without holds
+  the arm stays 1 frame.
+- Asynchronous execution at 0.4 s fails the path bound on DROID (9–21 episodes at the next cap) under both
+  timings; synchronous execution keeps 3.41× and 2.36×.
+- End-effector deviation at the selected settings: median 0.2–2.2 mm, p90 0.9–6.3 mm, max 5.4–29.1 mm.
+
 ## integrations/openpi
 
 | Check | Observed | Re-checked by |
@@ -342,6 +388,8 @@ The figure in parentheses is the number of feasible episodes at the selected set
   between `curvature` and `time` labels or between per-window and episode-wide steps;
 - the rate ceiling on a robot: it holds the commanded targets to the Panda's nominal joint velocity limits
   in replay; tracking lag and tracking error (DROID's measured joints follow the commands about 4 frames
-  later) and the controller's acceleration are not modelled;
+  later) and the controller's acceleration are not modelled; velocity timing is not passed through
+  `vla_openpi.launch`, and the switch hold on a robot needs the commanded gripper value as the start pose's
+  command, not a lagging echo;
 - the integration in a clean upstream openpi environment with the patches applied (every UR3 check above
   ran on a fork with equivalent changes).

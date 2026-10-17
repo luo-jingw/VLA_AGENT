@@ -200,3 +200,36 @@ The full S1–S7 chain on that dataset.
 ## Promotion Condition
 
 Such a dataset becomes available.
+
+# OPT-008
+
+Status: Proposed
+
+Area: Serving (`vla_openpi.launch`, `arc_interp.ArcInterpolator`)
+
+## Observation
+
+`ArcInterpolator` takes a `VelocityTiming` (velocity timing with the rate as a cap, switch holds), and the
+replay measures its rate ceiling: DROID 4.58× with DROID's gripper times as holds against 1.96× under
+uniform timing (L = 0, 90% of the episodes). `vla_openpi.launch.serving_config` / `serve` pass only the
+rate, and the server keeps no state across inferences: the rest of a hold that a new chunk cuts short
+(`VelocityTiming.owed_hold`) and the pose commanded at each observation (`after_latency`'s `observed`) come
+from the commanded history.
+
+## Opportunity
+
+Pass a `VelocityTiming` through `serving_config` / `serve` (limits from the robot spec, fraction and holds
+as settings) and keep the commanded history the hold and the arrival rebuild need on the serving side.
+
+## Expected Mechanism
+
+The deployed robot executes the chunks with the timing the rate ceiling measured.
+
+## Required Evidence
+
+Served targets equal `closed_loop`'s for the same points and commanded history; a robot or simulator run at
+the selected cap whose joint speeds stay within the limits and whose grasps succeed with the holds.
+
+## Promotion Condition
+
+A deployment that needs more speed than uniform timing gives within the velocity limits.

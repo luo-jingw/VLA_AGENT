@@ -28,7 +28,7 @@ split → action labels → a training-ready dataset with a data report, handed 
 | S8 下游 | `vla-downstream` | 训练、留出集评估、服务端交付 | 见下文 |
 | S9 收尾 | `close` | 已验证的结论写入 `docs/`，未解决的问题写入 `issues.md` | — |
 
-动作标签给每一帧单独取点：它的 H 个输出点取自当前状态之后 span 个录制帧的窗口，落在录制路径上；部署时服务端以当前位姿和这 H 个点为节点，用三次样条重建出逐帧目标。点可以按时间等间隔取（`time`），也可以按几何曲率取：`curvature` 以关节路径几何曲率的立方根乘以路径长度作为进度（曲率的弦长对整个数据集固定），转弯处密、直线处稀，点的位置由路径形状决定，不随示教速度变化；窗口内没有关键帧时，第 H 个点恰好落在窗口末端。服务端按均匀时间放这些节点，整体快慢由部署时的执行倍速 r 决定：r = 1 时每个窗口按录制的节奏走完，r > 1 沿同一条插值路径走得更快，标签和训练不变（LIBERO 上倍速 2 的闭环标签回放用 0.61 倍录制帧完成）。静态任务里沿路径的快慢不影响结果，所以网格搜索和标签回放比较的是执行目标走过的路径与指令切换的位置，而不是逐帧时间。
+动作标签给每一帧单独取点：它的 H 个输出点取自当前状态之后 span 个录制帧的窗口，落在录制路径上；部署时服务端以当前位姿和这 H 个点为节点，用三次样条重建出逐帧目标。点可以按时间等间隔取（`time`），也可以按几何曲率取：`curvature` 以关节路径几何曲率的立方根乘以路径长度作为进度（曲率的弦长对整个数据集固定），转弯处密、直线处稀，点的位置由路径形状决定，不随示教速度变化；窗口内没有关键帧时，第 H 个点恰好落在窗口末端。服务端按均匀时间放这些节点，整体快慢由部署时的执行倍速 r 决定：r = 1 时每个窗口按录制的节奏走完，r > 1 沿同一条插值路径走得更快，标签和训练不变（LIBERO 上倍速 2 的闭环标签回放用 0.61 倍录制帧完成）。服务端也可以按速度定时：同一条样条按关节速度上限分配时间，倍速只作上限，夹爪切换处固定停留实测的动作时间（DROID 上 90% 的集可行时，加夹爪停留的加速比 4.58 倍，统一倍速 1.96 倍）。静态任务里沿路径的快慢不影响结果，所以网格搜索和标签回放比较的是执行目标走过的路径与指令切换的位置，而不是逐帧时间。
 
 每个阶段的产物只有一个写入者。凡是需要判断的处理都要写明决定和理由，缺少时工具拒绝写出；需要人做的决定写进 `decisions.md`，未决时流程停在该阶段。细节见 `.claude/skills/vla-pipeline/SKILL.md`。
 
@@ -98,6 +98,7 @@ python -m vla_tools.diversity       --dataset data/<src>-timed --spec runs/<task
 python -m vla_tools.sweep           --dataset data/<src>-timed --spec runs/<task>/robot_spec.json --keyframes runs/<task>/keyframes.json --horizon 10 --spans 10 20 30 --out runs/<task>/sweep.json
 python -m vla_tools.label_replay    --dataset data/<src>-timed --spec runs/<task>/robot_spec.json --keyframes runs/<task>/keyframes.json --config runs/<task>/label_config.json --out runs/<task>/replay_<labels>.json
 python -m vla_tools.rate_ceiling    --dataset data/<src>-timed --spec runs/<task>/robot_spec.json --keyframes runs/<task>/keyframes.json --horizon 10 --per-frame --spans 20 30 --event-density 0 2 --latency <s> --out runs/<task>/rate_ceiling.json
+python -m vla_tools.rate_ceiling    ... --velocity-fraction 1 --switch-hold <close s> <open s> --out runs/<task>/rate_ceiling_velocity.json
 python -m vla_tools.build_labels    --dataset data/<src>-timed --spec runs/<task>/robot_spec.json --keyframes runs/<task>/keyframes.json --config runs/<task>/label_config.json --exclude <holdout> --out data/<src>-<labels>-train
 python -m vla_tools.build_labels    --dataset data/<src>-timed --spec runs/<task>/robot_spec.json --keyframes runs/<task>/keyframes.json --config runs/<task>/label_config.json --out data/<src>-<labels>-eval
 python -m vla_tools.run_index       runs/<task> --labels <labels> data/<src>-<labels>-train data/<src>-<labels>-eval
