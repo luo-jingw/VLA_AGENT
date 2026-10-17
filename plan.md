@@ -256,7 +256,7 @@ chunk, built from a pose that already had the new command, saw no switch.
 
 ## Phase 3
 
-Phase Status: active
+Phase Status: completed
 
 Round: 3
 
@@ -290,9 +290,42 @@ Per data set, latency and mode: speed-up under uniform timing and under velocity
 the holds, cap and e, episodes feasible, constraints failing at the next cap, per-episode speed-up median /
 p10, holds at switches against the recording's, end-effector deviation; against the time-optimal bound.
 
+Result (2026-10-17; path bound 2 path steps, 90% of the episodes, α = 1; holds 0.533 / 0.667 s = 8 / 10
+frames on DROID, 11 / 13 on LIBERO). DROID's measured gripper (`gripper_actuation.py`, file 000): close
+median 8 frames (p10 / p90 4 / 10, 1374 edges), open 10 (7 / 11, 1316). Largest speed-up feasible on ≥ 90%,
+asynchronous / synchronous:
+
+| L (s) | DROID uniform | DROID velocity | DROID velocity + holds | LIBERO uniform | LIBERO velocity | LIBERO velocity + holds |
+|---|---|---|---|---|---|---|
+| 0 | 1.96 | 7.46 | 4.58 | 2.44 | 5.83 | 2.94 |
+| 0.05 | 1.96 / 1.84 | 7.20 / 5.89 | 4.53 / 3.52 | 2.87 / 2.32 | 5.60 / 5.11 | 2.87 / 2.71 |
+| 0.1 | 1.93 / 1.73 | 5.77 / 4.89 | 3.91 / 3.49 | 2.65 / 2.21 | 5.38 / 4.71 | 2.83 / 2.58 |
+| 0.2 | 1.45 / 1.64 | 5.55 / 4.41 | 3.27 / 2.84 | 2.29 / 2.09 | 4.97 / 4.18 | 2.69 / 2.39 |
+| 0.4 | 0.97 / 1.40 | 1.39 / 3.41 | 1.54 / 2.36 | 2.03 / 1.88 | 3.95 / 3.41 | 2.28 / 2.19 |
+
+- Bounds: every recorded step at the speed of its limiting joint 7.65× (DROID), 5.95× (LIBERO); with the
+  same holds at each recorded edge 4.68× and 2.96×. At L = 0 velocity timing reaches 98% of them with and
+  without holds.
+- Best configurations under velocity timing: `curvature` s32–s64 and `time` s32 on DROID, `curvature`
+  s64–s128 on LIBERO, at caps 6–16; the next cap fails on the path bound or keeps no target after the
+  latency (cap ≤ span / (d + 1)). Velocity is never the binding constraint (largest ratio 1.00).
+- Per-frame labels under velocity timing: DROID 5.73 at L = 0, 0.82 at 0.4 s (asynchronous); their 10-frame
+  chunks cap the rate at 10 / (d + 1) once there is latency. Spans 32–128 keep 2.4–3.9× (synchronous) at
+  0.4 s.
+- Holds at the switches: the arm stays at least 9 frames (DROID) and 12 (LIBERO) at every switch of every
+  feasible run (1 + 8 at a close, 1 + 11 on LIBERO); the recordings stay a median 2 and 1–1.5 frames within
+  0.25 path steps of the switch pose. Without holds the arm stays 1 frame.
+- Asynchronous execution at 0.4 s collapses on DROID (1.39 / 1.54, path bound on 9–21 episodes at the next
+  cap); synchronous keeps 3.41 / 2.36. Uniform timing shows the same failure (0.97).
+- End-effector deviation at the selected settings: median 0.2–2.2 mm, p90 0.9–6.3 mm, max 5.4–29.1 mm.
+- Replay fixes found on the data, committed in `label_replay` and re-run: the re-observation advanced
+  during switch holds and counted the held pose as path deviation (holds: 3.74 → 4.58 at L = 0 on DROID);
+  a run whose last switch fell on the final recorded rows stopped before its hold ended (episode 33: 3 of
+  11 frames), and completion now lasts until the last hold is over, for the recording too.
+
 ## Phase 4
 
-Phase Status: pending
+Phase Status: active
 
 Round: 4
 
