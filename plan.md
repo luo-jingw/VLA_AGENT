@@ -1,6 +1,6 @@
 # Plan
 
-Plan Status: approved
+Plan Status: completed
 
 # Problem
 
@@ -408,7 +408,7 @@ at cap 16 keeps 2 targets after the latency), object rise 0, 14 s wall for the 4
 
 ## Phase 6
 
-Phase Status: blocked
+Phase Status: completed
 
 Round: 2
 
@@ -438,13 +438,20 @@ Phase 1; free GPUs (each run on GPUs that no other job is using).
 GPU memory, seconds per step, loss at steps 0, 100, 1000, 5000, 10000 per run; `arc_resample.json` in each
 final checkpoint's assets.
 
-Blocked: no free GPU. Since 2026-10-17 afternoon other jobs on the shared account hold every GPU (vLLM about
-41 GB on GPUs 0, 2, 3; robocasa evaluation servers 22–25 GB on 1, 5, 6, 7; an idle process 27.7 GB on 4).
-Resumes when two GPUs are free.
+Runs: S on GPU 2, F on GPU 3 (L40S 46 GB each), started 2026-10-18 03:37 PDT, logs in
+`runs/libero_alphabet_soup/train/`. 3.0 s per step on both (about 8.3 h for 10k steps; the GPU is
+compute-bound, data loader workers at about 4% CPU); 41.4 GB held per GPU at
+`XLA_PYTHON_CLIENT_MEM_FRACTION=0.9`. Loss at steps 0 / 100 / 1000 / 5000 / 9000 / 9900: S 0.157 / 0.109 / 0.021 / 0.010 / 0.0065 /
+0.0063, F 0.132 / 0.081 / 0.017 / 0.008 / 0.0050 / 0.0046 (the two label sets differ, so the values
+are not comparable across runs). Both finished at 11:57 and 12:01 PDT; checkpoints 5000 and 9999
+kept, `arc_resample.json` copied into each one's assets (sha256 equal to the dataset's).
+Serving path: the step-1000 S checkpoint served by `run.py serve-points` on CPU, `vla_libero.evaluate` at
+S_vel_L0's settings, 2 trials, budget 40 frames: one success at frame 36, one not lifted; 18 s per CPU
+inference, which the emulated latency does not see.
 
 ## Phase 7
 
-Phase Status: pending
+Phase Status: completed
 
 Round: 3
 
@@ -474,9 +481,41 @@ Phases 4, 5 and 6.
 Per condition: successes of 50 with the Wilson interval, completion frames (median, p10, p90), speed-ups,
 failure phases, measured inference time.
 
+Result (`runs/libero_alphabet_soup/sim/closed_loop/`, table in `summary.txt`): step-9999 checkpoints, kp 400,
+two servers per model on one L40S, 25 parallel clients per model. Successes of 50 (Wilson 95%), completion
+frames median of the successes, speed-up against the recordings' 152 frames / against F at rate 1 (212),
+failures not lifted / dropped / not placed, open-loop label replay at kp 400:
+
+| Condition | Successes | Frames | Speed-up | Failures | Open loop |
+|---|---|---|---|---|---|
+| F rate 1 | 31 (0.48–0.74) | 212 | 0.72 / 1.00 | 5 / 11 / 3 | 48 |
+| S rate 1 | 9 (0.10–0.31) | 193 | 0.79 / 1.10 | 22 / 15 / 4 | 45 |
+| S vel L 0 (cap 16, e 4) | 22 (0.31–0.58) | 41 | 3.71 / 5.17 | 20 / 8 / 0 | 39 |
+| S vel L 0.1 async (16, 2) | 28 (0.42–0.69) | 43 | 3.53 / 4.93 | 18 / 3 / 1 | 37 |
+| S vel L 0.1 sync (6, 10) | 20 (0.28–0.54) | 65 | 2.34 / 3.26 | 28 / 2 / 0 | 40 |
+| S vel L 0.2 async (12, 4) | 10 (0.11–0.33) | 56 | 2.74 / 3.82 | 33 / 7 / 0 | 39 |
+| S vel L 0.2 sync (6, 10) | 22 (0.31–0.58) | 64 | 2.38 / 3.31 | 24 / 4 / 0 | 39 |
+| S vel L 0, cap 2 (e 4) | 23 (0.33–0.60) | 136 | 1.12 / 1.56 | 13 / 13 / 1 | 46 |
+| S vel L 0, cap 4 | 31 (0.48–0.74) | 81 | 1.88 / 2.62 | 12 / 7 / 0 | 44 |
+| S vel L 0, cap 8 | 29 (0.44–0.71) | 42 | 3.62 / 5.05 | 17 / 4 / 0 | 39 |
+| S vel L 0, no holds (16, 2) | 6 (0.06–0.24) | 40 | 3.85 / 5.37 | 42 / 2 / 0 | 11 |
+| F vel L 0 (cap 8, e 1) | 42 (0.71–0.92) | 92 | 1.64 / 2.29 | 2 / 5 / 1 | 41 |
+| F vel L 0.1 async (3, 2) | 41 (0.69–0.90) | 95 | 1.60 / 2.23 | 5 / 3 / 1 | 48 |
+| F vel L 0.1 sync (4, 2) | 41 (0.69–0.90) | 170 | 0.89 / 1.25 | 4 / 4 / 1 | 48 |
+| F vel L 0.2 async (2, 4) | 37 (0.60–0.84) | 142 | 1.07 / 1.49 | 4 / 8 / 1 | 46 |
+| F vel L 0.2 sync (4, 2) | 30 (0.46–0.72) | 211 | 0.72 / 1.00 | 7 / 9 / 4 | 48 |
+
+Every condition succeeds less than its labels open loop. S succeeds less than F at every matched setting, its
+failures mostly objects never lifted. Velocity timing with holds raises F from 31 to 42 at 2.3× F's rate-1
+pace; S at cap 8 matches F at rate 1 (29 against 31, intervals overlapping) at 5.05×. No initial state fails
+in all 15 conditions with holds; per-state success counts of S and F correlate at 0.33. Inference 150–190 ms
+alone (4 servers on 2 GPUs), 1.5–2.2 s per request with 12–13 clients per server; the emulated latency does
+not see it. The first request compiles the model; clients that connect meanwhile fail the websocket
+handshake, so every server answers one request before the clients start (ISSUE-012).
+
 ## Phase 8
 
-Phase Status: pending
+Phase Status: completed
 
 Round: 4
 
@@ -504,3 +543,10 @@ Phase 7.
 ### Observation
 
 Every number in the docs traced to a result file under `runs/libero_alphabet_soup/`.
+
+Result: `docs/validation.md` section LIBERO simulator (execution, fidelity, gripper actuation and the rate
+ceiling with LIBERO's holds, training, closed loop, commands), test rows for `chunk_targets` and
+`vla_libero.rollout`, intro and not-yet-observed list updated; README, `vla-downstream` skill, ISSUE-011,
+ISSUE-012, OPT-008 and `FTpi05/PROJECT.md` (training and serving on this host) updated. The 16 closed-loop
+rows match the result files and the open-loop replays at kp 400 field by field (16 of 16); the rate-ceiling
+table, gripper holds and losses match their files. 147 passed, 1 skipped.
