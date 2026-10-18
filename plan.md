@@ -145,8 +145,8 @@ None beyond the outputs.
 
 ## Main Flow
 
-1. Training (background, GPUs 0–3): `build_labels` S → `run.py norm-stats` (S, F) → `run.py train` (S on
-   two GPUs, F on two) → `arc_resample.json` into each checkpoint's assets.
+1. `build_labels` S → `run.py norm-stats` (S, F); later, on free GPUs, `run.py train` (S and F) →
+   `arc_resample.json` into each checkpoint's assets.
 2. `chunk_targets` extracted; `closed_loop` calls it.
 3. Simulator: venv, LIBERO, config → `replay --source osc` (simulator fidelity) → `replay --source joint`
    per kp (choice of kp).
@@ -183,22 +183,23 @@ Commanded history → `rollout.py`, `label_replay.py`; simulator and kp → `env
 
 ## Phase 1
 
-Phase Status: active
+Phase Status: completed
 
 Round: 1
 
 ### Goal
 
-Labels S, both trainings running.
+Labels S, training config, norm stats.
 
 ### Files
 
-`examples/libero_object/configs.py`, `examples/libero_object/run.py`; outside the repository
-`runs/libero_alphabet_soup/label_config_curvature_s64_d0.json`, the S label datasets, norm stats.
+`examples/libero_object/configs.py`, `examples/libero_object/run.py` (norm-stats, train); outside the
+repository `runs/libero_alphabet_soup/label_config_curvature_s64_d0.json`, the S label datasets, norm stats,
+`FTpi05/reports/sim-eval-src/parquet_features_compat.py`.
 
 ### Structures
 
-`train_config`.
+`train_config`, `vlm_filter`.
 
 ### Affected Modules
 
@@ -210,13 +211,21 @@ None.
 
 ### Observation
 
-S dataset: episodes, frames, `action_chunk` (80) and weight (10) shapes, `arc_resample.json` config.
-Norm stats per dataset. Trainable and frozen parameter counts, GPU memory, seconds per step, loss at
-steps 0, 100, 1000. The final checkpoints and loss curves are checked at the start of phase 5.
+S dataset, episodes, frames, `action_chunk` (80) and weight (10) shapes, `arc_resample.json` config; norm
+stats per dataset; trainable and frozen parameter counts.
+
+Result: `build_labels` S: train 45 episodes / 8772 frames, eval 50; reach median 64.0 frames, padded points
+38.5%, window points 16.1%, mean weight 1.00. openpi's loader (`datasets` 3.6) could not read the label
+datasets' features block (ISSUE-009); after the `List` → `Sequence` rewrite of S and F, train and eval,
+`datasets` 3.6 and 5.1 load identical values. Norm stats (q01 / q99 of the 7 joints): S actions
+−0.18…−0.77 / +0.35…+1.27, F actions −0.05…−0.27 / +0.07…+0.25 (deltas over 64 against 10 frames), state
+identical. Model 3353.4 M parameters: frozen 2923.3 M (SigLIP, Gemma 2B), trainable 430.1 M (every
+`llm` parameter with suffix `_1`: attention 84.9 M, MLP 226.5 M, adaptive norms 116.5 M; `action_in_proj`,
+`action_out_proj`, `time_mlp_in`, `time_mlp_out` 2.2 M).
 
 ## Phase 2
 
-Phase Status: pending
+Phase Status: active
 
 Round: 1
 
@@ -316,6 +325,38 @@ successes of 50, completion frames.
 
 Phase Status: pending
 
+Round: 2
+
+### Goal
+
+S and F trained.
+
+### Files
+
+Outside the repository: checkpoints `openpi/checkpoints/pi05_libero_alphabet_soup_{curvature_s64_d0,time_s10}/`,
+training logs.
+
+### Structures
+
+None.
+
+### Affected Modules
+
+LIBERO training example.
+
+### Dependencies
+
+Phase 1; free GPUs (each run on GPUs that no other job is using).
+
+### Observation
+
+GPU memory, seconds per step, loss at steps 0, 100, 1000, 5000, 10000 per run; `arc_resample.json` in each
+final checkpoint's assets.
+
+## Phase 6
+
+Phase Status: pending
+
 Round: 3
 
 ### Goal
@@ -337,16 +378,16 @@ Simulator integration, serving.
 
 ### Dependencies
 
-Phases 1, 3 and 4.
+Phases 3, 4 and 5.
 
 ### Observation
 
-Final checkpoints and loss curves of S and F. Rollout tests with a fake environment and policy: env steps
+Rollout tests with a fake environment and policy: env steps
 per inference, sync waits and async continuation, owed holds across chunks, stop on success and at the
 budget. Per condition: successes of 50 with the Wilson interval, completion frames (median, p10, p90),
 speed-ups, failure phases, measured inference time.
 
-## Phase 6
+## Phase 7
 
 Phase Status: pending
 
@@ -371,7 +412,7 @@ Knowledge.
 
 ### Dependencies
 
-Phase 5.
+Phase 6.
 
 ### Observation
 
