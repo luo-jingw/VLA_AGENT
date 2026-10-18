@@ -36,6 +36,10 @@ still stretch around a switch at the cap. The start pose's command must then be 
 lagging echo, or the hold repeats. A chunk that replaces one before its hold is over starts with the rest of
 the hold (VelocityTiming.owed_hold, from the commanded poses so far). Arriving after a latency, the chunk time already passed is that of target
 d of the chunk timed from the pose commanded at the observation (arrival_time), instead of d.
+
+Execution (chunk_targets): the targets one chunk executes, from the poses commanded so far and the index of
+its observation: the owed hold, then the chunk (rebuilt after the latency in async mode), cut to the execution
+length. The label replay and a robot or simulator loop that own the commanded history both call it.
 """
 
 from __future__ import annotations
@@ -44,9 +48,12 @@ import dataclasses
 import json
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 import scipy.interpolate
+
+Mode = Literal["sync", "async"]  # sync: the robot waits for each inference; async: it keeps executing
 
 
 def point_frames(span_frames: int, action_horizon: int, anchor: str, rate: float) -> np.ndarray:
@@ -192,6 +199,46 @@ def after_latency(
 
 
 @dataclasses.dataclass(frozen=True)
+class ChunkTargets:
+    targets: np.ndarray  # (n, D), one per control frame after the arrival
+    stalls: int  # frames of `targets` that repeat the chunk's last target because it ran out (async)
+
+
+def chunk_targets(
+    points: np.ndarray, times: np.ndarray, command_dims: tuple[int, ...], timing: VelocityTiming | None,
+    history: Sequence[np.ndarray], observed: int, latency_frames: int, mode: Mode, execute: int,
+) -> ChunkTargets:  # fmt: skip
+    """The targets one chunk executes. `history` holds the (D,) poses commanded so far, the start pose first;
+    `observed` is its length when the chunk's observation was taken, so history[observed - 1] is the pose
+    commanded then. Every chunk but the first arrives `latency_frames` later in async mode, the robot having
+    executed history[observed:] meanwhile: it is rebuilt from history[-1] with the chunk time passed over the
+    frames that were not holding. The first chunk and sync chunks start from the observed pose, the robot
+    having waited `latency_frames` at it; the caller adds those waits. With velocity timing the targets begin
+    with the rest of any hold still owed at history[-1], less the waits. At most `execute` targets; in async
+    mode exactly `execute`, a chunk that runs out repeating its last target."""
+    first = len(history) == 1
+    arrival = latency_frames if mode == "async" and not first else 0
+    pose = history[observed - 1]
+    if arrival:
+        owed_then = timing.owed_hold(history[:observed], command_dims) if timing is not None else 0
+        moving = arrival - min(owed_then, arrival)
+        elapsed = arrival_time(points, pose, times, command_dims, timing, moving)
+        chunk = after_latency(points, times, history[-1], elapsed, command_dims, timing)
+    else:
+        chunk = to_frames(points, pose, times, command_dims, timing)
+    if timing is not None:
+        ahead = latency_frames if mode == "sync" or first else 0  # waited before the first target
+        owed = max(0, timing.owed_hold(history, command_dims) - ahead)
+        chunk = np.concatenate([np.repeat(np.asarray(history[-1:]), owed, axis=0), chunk])
+    run = chunk[:execute]
+    stalls = execute - len(run) if mode == "async" else 0
+    if stalls:
+        held = run[-1] if len(run) else np.asarray(history[-1])
+        run = np.concatenate([run, np.repeat(held[None, :], stalls, axis=0)])
+    return ChunkTargets(targets=np.asarray(run), stalls=stalls)
+
+
+@dataclasses.dataclass(frozen=True)
 class ArcInterpolator:
     """Construct once per model from the label report; call once per inference."""
 
@@ -259,3 +306,12 @@ class ArcInterpolator:
         times = self.frames()
         elapsed = arrival_time(points, observed, times, self.command_dims, self.timing, elapsed_frames)
         return after_latency(points, times, commanded, elapsed, self.command_dims, self.timing)
+
+    def chunk_targets(
+        self, points: np.ndarray, history: Sequence[np.ndarray], observed: int, latency_frames: int, mode: Mode,
+        execute: int,
+    ) -> ChunkTargets:  # fmt: skip
+        """chunk_targets for absolute (H, >=D) points; `history` holds commanded poses in action layout."""
+        poses = [np.asarray(h, dtype=np.float64)[: self.action_dim] for h in history]
+        return chunk_targets(self._checked(points), self.frames(), self.command_dims, self.timing, poses, observed,
+                             latency_frames, mode, execute)  # fmt: skip

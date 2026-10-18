@@ -13,6 +13,7 @@ from vla_tools.arc_interp import ArcInterpolator
 from vla_tools.arc_interp import VelocityTiming
 from vla_tools.arc_interp import after_latency
 from vla_tools.arc_interp import arrival_time
+from vla_tools.arc_interp import chunk_targets
 from vla_tools.arc_interp import point_frames
 from vla_tools.arc_interp import target_times
 from vla_tools.arc_interp import to_frames
@@ -258,3 +259,59 @@ def test_owed_hold_is_what_remains_of_the_last_switch() -> None:
     assert timing.owed_hold([b, c, c], (2,)) == 0  # no switch
     assert timing.owed_hold([b], (2,)) == 0
     assert timing.owed_hold([c, a], (2,)) == 2  # falling
+
+
+def test_first_and_sync_chunks_start_at_the_observed_pose() -> None:
+    """The first chunk (async or sync) and a sync chunk are the rebuild from the observed pose, cut to e."""
+    times = point_frames(20, 10, "state", 2.0)
+    points, start = _wiggle(8), np.zeros(3)
+    plain = to_frames(points, start, times, (2,))
+    for mode in ("sync", "async"):
+        out = chunk_targets(points, times, (2,), None, [start], 1, 3, mode, 4)
+        np.testing.assert_array_equal(out.targets, plain[:4])
+        assert out.stalls == 0
+    later = [start, plain[0], plain[1]]
+    out = chunk_targets(points, times, (2,), None, later, 3, 3, "sync", 4)
+    np.testing.assert_array_equal(out.targets, to_frames(points, plain[1], times, (2,))[:4])
+
+
+def test_async_chunk_is_rebuilt_after_the_latency_and_padded() -> None:
+    """Observed at history[1], arriving 2 frames later: the rebuild from history[-1] at chunk time 2; a chunk
+    shorter than e repeats its last target, counted as stalls."""
+    times = point_frames(20, 10, "state", 2.0)
+    points, start = _wiggle(9), np.zeros(3)
+    history = [start, np.full(3, 0.01), np.full(3, 0.02), np.full(3, 0.03)]
+    out = chunk_targets(points, times, (2,), None, history, 2, 2, "async", 4)
+    np.testing.assert_array_equal(out.targets, after_latency(points, times, history[-1], 2.0, (2,))[:4])
+    short = chunk_targets(points, times, (2,), None, history, 2, 2, "async", 12)
+    print(f"chunk of {len(after_latency(points, times, history[-1], 2.0, (2,)))} targets after the arrival, "
+          f"e 12: {short.stalls} stalls")  # fmt: skip
+    assert len(short.targets) == 12 and short.stalls == 12 - 8
+    np.testing.assert_array_equal(short.targets[8:], np.repeat(short.targets[7:8], 4, axis=0))
+
+
+def test_owed_hold_leads_the_next_chunk_less_the_wait() -> None:
+    """A switch commanded at the last frame before the observation still owes all 5 further hold frames: an
+    async chunk arriving at once starts with them; a sync chunk, having waited 3 frames, with 2."""
+    times = point_frames(20, 10, "state", 2.0)
+    timing = _timing(1e6, rise=0.5)
+    points = _wiggle(10)
+    points[:, 2] = 1.0
+    off, on = np.zeros(3), np.array([0.0, 0.0, 1.0])
+    out = chunk_targets(points, times, (2,), timing, [off, on], 2, 0, "async", 8)
+    np.testing.assert_array_equal(out.targets[:5], np.repeat(on[None, :], 5, axis=0))
+    assert not np.array_equal(out.targets[5], on)
+    out = chunk_targets(points, times, (2,), timing, [off, on], 2, 3, "sync", 8)
+    np.testing.assert_array_equal(out.targets[:2], np.repeat(on[None, :], 2, axis=0))
+    assert not np.array_equal(out.targets[2], on)
+
+
+def test_interpolator_chunk_targets_matches_the_function(tmp_path: Path) -> None:
+    config = ResampleConfig(metric="time", span_frames=20, action_horizon=10, anchor="state")
+    interp = ArcInterpolator.from_report(_report(tmp_path / "arc_resample.json", config), 2.0, _timing(0.5, 0.3))
+    points, history = _wiggle(11), [np.zeros(3), np.full(3, 0.01)]
+    padded = np.concatenate([points, np.zeros((10, 29))], axis=1)
+    a = interp.chunk_targets(padded, history, 1, 1, "async", 5)
+    b = chunk_targets(points, interp.frames(), (2,), interp.timing, history, 1, 1, "async", 5)
+    np.testing.assert_array_equal(a.targets, b.targets)
+    assert a.stalls == b.stalls

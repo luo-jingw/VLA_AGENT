@@ -64,16 +64,14 @@ import dataclasses
 import json
 import typing
 from pathlib import Path
-from typing import Literal
 
 import numpy as np
 
 from vla_tools import arc_core
+from vla_tools.arc_interp import Mode
 from vla_tools.arc_interp import VelocityTiming
-from vla_tools.arc_interp import after_latency
-from vla_tools.arc_interp import arrival_time
+from vla_tools.arc_interp import chunk_targets
 from vla_tools.arc_interp import point_frames
-from vla_tools.arc_interp import to_frames
 from vla_tools.episodes import Episode
 from vla_tools.episodes import load_episodes
 from vla_tools.keyframe_record import KeyframeRecord
@@ -84,8 +82,6 @@ from vla_tools.robot_spec import RobotSpec
 
 PATH_MARGIN_FRAMES = 3
 HOLD_TOLERANCE = 0.25  # path steps; also the final tolerance
-
-Mode = Literal["sync", "async"]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -219,22 +215,10 @@ def closed_loop(
             raise RuntimeError(f"episode {e.index}: not at the final row after {len(observations)} inferences")
         observations.append(t)
         arrival = latency_frames if mode == "async" and executed else 0  # observation to the first target
-        if arrival:  # `pose` is still the pose commanded at this observation
-            moving = arrival - min(owed_at_observation, arrival)
-            elapsed = arrival_time(ch.points[t], pose, times, spec.command_dims, timing, moving)
-            chunk = after_latency(ch.points[t], times, executed[-1], elapsed, spec.command_dims, timing)
-        else:
-            chunk = to_frames(ch.points[t], pose, times, spec.command_dims, timing)
-        if timing is not None:
-            ahead = latency_frames if mode == "sync" or not executed else 0  # held before the first target
-            owed = max(0, timing.owed_hold([poses[0], *executed], spec.command_dims) - ahead)
-            chunk = np.concatenate([np.repeat(np.asarray(executed[-1:] or [pose]), owed, axis=0), chunk])
-        run = list(chunk[:execute])
-        if mode == "async" and len(run) < execute:
-            held = run[-1] if run else executed[-1]
-            stalls += execute - len(run)
-            run += [held.copy() for _ in range(execute - len(run))]
-        targets = np.array(run)
+        planned = chunk_targets(ch.points[t], times, spec.command_dims, timing, [poses[0], *executed],
+                                observed_at + 1, latency_frames, mode, execute)  # fmt: skip
+        stalls += planned.stalls
+        targets = planned.targets
         if executed:
             seams.append(float(np.linalg.norm(targets[0, joints] - executed[-1][joints])))
         if mode == "sync" or not executed:

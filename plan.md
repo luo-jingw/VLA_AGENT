@@ -225,7 +225,7 @@ identical. Model 3353.4 M parameters: frozen 2923.3 M (SigLIP, Gemma 2B), traina
 
 ## Phase 2
 
-Phase Status: active
+Phase Status: completed
 
 Round: 1
 
@@ -255,9 +255,19 @@ Tests. Parity: `closed_loop` outputs (executed targets, observations, stall and 
 LIBERO and DROID episodes for uniform and velocity timing, with and without holds, L 0 / 0.1 / 0.2 s,
 sync and async, saved before the change and compared after (maximum difference printed).
 
+Result: 142 passed, 1 skipped (4 new tests: first and sync chunks are the rebuild from the observed pose cut to
+e; an async chunk arriving 2 frames late is `after_latency` at chunk time 2 and, at e 12 with 8 targets left,
+repeats its last target 4 times (4 stalls); a switch at the last commanded frame still owes 5 further hold
+frames, an async chunk starts with 5 and a sync chunk after a 3-frame wait with 2; the `ArcInterpolator`
+method equals the function). Parity: 1260 `closed_loop` runs (LIBERO episodes 0, 1, 7, 29 and DROID 0, 5, 33;
+per-frame, `time` s32, `curvature` s64 and s128 d2; rate/e 1/5, 3/4, 16/4, 16/8; L 0 / 0.1 / 0.2 s, sync and
+async; uniform, velocity without and with holds), 291 refused by `closed_loop` both times with the same
+message; the other 969 identical (executed targets, observed frames, distances, seams, stall and
+completion frames; maximum difference 0).
+
 ## Phase 3
 
-Phase Status: pending
+Phase Status: active
 
 Round: 1
 
