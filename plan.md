@@ -57,6 +57,8 @@ at the replay's speed-ups is unknown: model error, tracking lag and contact are 
 - Execution model: `src/vla_tools/label_replay.py` (`closed_loop` calls `chunk_targets`).
 - Simulator integration, new package `src/vla_libero/` (imports LIBERO and robosuite, which are not
   package dependencies, as `vla_openpi` imports openpi):
+  - `interfaces.py`: `Observation` and the environment boundary `SimEnv` (Protocol), importable without
+    LIBERO;
   - `env.py`: the LIBERO task with a joint position or the recorded OSC controller;
   - `policy.py`: the chunk policy boundary and its websocket client;
   - `rollout.py`: one closed-loop episode with emulated latency;
@@ -104,8 +106,9 @@ observation to points. `evaluate` and `replay` own their result files.
   hold, then the chunk (rebuilt after the latency in async mode), cut to `execute` and in async mode
   padded with its last target (`stalls` padded frames). The sync wait stays with the caller.
 - `ArcInterpolator.chunk_targets(points, history, observed, latency_frames, mode, execute) -> ChunkTargets`.
-- `vla_libero.env.Observation(agentview: np.ndarray, wrist: np.ndarray, state: np.ndarray)`: images
+- `vla_libero.interfaces.Observation(agentview: np.ndarray, wrist: np.ndarray, state: np.ndarray)`: images
   (128, 128, 3) uint8 rotated 180°, as in the dataset; state (8,) = measured joints + commanded gripper.
+- `vla_libero.interfaces.SimEnv` (Protocol): `reset`, `step`, `success`, `object_height` as below.
 - `vla_libero.env.LiberoJointEnv(bddl_file: Path, controller: Literal["joint", "osc"], kp: float)`:
   `reset(sim_state: np.ndarray) -> Observation`; `step(target: np.ndarray) -> Observation` (joint: 7 joint
   targets + command; osc: LIBERO's 7-dim action); `success() -> bool`; `object_height() -> float`;
@@ -163,14 +166,14 @@ None beyond the outputs.
 ## Modules
 
 Chunk construction → `src/vla_tools/arc_interp.py`; execution model → `src/vla_tools/label_replay.py`;
-simulator integration → `src/vla_libero/{__init__,env,policy,rollout,replay,evaluate}.py`; serving →
+simulator integration → `src/vla_libero/{__init__,interfaces,env,policy,rollout,replay,evaluate}.py`; serving →
 `src/vla_openpi/launch.py`; example → `examples/libero_object/{configs,run}.py`; gripper actuation →
 `FTpi05/reports/sim-eval-src/libero_gripper_actuation.py`.
 
 ## Interfaces
 
-`ChunkTargets`, `chunk_targets`, `ArcInterpolator.chunk_targets` → `arc_interp.py`; `Observation`,
-`LiberoJointEnv` → `env.py`; `ChunkPolicy`, `WebsocketChunkPolicy` → `policy.py`; `Trial`, `rollout` →
+`ChunkTargets`, `chunk_targets`, `ArcInterpolator.chunk_targets` → `arc_interp.py`; `Observation`, `SimEnv` →
+`interfaces.py`; `LiberoJointEnv` → `env.py`; `ChunkPolicy`, `WebsocketChunkPolicy` → `policy.py`; `Trial`, `rollout` →
 `rollout.py`; replay CLI → `replay.py`; evaluation CLI → `evaluate.py`; `serve_points` → `launch.py`;
 `train_config` → `configs.py`.
 
@@ -267,7 +270,7 @@ completion frames; maximum difference 0).
 
 ## Phase 3
 
-Phase Status: active
+Phase Status: completed
 
 Round: 1
 
@@ -277,12 +280,13 @@ LIBERO simulator with absolute joint control; simulator fidelity; kp.
 
 ### Files
 
-`src/vla_libero/__init__.py`, `src/vla_libero/env.py`, `src/vla_libero/replay.py` (sources osc, joint);
+`src/vla_libero/__init__.py`, `src/vla_libero/interfaces.py`, `src/vla_libero/env.py`,
+`src/vla_libero/replay.py` (sources osc, joint);
 outside the repository the simulator venv, LIBERO checkout and config.
 
 ### Structures
 
-`Observation`, `LiberoJointEnv`.
+`Observation`, `SimEnv`, `LiberoJointEnv`.
 
 ### Affected Modules
 
@@ -299,9 +303,19 @@ the dataset's frame 0 (mean absolute pixel difference). Recorded joint targets r
 controller for kp ∈ {50, 150, 400, 1000}: successes, joint tracking error (median, max) and lag frames;
 the chosen kp and its reason in `sim_replay.json`.
 
+Result (`runs/libero_alphabet_soup/sim/`): recorded OSC actions from `states[0]`: 46 / 50 succeed with
+mujoco 3.2.3 (45 / 50 with 2.3.7; failures 9, 22, 27, 30 and 29), first success a median 140.5 frames into 153
+recorded actions. Rendering at `states[0]`: orientation matches the dataset (rotated 180°; against the
+unrotated recording the difference is 57–60), mean absolute difference per episode median 5.5, max 9.0
+(agentview 4.0 and wrist 12.2 on episode 0: floor texture and shading), the same under both mujoco versions.
+Recorded joint targets through the joint controller: kp 50 40 / 50 (tracking median 0.105 rad, lag 5 frames),
+150 48 / 50 (0.057, 3), 400 48 / 50 (0.031, 1), 1000 47 / 50 (0.016, max 0.051, 1). kp 1000 chosen
+(`runs/libero_alphabet_soup/decisions.md` D-003). One step costs 15 ms with one thread per process (0.29 s
+with the default thread count).
+
 ## Phase 4
 
-Phase Status: pending
+Phase Status: active
 
 Round: 2
 
