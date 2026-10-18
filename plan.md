@@ -364,6 +364,40 @@ at the recorded pace, better at the speed-ups. Two runs of the same condition di
 
 ## Phase 5
 
+Phase Status: active
+
+Round: 2
+
+### Goal
+
+The closed-loop episode, its policy client and evaluation CLI, the points server; checked without a model.
+
+### Files
+
+`src/vla_openpi/launch.py`, `src/vla_libero/interfaces.py` (`ChunkPolicy`), `src/vla_libero/policy.py`,
+`src/vla_libero/rollout.py`, `src/vla_libero/evaluate.py`, `examples/libero_object/run.py` (serve-points),
+`tests/test_vla_libero_rollout.py`.
+
+### Structures
+
+`ChunkPolicy`, `WebsocketChunkPolicy`, `Trial`, `rollout`, `serve_points`.
+
+### Affected Modules
+
+Simulator integration, serving.
+
+### Dependencies
+
+Phases 2 and 3.
+
+### Observation
+
+Rollout tests with a fake environment and policy: env steps per inference, sync waits and async continuation,
+owed holds across chunks, stop on success and at the budget, failure phase. `evaluate` in the simulator with a
+policy that returns the observed pose (no motion): trials run to the budget, timing per frame.
+
+## Phase 6
+
 Phase Status: pending
 
 Round: 2
@@ -394,7 +428,7 @@ Phase 1; free GPUs (each run on GPUs that no other job is using).
 GPU memory, seconds per step, loss at steps 0, 100, 1000, 5000, 10000 per run; `arc_resample.json` in each
 final checkpoint's assets.
 
-## Phase 6
+## Phase 7
 
 Phase Status: pending
 
@@ -406,29 +440,27 @@ Closed-loop success of S and F under the 16 conditions.
 
 ### Files
 
-`src/vla_openpi/launch.py`, `src/vla_libero/policy.py`, `src/vla_libero/rollout.py`,
-`src/vla_libero/evaluate.py`, `tests/test_vla_libero_rollout.py`.
+Outside the repository: `runs/libero_alphabet_soup/sim/closed_loop/<condition>.json`, the runner under
+`FTpi05/reports/sim-eval-src/`.
 
 ### Structures
 
-`ChunkPolicy`, `WebsocketChunkPolicy`, `Trial`, `rollout`, `serve_points`.
+None.
 
 ### Affected Modules
 
-Simulator integration, serving.
+None (evaluation runs).
 
 ### Dependencies
 
-Phases 3, 4 and 5.
+Phases 4, 5 and 6.
 
 ### Observation
 
-Rollout tests with a fake environment and policy: env steps
-per inference, sync waits and async continuation, owed holds across chunks, stop on success and at the
-budget. Per condition: successes of 50 with the Wilson interval, completion frames (median, p10, p90),
-speed-ups, failure phases, measured inference time.
+Per condition: successes of 50 with the Wilson interval, completion frames (median, p10, p90), speed-ups,
+failure phases, measured inference time.
 
-## Phase 7
+## Phase 8
 
 Phase Status: pending
 
@@ -453,7 +485,7 @@ Knowledge.
 
 ### Dependencies
 
-Phase 6.
+Phase 7.
 
 ### Observation
 
