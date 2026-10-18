@@ -1,4 +1,4 @@
-"""The boundaries of a simulated episode: what an environment reports and accepts."""
+"""The boundaries of a simulated episode: what an environment reports and accepts, and what a policy answers."""
 
 from __future__ import annotations
 
@@ -28,4 +28,10 @@ class SimEnv(Protocol):
 
     def object_height(self) -> float:
         """Height (m) of the object the task moves."""
+        ...
+
+
+class ChunkPolicy(Protocol):
+    def infer(self, observation: Observation, prompt: str) -> np.ndarray:
+        """(H, D) absolute points: 7 joint positions and the command per point."""
         ...

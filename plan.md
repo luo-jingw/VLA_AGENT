@@ -364,7 +364,7 @@ at the recorded pace, better at the speed-ups. Two runs of the same condition di
 
 ## Phase 5
 
-Phase Status: active
+Phase Status: completed
 
 Round: 2
 
@@ -395,6 +395,16 @@ Phases 2 and 3.
 Rollout tests with a fake environment and policy: env steps per inference, sync waits and async continuation,
 owed holds across chunks, stop on success and at the budget, failure phase. `evaluate` in the simulator with a
 policy that returns the observed pose (no motion): trials run to the budget, timing per frame.
+
+Result: 147 passed, 1 skipped (5 new rollout tests with a perfectly tracking fake environment: async at L 2,
+e 4 holds the start pose 2 frames for the first inference, then observes every 4 frames, 6 inferences in 24
+frames; sync holds the previous pose 2 frames before every 4 moving frames; the episode stops at the first
+success (7 frames) or the budget, phases not placed and dropped from the object height; a close command
+holds its target 6 frames (the target and 5 further) across chunks of 2 targets; async with e < L is
+refused). `evaluate --policy still` in LIBERO (S's report, cap 16, e 4, L 0.1 s async, holds, kp 400, 4
+trials): every trial runs the 280-frame budget, 70 inferences, 140 stall frames (2 per chunk: a still chunk
+at cap 16 keeps 2 targets after the latency), object rise 0, 14 s wall for the 4 parallel trials.
+`serve_points` imports in the openpi environment; it is exercised with the trained checkpoints in phase 7.
 
 ## Phase 6
 

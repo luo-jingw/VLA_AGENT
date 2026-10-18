@@ -51,6 +51,15 @@ def serving_config(config: _config.TrainConfig, checkpoint: Path, rate: float = 
     return dataclasses.replace(config, data=dataclasses.replace(config.data, outputs=ArcOutputs(interp)))
 
 
+def serve_points(config: _config.TrainConfig, checkpoint: Path, port: int) -> None:
+    """Serve with the training config's outputs: each request is answered with the (H, D) absolute points, for a
+    client that interpolates them itself (vla_libero.evaluate)."""
+    policy = policy_config.create_trained_policy(config, str(checkpoint))
+    websocket_policy_server.WebsocketPolicyServer(
+        policy=policy, host="0.0.0.0", port=port, metadata=policy.metadata
+    ).serve_forever()
+
+
 def serve(config: _config.TrainConfig, checkpoint: Path, port: int, rate: float = 1.0) -> None:
     policy = policy_config.create_trained_policy(serving_config(config, checkpoint, rate), str(checkpoint))
     websocket_policy_server.WebsocketPolicyServer(
