@@ -408,7 +408,7 @@ at cap 16 keeps 2 targets after the latency), object rise 0, 14 s wall for the 4
 
 ## Phase 6
 
-Phase Status: pending
+Phase Status: blocked
 
 Round: 2
 
@@ -437,6 +437,10 @@ Phase 1; free GPUs (each run on GPUs that no other job is using).
 
 GPU memory, seconds per step, loss at steps 0, 100, 1000, 5000, 10000 per run; `arc_resample.json` in each
 final checkpoint's assets.
+
+Blocked: no free GPU. Since 2026-10-17 afternoon other jobs on the shared account hold every GPU (vLLM about
+41 GB on GPUs 0, 2, 3; robocasa evaluation servers 22–25 GB on 1, 5, 6, 7; an idle process 27.7 GB on 4).
+Resumes when two GPUs are free.
 
 ## Phase 7
 
