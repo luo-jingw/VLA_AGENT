@@ -362,3 +362,48 @@ Write the block in the `Sequence` form in `dataset_writer.write`; build a label 
 environment and load it in openpi's.
 
 ## Resolution
+
+# ISSUE-010
+
+Status: Open
+
+Area: velocity timing at large speed-ups, executed in physics (LIBERO simulator)
+
+## Observation
+
+The label replay's targets, executed open loop through a joint position controller in LIBERO from the
+recordings' initial states, succeed less as the cap rises. LIBERO alphabet soup, `curvature` s64 d0 with
+velocity timing and LIBERO's holds (0.2 s close, 0.55 s open), L = 0, kp 400 / 1000: cap 2 46 / 46 of 50,
+cap 4 44 / 42, cap 8 39 / 30, cap 16 39 / 26; per-frame labels at cap 8 41 / 32; both at rate 1 45–48. The
+label replay counts all of these feasible on at least 90% of the episodes. Most failures leave the object on
+the floor (cap 16, kp 1000: 17 not lifted, 7 dropped after lifting). Without holds 9–11 of 50 succeed and the
+fingers close on nothing (median width 10 frames after the close command 0.009 m against 0.062 m around the
+can).
+
+## Impact
+
+The rate ceiling, which treats the executed targets as the motion, overstates what a robot executes faithfully
+beyond about 3× on this task; closed-loop results at those caps include this loss whatever the model does.
+
+## Evidence
+
+`FTpi05/runs/libero_alphabet_soup/sim/label_replay/*.json`, summarised by
+`FTpi05/reports/sim-eval-src/summarize_label_replays.py`, 2026-10-17. The rate ceiling's acceleration ratio at
+these settings is 9–10 times the Panda's limits (`rate_ceiling_libero_holds.json`); the joint controller lags
+the targets by 1 (kp 1000) to 2 (kp 400) frames, median tracking error 0.10–0.15 rad at cap 16 against
+0.016–0.031 at rate 1.
+
+## Hypotheses
+
+- The hold starts at the commanded switch; with a lag of 1–2 frames at high speed the arm is still moving
+  towards the grasp pose while the fingers close.
+- Accelerations far above the limits saturate the joint torques and move the arm off the path near the
+  object; a stiffer controller shakes the grasped object loose.
+
+## Next Experiment
+
+Label replay in the simulator with the hold started once the measured arm is within a tolerance of the
+switching target, and with velocity timing that also bounds acceleration; compare the not-lifted count at
+caps 8 and 16.
+
+## Resolution

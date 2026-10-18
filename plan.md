@@ -315,7 +315,7 @@ with the default thread count).
 
 ## Phase 4
 
-Phase Status: active
+Phase Status: completed
 
 Round: 2
 
@@ -325,7 +325,9 @@ LIBERO holds, the (cap, e) per setting, the labels' success in physics.
 
 ### Files
 
-`src/vla_libero/replay.py` (source labels); outside the package `libero_gripper_actuation.py`.
+`src/vla_libero/replay.py` (source labels; object lift and finger width per episode); outside the package
+`FTpi05/reports/rate-ceiling-src/gripper_actuation.py` (`--source libero`), `FTpi05/reports/sim-eval-src/`
+(`run_label_replays.py`, `summarize_label_replays.py`), `runs/libero_alphabet_soup/sim/conditions.json`.
 
 ### Structures
 
@@ -344,6 +346,21 @@ Phases 2 and 3.
 Close and open times (median, p10, p90 frames) from the finger positions. Rate ceiling for S and F with
 those holds: (cap, e) and speed-up per L and mode. Open-loop label replay in the simulator per setting:
 successes of 50, completion frames.
+
+Result. Gripper actuation from the finger width (`gripper_actuation.json`, 50 demonstrations): close median
+4 frames (p10 3, p90 16.8; 55 edges), open 11 (10, 11; 53 edges): holds 0.2 s / 0.55 s; DROID's figures
+unchanged by the extended script. Rate ceiling with them (`rate_ceiling_libero_holds.json`), cap / e /
+speed-up: S L 0 16 / 4 / 3.60; L 0.1 async 16 / 2 / 3.43, sync 6 / 10 / 2.95; L 0.2 async 12 / 4 / 3.26, sync
+6 / 10 / 2.68; F L 0 8 / 1 / 3.43; L 0.1 async 3 / 2 / 1.80, sync 4 / 2 / 1.62; L 0.2 async 2 / 4 / 1.11, sync
+4 / 2 / 1.17; without holds S L 0 16 / 2 / 5.78. These settings and caps 2, 4, 8 are the 16 conditions
+(`conditions.json`). Labels open loop in the simulator (`sim/label_replay/`), successes of 50 at kp 400 /
+1000 and the first-success speed-up against the per-frame labels at rate 1 (140 frames): F rate 1 48 / 47;
+S rate 1 45 / 47 (0.98); S velocity L 0 39 / 26 (4.0 / 4.7); L 0.1 async 37 / 28, sync 40 / 40; L 0.2 async
+39 / 31, sync 39 / 38; caps 2, 4, 8 46 / 46 (1.75), 44 / 42 (3.0), 39 / 30 (3.9 / 4.4); without holds 11 / 9;
+F velocity L 0 41 / 32 (3.9 / 4.4), L 0.1 async 48 / 46, sync 48 / 46, L 0.2 async 46 / 46, sync 48 / 43.
+Failures are mostly objects never lifted (ISSUE-010). kp 400 replaces 1000 for the closed loop (D-004): equal
+at the recorded pace, better at the speed-ups. Two runs of the same condition differ by up to 1 success
+(simulator state not fully reset between episodes of a worker).
 
 ## Phase 5
 
