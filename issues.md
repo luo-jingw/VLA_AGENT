@@ -325,3 +325,40 @@ Porting the end rule (final tolerance from the port's path step) restores parity
 Port the end rule, run `check_core.py` against `closed_loop` on the synthetic recordings.
 
 ## Resolution
+
+# ISSUE-009
+
+Status: Open
+
+Area: `dataset_writer` output read by openpi's LeRobot loader
+
+## Observation
+
+`dataset_writer` writes parquet through the `datasets` installed where it runs, which stores the features in
+the file's `huggingface` schema block. `datasets` 5.1 writes list columns as `List`; openpi's LeRobot loader
+(`datasets` 3.6) infers features from that block and fails with `Feature type 'List' not found`. The LIBERO
+source dataset (converted with `datasets` 5.1) carries `List`, and `build_labels` passes it on.
+
+## Impact
+
+Label datasets built in an environment with `datasets` >= 4 cannot be loaded by openpi for norm stats or
+training until the block is rewritten.
+
+## Evidence
+
+`run.py norm-stats` on `libero-alphabet-soup-curvature-s64-d0-train`, 2026-10-17. Rewriting `List` →
+`Sequence` in the block (`FTpi05/reports/sim-eval-src/parquet_features_compat.py`, column data compared equal
+per file) makes the dataset load in both `datasets` 3.6 and 5.1 with identical values (8772 rows,
+`action_chunk` sum 206122.58704388834).
+
+## Hypotheses
+
+`dataset_writer` writing the `Sequence` form, which both versions read, removes the failure for every derived
+dataset.
+
+## Next Experiment
+
+Write the block in the `Sequence` form in `dataset_writer.write`; build a label dataset in the harness
+environment and load it in openpi's.
+
+## Resolution
