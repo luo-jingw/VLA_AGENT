@@ -215,6 +215,9 @@ uniform timing (L = 0, 90% of the episodes). `vla_openpi.launch.serving_config` 
 rate, and the server keeps no state across inferences: the rest of a hold that a new chunk cuts short
 (`VelocityTiming.owed_hold`) and the pose commanded at each observation (`after_latency`'s `observed`) come
 from the commanded history.
+In the LIBERO simulator the client applies the timing (`vla_libero.rollout` through
+`ArcInterpolator.chunk_targets`): per-frame `time` s10 policy at cap 8 with LIBERO's holds 42 of 50 against
+31 at rate 1, in 0.44 of the frames (`docs/validation.md`, LIBERO simulator).
 
 ## Opportunity
 

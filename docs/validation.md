@@ -6,7 +6,9 @@ whose model, loader and config changes are equivalent to `integrations/openpi/pa
 task (50 demonstrations, simulated Franka Panda, 20 Hz), taken through the data stages S0–S7 with the
 current tools (see [LIBERO run](#libero-run)). A subset of DROID (60 teleoperated pick-and-place episodes,
 Franka Panda, 15 Hz, joint positions only) and the LIBERO task measure the rate ceiling (see
-[Rate ceiling](#rate-ceiling)). The test suite re-checks the mechanisms on synthetic data on every run.
+[Rate ceiling](#rate-ceiling)). In the LIBERO simulator the labels and two policies trained on them run
+closed loop (see [LIBERO simulator](#libero-simulator)). The test suite re-checks the mechanisms on synthetic
+data on every run.
 
 ## Test suite
 
@@ -86,6 +88,8 @@ Real-data observations in this table are on UR3 unless a row names LIBERO.
 | `arc_interp` (velocity timing) | without a binding limit the targets equal the uniform ones; a fast straight slowed to the fraction of the limit (50 frames of 0.040000 rad against the closed form); a still chunk at the rate; 60 random chunks at rates 1, 4, 16 within the limit (largest 0.9999); rise and fall holds of 5 and 2 frames, also against the start pose; the owed hold after a switch; the arrival chunk time from the observed pose | DROID and LIBERO, see [Velocity timing](#velocity-timing) | `test_arc_interp.py::test_velocity_timing_without_a_binding_limit_is_the_uniform_timing`, `::test_velocity_timing_slows_a_fast_straight_to_the_fraction_of_the_limit`, `::test_still_chunk_runs_at_the_rate`, `::test_velocity_timing_keeps_every_joint_within_the_fraction`, `::test_command_switches_hold_the_arm`, `::test_owed_hold_is_what_remains_of_the_last_switch`, `::test_velocity_timed_arrival_rebuild_starts_at_the_commanded_pose` |
 | `label_replay` (velocity timing) | arriving 2 frames late at cap 4 under a 0.5 rad/s limit: velocity ratio 0.9999 at e = 2, 4, 8, the arm stays 6 and 3 frames at the close and the open, observations repeat during the holds; completion lasts until the last hold is over | DROID and LIBERO, see [Velocity timing](#velocity-timing) | `test_label_replay.py::test_velocity_timing_with_latency_stays_within_the_limit_and_holds_at_switches`, `::test_completion_counts_frames_until_the_final_row_is_reached_for_good` |
 | `label_replay` (latency, end, completion) | asynchronous and synchronous latency; the arrival rebuild without a seam for per-frame labels; a chunk that runs out holds; a chunk spent by its arrival is refused; per-frame labels at rate 1, e = 1 complete in the recorded frames; completion counts frames until the final row is reached for good | LIBERO replays, see [LIBERO run](#libero-run) | `test_label_replay.py` |
+| `arc_interp` (chunk construction) | first and synchronous chunks are the rebuild from the observed pose cut to e; an asynchronous chunk 2 frames late is the arrival rebuild at chunk time 2, and at e 12 with 8 targets left repeats its last target 4 times; a switch at the last commanded frame owes 5 hold frames, an asynchronous chunk starts with 5, a synchronous one after a 3-frame wait with 2 | LIBERO and DROID replays identical before and after the extraction, see [LIBERO simulator](#libero-simulator) | `test_arc_interp.py::test_first_and_sync_chunks_start_at_the_observed_pose`, `::test_async_chunk_is_rebuilt_after_the_latency_and_padded`, `::test_owed_hold_leads_the_next_chunk_less_the_wait`, `::test_interpolator_chunk_targets_matches_the_function` |
+| `vla_libero.rollout` | with a perfectly tracking fake environment: asynchronous at L 2, e 4 holds 2 frames for the first inference, then observes every 4 frames; synchronous holds 2 frames before every chunk; stop at the first success or the budget, failure phases from the object height; a close holds 6 frames across chunks of 2 targets; e < L asynchronous refused | LIBERO closed loop, see [LIBERO simulator](#libero-simulator) | `test_vla_libero_rollout.py` |
 | `rate_ceiling` | velocity timing keeps every cap within the limit and passes the uniform ceiling (5.28 against 3.00 on a minimum-jerk profile); velocity and acceleration ratios scale with the rate; the largest rate within the velocity limit; latency caps the rate of short chunks; a sparse chunk that cuts a corner fails the path bound; the summary selects a rate feasible on 90% but not all episodes | DROID and LIBERO, see [Rate ceiling](#rate-ceiling) | `test_rate_ceiling.py` |
 | `replay_eval` | against an earlier replay script, same model and episodes | same errors (rad) and gripper shifts | — (needs a served policy) |
 | `lora_merge` | merged attention deltas vs the LoRA forward pass | ≤ 2e-3 against openpi `lora.Einsum` for all four equations (float32 default matmul precision, GPU); a per-head `lora_a @ lora_b` is off by 8.6e-2 on the output projection | `test_lora_merge.py`; `test_openpi_integration.py::test_merged_weight_matches_openpi_lora_einsum` |
@@ -337,7 +341,8 @@ hold is over (for the recorded actions too: last recorded edge plus its hold).
 a close command (p10 / p90 4 / 10; 1374 edges of file 000) and 10 frames after an open command (7 / 11;
 1316 edges), measured by a script outside this repository (`gripper_actuation.py`). Holds 0.533 s (close,
 rising command) and 0.667 s (open): 8 and 10 frames at 15 Hz, 11 and 13 at LIBERO's 20 Hz. LIBERO's
-simulated gripper has no measured counterpart; the DROID times are applied to it.
+finger width gives 0.2 s / 0.55 s (see [LIBERO simulator](#libero-simulator)); the table below applies
+DROID's times to both datasets.
 
 **Commands**: the rate-ceiling call above with `--velocity-fraction 1 --switch-hold 0 0 --switch-hold 0.533
 0.667 --out runs/<task>/rate_ceiling_velocity.json`.
@@ -368,6 +373,117 @@ figure at L = 0, where both are the same); α = 1:
   timings; synchronous execution keeps 3.41× and 2.36×.
 - End-effector deviation at the selected settings: median 0.2–2.2 mm, p90 0.9–6.3 mm, max 5.4–29.1 mm.
 
+## LIBERO simulator
+
+Measured 2026-10-17 and 2026-10-18 on the LIBERO task of [LIBERO run](#libero-run) (libero_object task 0),
+with `vla_libero` in a simulator environment outside this repository: mujoco 3.2.3, robosuite 1.4.1, LIBERO
+at openpi's pinned commit f78abd68.
+
+**Execution.** `vla_libero.env.LiberoJointEnv` drives the Panda with absolute joint targets through
+robosuite's joint position controller (critically damped, goal set to the target each control frame) or
+with the recorded actions through the recorded OSC_POSE controller; the command 0 / 1 is LIBERO's gripper
+action −1 / +1. Observations are the agentview and wrist images (128 × 128, rotated 180° as in the
+dataset) and the state, the measured joints and the command in effect. One closed-loop trial
+(`vla_libero.rollout`) starts from a benchmark initial state, holds still for 10 settling frames, then
+executes each chunk's targets one per control frame through `ArcInterpolator.chunk_targets` — the
+construction `label_replay.closed_loop` uses (1260 replay runs on LIBERO and DROID episodes give the same
+outputs, maximum difference 0, or the same refusal before and after the extraction) — with the latency in simulated frames,
+d = round(L · 20), until the task's success predicate holds or 280 control frames pass. A failure is
+classed by the object's height above its settled height: not lifted (never 5 cm), dropped (lifted, below
+2 cm at the end), not placed (still lifted).
+
+**Fidelity.** The recorded OSC actions from each recording's first simulator state succeed 46 of 50
+(first success a median 140.5 frames into 153 recorded actions; 45 of 50 under mujoco 2.3.7). Rendered
+images at that state differ from the dataset's first frames by a mean absolute 5.5 (median per episode,
+max 9.0; against unrotated images 57–60). The recorded joint angles as targets of the joint controller:
+
+| kp | Successes of 50 | Tracking error median (rad) | Lag (frames) |
+|---|---|---|---|
+| 50 | 40 | 0.105 | 5 |
+| 150 | 48 | 0.057 | 3 |
+| 400 | 48 | 0.031 | 1 |
+| 1000 | 47 | 0.016 | 1 |
+
+kp 400 is used for the label replays and the closed loop: equal to kp 1000 at the recorded pace and more
+successful when labels run fast (`curvature` s64 d0 at cap 16: 39 against 26 of 50, cap 8: 39 against 30).
+
+**Gripper actuation.** The finger width of the 50 recordings reaches 90% of its travel a median 4 frames
+after a close command (p10 / p90 3 / 16.8; 55 edges) and 11 frames after an open command (10 / 11; 53
+edges): holds of 0.2 s (close) and 0.55 s (open). With these holds the rate ceiling (90% of the episodes)
+selects, as cap / e / speed-up:
+
+| L (s) | `curvature` s64 d0 async | sync | `time` s10 async | sync |
+|---|---|---|---|---|
+| 0 | 16 / 4 / 3.60 | — | 8 / 1 / 3.43 | — |
+| 0.1 | 16 / 2 / 3.43 | 6 / 10 / 2.95 | 3 / 2 / 1.80 | 4 / 2 / 1.62 |
+| 0.2 | 12 / 4 / 3.26 | 6 / 10 / 2.68 | 2 / 4 / 1.11 | 4 / 2 / 1.17 |
+
+Without holds `curvature` s64 d0 reaches 5.78 (cap 16, e 2) at L = 0.
+
+**Training.** Two pi0.5 policies from `pi05_base` with `examples/libero_object/configs.py`: SigLIP and
+Gemma 2B frozen (2923.3 M parameters), the action expert and the action and time projections trained
+(430.1 M); agentview → `base_0_rgb`, wrist → `left_wrist_0_rgb`; joints as deltas, the command absolute;
+no state in the prompt; H = 10, batch 32, 10k steps, learning rate 2.5e-5 after 500 warm-up steps, cosine
+decay to 2.5e-6. S is trained on `curvature`
+span 64 density 0 labels, F on per-frame `time` span 10 labels, both from the 45 training recordings.
+One L40S per run: 3.0 s per step. Loss at steps 0 / 1000 / 5000 / 9900: S 0.157 / 0.021 / 0.010 / 0.0063,
+F 0.132 / 0.017 / 0.008 / 0.0046 (the label sets differ, so the values do not compare across runs).
+
+**Closed loop.** Each policy served by `run.py serve-points` (the (H, D) points; the client times them),
+50 trials per condition from the task's 50 benchmark initial states, kp 400. The open-loop column executes
+the labels themselves at the same settings from the recordings' first states (`vla_libero.replay --source
+labels`). Speed-ups are median completion frames of the successes against the recordings' median length
+(152 frames) and against F at rate 1 (212 frames); intervals are Wilson 95%.
+
+| Policy, timing | L (s), mode | Cap, e | Successes of 50 | Frames | Speed-up | Not lifted / dropped / not placed | Open loop |
+|---|---|---|---|---|---|---|---|
+| F, rate 1 | 0 | 1, 5 | 31 (0.48–0.74) | 212 | 0.72 / 1.00 | 5 / 11 / 3 | 48 |
+| S, rate 1 | 0 | 1, 5 | 9 (0.10–0.31) | 193 | 0.79 / 1.10 | 22 / 15 / 4 | 45 |
+| S, velocity + holds | 0 | 16, 4 | 22 (0.31–0.58) | 41 | 3.71 / 5.17 | 20 / 8 / 0 | 39 |
+| S, velocity + holds | 0.1 async | 16, 2 | 28 (0.42–0.69) | 43 | 3.53 / 4.93 | 18 / 3 / 1 | 37 |
+| S, velocity + holds | 0.1 sync | 6, 10 | 20 (0.28–0.54) | 65 | 2.34 / 3.26 | 28 / 2 / 0 | 40 |
+| S, velocity + holds | 0.2 async | 12, 4 | 10 (0.11–0.33) | 56 | 2.74 / 3.82 | 33 / 7 / 0 | 39 |
+| S, velocity + holds | 0.2 sync | 6, 10 | 22 (0.31–0.58) | 64 | 2.38 / 3.31 | 24 / 4 / 0 | 39 |
+| S, velocity + holds | 0 | 2, 4 | 23 (0.33–0.60) | 136 | 1.12 / 1.56 | 13 / 13 / 1 | 46 |
+| S, velocity + holds | 0 | 4, 4 | 31 (0.48–0.74) | 81 | 1.88 / 2.62 | 12 / 7 / 0 | 44 |
+| S, velocity + holds | 0 | 8, 4 | 29 (0.44–0.71) | 42 | 3.62 / 5.05 | 17 / 4 / 0 | 39 |
+| S, velocity, no holds | 0 | 16, 2 | 6 (0.06–0.24) | 40 | 3.85 / 5.37 | 42 / 2 / 0 | 11 |
+| F, velocity + holds | 0 | 8, 1 | 42 (0.71–0.92) | 92 | 1.64 / 2.29 | 2 / 5 / 1 | 41 |
+| F, velocity + holds | 0.1 async | 3, 2 | 41 (0.69–0.90) | 95 | 1.60 / 2.23 | 5 / 3 / 1 | 48 |
+| F, velocity + holds | 0.1 sync | 4, 2 | 41 (0.69–0.90) | 170 | 0.89 / 1.25 | 4 / 4 / 1 | 48 |
+| F, velocity + holds | 0.2 async | 2, 4 | 37 (0.60–0.84) | 142 | 1.07 / 1.49 | 4 / 8 / 1 | 46 |
+| F, velocity + holds | 0.2 sync | 4, 2 | 30 (0.46–0.72) | 211 | 0.72 / 1.00 | 7 / 9 / 4 | 48 |
+
+- Every condition succeeds less closed loop than its labels open loop; the labels themselves lose
+  successes as the cap rises (cap 2 46, cap 16 39) and almost all of them without holds (11).
+- S succeeds less than F at every matched setting; most of S's failures leave the object on the floor
+  (ISSUE-011).
+- Velocity timing with holds raises F from 31 to 42 of 50 and completes in 0.44 of F's rate-1 frames
+  (L = 0); at L = 0.1 s asynchronous F keeps 41 at 2.23×. S at cap 8 succeeds 29 of 50 (interval
+  overlapping F at rate 1) at 5.05× F's rate-1 pace.
+- No initial state fails in all 15 conditions with holds; per-state success counts of S and F correlate
+  at 0.33.
+- Two runs of the same open-loop condition differ by up to 1 success.
+
+**Commands**, from the project root (simulator variables as in the module docstring of `vla_libero.env`;
+training and serving from the openpi root with `examples/libero_object` on `PYTHONPATH`):
+
+```bash
+python -m vla_libero.replay --hdf5 <demo.hdf5> --source osc --out runs/<task>/sim/replay_osc.json
+python -m vla_libero.replay --hdf5 <demo.hdf5> --source joint --kp 50 150 400 1000 --out runs/<task>/sim/replay_joint_kp.json
+python -m vla_libero.replay --hdf5 <demo.hdf5> --source labels --kp 400 --dataset data/<src>-timed --spec runs/<task>/robot_spec.json \
+    --keyframes runs/<task>/keyframes.json --label-config <label_config.json> --rate 16 --execute 4 --latency 0 --mode async \
+    --velocity-fraction 1 --switch-hold 0.2 0.55 --out runs/<task>/sim/label_replay/<condition>.json
+python examples/libero_object/run.py train --name <config> --data-root <data> --repo-id <dataset>-train --exp-name run
+python examples/libero_object/run.py serve-points --name <config> --data-root <data> --repo-id <dataset>-train \
+    --checkpoint checkpoints/<config>/run/9999 --port 8000
+python -m vla_libero.evaluate --policy websocket --ports 8000 8001 --report <ckpt>/assets/<repo_id>/arc_resample.json \
+    --spec runs/<task>/robot_spec.json --rate 16 --execute 4 --latency 0 --mode async --velocity-fraction 1 \
+    --switch-hold 0.2 0.55 --kp 400 --workers 25 --out runs/<task>/sim/closed_loop/<condition>.json
+```
+
+Each server answers one request before `evaluate` starts (ISSUE-012).
+
 ## integrations/openpi
 
 | Check | Observed | Re-checked by |
@@ -382,14 +498,13 @@ figure at L = 0, where both are the same); α = 1:
 - video datasets: `FrameReader`'s video path;
 - the `settle` and referenced `threshold_cross` detectors on real data; `settle` and the referenced search
   that `threshold_cross` shares with `motion_onset` are tested on constructed arrays;
-- a full training run started from `vla_openpi.launch`, and closed-loop robot results of any model
-  trained through this harness;
-- execution of resampled labels in the LIBERO simulator, at rate 1 or faster, and any training comparison
-  between `curvature` and `time` labels or between per-window and episode-wide steps;
+- closed-loop results on a robot of any model trained through this harness; in simulation one task, one
+  training budget and one `curvature` configuration (s64 d0) against per-frame labels;
+- a training comparison between per-window and episode-wide steps;
 - the rate ceiling on a robot: it holds the commanded targets to the Panda's nominal joint velocity limits
   in replay; tracking lag and tracking error (DROID's measured joints follow the commands about 4 frames
-  later) and the controller's acceleration are not modelled; velocity timing is not passed through
-  `vla_openpi.launch`, and the switch hold on a robot needs the commanded gripper value as the start pose's
-  command, not a lagging echo;
+  later; LIBERO's joint controller 1–5 frames) and the controller's acceleration are not modelled; velocity
+  timing is not passed through `vla_openpi.launch` (the simulator client applies it), and the switch hold on
+  a robot needs the commanded gripper value as the start pose's command, not a lagging echo;
 - the integration in a clean upstream openpi environment with the patches applied (every UR3 check above
   ran on a fork with equivalent changes).

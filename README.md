@@ -116,11 +116,11 @@ pytest
 
 测试用合成的 LeRobot 数据集（含已知关键帧和人为注入的录制故障）检查各数据工具、整条 S0–S7 链路、`run_status` 对每一类放行条件的判断，以及 LoRA 合并。不需要 GPU 和网络。在 openpi 环境中运行时，还会检查 openpi 相关部分。每项已验证行为对应哪个测试，见 `docs/validation.md`。
 
-真实数据上的观测来自三份数据：一份双臂 UR3 数据；一个 LIBERO 仿真抓放任务（50 条 Franka Panda 示教，S0–S7 全部通过，含网格搜索与闭环标签回放的结果）；DROID 的 60 条遥操抓放（Franka Panda），与 LIBERO 一起测关节速度上限和推理延迟下的倍数上限。见 `docs/validation.md`。
+真实数据上的观测来自三份数据：一份双臂 UR3 数据；一个 LIBERO 仿真抓放任务（50 条 Franka Panda 示教，S0–S7 全部通过，含网格搜索与闭环标签回放的结果）；DROID 的 60 条遥操抓放（Franka Panda），与 LIBERO 一起测关节速度上限和推理延迟下的倍数上限。LIBERO 任务还在仿真器里闭环执行：标签本身开环执行，以及两个只在标签上不同的 pi0.5 策略（`curvature` s64 与逐帧 `time`，冻结 VLM，10k 步），各 16 组条件、每组 50 次。逐帧策略按速度定时加夹爪停留，成功 42/50，用时为倍速 1 的 0.44（倍速 1 为 31/50）；`curvature` 策略在上限 8 时成功 29/50，速度是逐帧倍速 1 的 5.05 倍，但在每组对应设置下都低于逐帧策略。见 `docs/validation.md`。
 
 ## 下游
 
-训练、评估、交付合并在一个 `vla-downstream` skill 里，只读取训练版、评估版和其中的 `arc_resample.json`。接入 openpi 的步骤见 `integrations/openpi/README.md`，双臂 UR3 的完整配置见 `examples/ur3_dual_arm/`。这部分需要 openpi 环境，并打上 `integrations/openpi/patches/` 中的补丁。
+训练、评估、交付合并在一个 `vla-downstream` skill 里，只读取训练版、评估版和其中的 `arc_resample.json`。接入 openpi 的步骤见 `integrations/openpi/README.md`，双臂 UR3 的完整配置见 `examples/ur3_dual_arm/`，LIBERO 关节空间的训练与服务配置见 `examples/libero_object/`。`src/vla_libero/` 在 LIBERO 仿真器里用关节位置控制执行标签（开环）和服务端返回的点（闭环，推理延迟按仿真帧模拟），需要单独的仿真环境（mujoco 3.2.3、robosuite 1.4.1、LIBERO）。这部分需要 openpi 环境，并打上 `integrations/openpi/patches/` 中的补丁。
 
 ## 目录
 
@@ -131,7 +131,8 @@ AGENTS.md, CLAUDE.md, PROJECT.md, plan.md, issues.md, opportunities.md   explici
 .claude/skills/{plan,work,parallelize,experiment,close,...}              通用 skill（模板）
 src/vla_tools/                                                           工具包（python -m vla_tools.<module>）
 src/vla_openpi/, integrations/openpi/                                    openpi 接入
-examples/ur3_dual_arm/                                                   双臂 UR3 的完整配置示例
+src/vla_libero/                                                          LIBERO 仿真器里的开环回放与闭环评测
+examples/ur3_dual_arm/, examples/libero_object/                          双臂 UR3、LIBERO 的配置示例
 tests/                                                                   合成数据测试
 docs/validation.md, docs/figures/                                        已验证的行为；README 中的图及生成脚本
 ```

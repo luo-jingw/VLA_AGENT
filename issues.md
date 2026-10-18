@@ -407,3 +407,85 @@ switching target, and with velocity timing that also bounds acceleration; compar
 caps 8 and 16.
 
 ## Resolution
+
+# ISSUE-011
+
+Status: Open
+
+Area: closed-loop policy trained on `curvature` s64 d0 labels (LIBERO simulator)
+
+## Observation
+
+Two pi0.5 policies trained identically (VLM frozen, 10k steps, batch 32, 45 demonstrations) on LIBERO
+alphabet soup, executed closed loop in the simulator from the 50 benchmark initial states (kp 400): the
+`curvature` s64 d0 policy (S) succeeds less than the per-frame `time` s10 policy (F) at every matched setting
+— rate 1 9 against 31 of 50; velocity timing with holds at L = 0 22 (cap 16) against 42 (cap 8); L 0.2 s
+async 10 against 37. S's labels open loop succeed 45 of 50 at rate 1. Most of S's failures leave the object on
+the floor (22 of 41 at rate 1, 20 of 28 at cap 16). Under velocity timing S rises from cap 2 to cap 4 (23 →
+31) and falls beyond (29 at cap 8, 22 at cap 16); its rate-1 run (e 5, uniform timing) is the lowest.
+
+## Impact
+
+At this data and training budget the resampled labels buy speed (S at cap 8: 3.62× the recordings' pace,
+29 of 50) at lower success than per-frame labels with velocity timing (F at cap 8, e 1: 1.64×, 42 of 50).
+
+## Evidence
+
+`FTpi05/runs/libero_alphabet_soup/sim/closed_loop/*.json`, `summary.txt` (2026-10-18; checkpoints
+`pi05_libero_alphabet_soup_{curvature_s64_d0,time_s10}/run/9999`); open-loop counterparts in
+`sim/label_replay/`. No initial state fails in all 15 conditions with holds; per-state success counts of S
+and F correlate at 0.33.
+
+## Hypotheses
+
+- With density 0 no point sits at the gripper switch: an S chunk spans up to 64 frames in 10 points, so the
+  close instant is interpolated between points several frames apart, and a model error in those points
+  moves the close relative to the arm; F's points are one frame apart.
+- At rate 1 S executes 5 of up to 64 frames of each chunk and asks again; when successive predictions place
+  the switch differently, the close is delayed or shifted near the can. Executing more of each chunk per
+  inference (higher caps) would then help, as caps 2 → 4 do.
+- S's targets are deltas over up to 64 frames (action q99 up to 1.27 rad against 0.25 for F), so the same
+  normalized error is a larger joint error.
+
+## Next Experiment
+
+Record per trial the frame of the commanded close and the gripper-to-can distance at that frame, S against F
+at rate 1 and cap 4; train S with event density 2 (the `curvature-s40-d2` datasets exist) and compare the
+not-lifted count; evaluate the step-5000 checkpoints for the training trend.
+
+## Resolution
+
+# ISSUE-012
+
+Status: Open
+
+Area: `vla_libero.evaluate` clients against openpi's websocket server
+
+## Observation
+
+openpi's `WebsocketPolicyServer` runs inference inside its event loop, and a server's first request compiles
+the model (about a minute on an L40S). Clients that connect while it compiles fail with "opening handshake
+failed" (40 of the 50 clients on the first, unwarmed start, 2026-10-18). `openpi_client` retries only a
+refused connection, so `WebsocketChunkPolicy` raises; in `evaluate.run_trial` the worker has stored its
+environment but no policy, so by the code every later trial on that worker raises as well.
+
+## Impact
+
+An evaluation started against servers that have not answered a request loses the trials of every worker
+that failed to connect, and the run ends with an exception.
+
+## Evidence
+
+`FTpi05/runs/libero_alphabet_soup/sim/closed_loop/serve/serve_800[0-3].log`. After one request per server
+(compiled; later requests 150–190 ms) all 50 clients connected without a failure.
+
+## Hypotheses
+
+Answering one request per port before the pool starts removes the failures.
+
+## Next Experiment
+
+`evaluate` sends one request to each port from the main process before starting the workers; start an
+evaluation against freshly started servers and count failed handshakes.
+
+## Resolution
