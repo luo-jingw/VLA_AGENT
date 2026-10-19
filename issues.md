@@ -636,18 +636,18 @@ closed lift the object in most attempts.
 ## Evidence
 
 `FTpi05/runs/libero_alphabet_soup/sim/sync_full/trace/F_r1_{e5,full}.json`, classified by
-`reports/sim-eval-src/gripper_attempts.py`. With full chunks a reopen inside one chunk comes from the
-chunk's own points: the gripper of each target is the binarised value of its point, and F's points are one
-frame apart.
+`reports/sim-eval-src/gripper_attempts.py`. The reopen is mostly the first target of the next chunk: 70 of
+106 (e = 5) and 65 of 79 (full). Within one inference the points' gripper values are nearly binary (a value
+between 0.2 and 0.8 in 24 of 2405 and 5 of 1029 inferences) and switch more than once in 20 and 6.
 
 ## Hypotheses
 
-- Near the close the predicted gripper values of consecutive points straddle 0.5, so the binarised command
-  alternates.
+- Right after a close is commanded the next observation still shows open fingers, and the model, which
+  receives no state, predicts the approach again.
 
 ## Next Experiment
 
-Per inference near the close, the predicted gripper values of the 10 points (recorded in the trace files);
-count chunks whose binarised gripper values switch more than once.
+Per reopen, the finger opening at the observation that produced the opening chunk; the same count for a
+policy given the commanded gripper as state input.
 
 ## Resolution
