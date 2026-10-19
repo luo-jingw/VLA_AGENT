@@ -534,6 +534,24 @@ frames, identical noise: per-frame targets (30, 14) float32, points (10, 14) and
 (maximum difference 0). Built in two separate processes, the two differ by up to 2.9e-3 rad; each
 configuration repeats its own outputs exactly across processes.
 
+**PyTorch conversion.** openpi's `convert_pi0_checkpoint` with the serving config's model config, bf16,
+published with the JAX weights. The model has no LoRA, and the converted weights set every `PI0Pytorch`
+parameter except the two `lm_head` matrices, which action prediction does not read. Through the
+self-contained serving config, 16 recorded frames (1/3 and 2/3 of episodes 8, 15, 24, 27, 0, 10, 20, 30),
+identical noise; largest joint difference over one answer's 10 points, median / max over the 16 (rad):
+
+| Comparison | Joints | Right gripper commands that differ |
+|---|---|---|
+| JAX vs PyTorch, both fp32 (full fp32 matmuls) | 0.0004 / 0.0029 | 0 of 160 |
+| JAX bf16 vs JAX fp32 | 0.0056 / 0.029 | 0 of 160 |
+| PyTorch bf16 compiled vs PyTorch fp32 | 0.0072 / 0.062 | 0 of 160 |
+| JAX bf16 vs PyTorch bf16, eager | 0.0073 / 0.043 | 0 of 160 |
+| JAX bf16 vs PyTorch bf16, compiled (`max-autotune`, openpi's default) | 0.014 / 0.080 | 0 of 160 |
+| JAX bf16, two noise draws | 0.089 / 0.43 | 4 of 160 |
+
+`policy.infer` on one L40S: PyTorch compiled 62 ms median after 72 s loading and 25.6 s / 4.5 s for the
+first two calls; eager 357 ms; JAX 84 ms.
+
 **Commands**, from the project root (training and serving from the openpi root with
 `examples/ur3_optical_bench` on `PYTHONPATH`):
 
