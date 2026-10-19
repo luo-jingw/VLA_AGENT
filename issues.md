@@ -445,22 +445,32 @@ lifted it first, a median 0.06–0.21 m per condition. Per-state successes over 
 (0.3, 2.2, 7.1, 12.7, 13.8, 9.4, 3.7, 0.8, 0.1); over F's 5 conditions (0, 2, 5, 7, 22, 14 against
 0, 0.5, 3.6, 12.5, 20.7, 12.6) slightly more concentrated.
 
+Replanning is not the cause (`sim/sync_full/`, 2026-10-19; docs/validation.md → LIBERO simulator, Whole
+chunks): executing every target of each chunk (5–6 inferences per S trial) S succeeds 22 of 50 at rate 1 and
+26 at cap 4, F 39 and 43; the labels executed the same way succeed 46 and 46 (S), 48 and 46 (F). Most of S's
+failures are still not lifted (25 and 21).
+
+Closes are mostly in the wrong place, not at the wrong time (`sim/sync_full/trace/`, rate 1): 63% of S's
+full-chunk closes (72 of 115) and 44% at e = 5 close the fingers on nothing, at a median 0.060 / 0.068 m from
+the object's centre against 0.029 / 0.036 m for closes that lift it. In 54 of the 72 the grip site never
+came within 0.042 m of the object from 10 frames before to 5 after the close; in 5 it did at another frame.
+After a missed close the next chunk opens and approaches again (median 3 closes per failed full-chunk
+trial). F closes on nothing in 10–13% of its closes; its closes that lift sit at 0.021–0.024 m.
+
 ## Hypotheses
 
-- With density 0 no point sits at the gripper switch: an S chunk spans up to 64 frames in 10 points, so the
-  close instant is interpolated between points several frames apart, and a model error in those points
-  moves the close relative to the arm; F's points are one frame apart.
-- At rate 1 S executes 5 of up to 64 frames of each chunk and asks again; when successive predictions place
-  the switch differently, the close is delayed or shifted near the can. Executing more of each chunk per
-  inference (higher caps) would then help, as caps 2 → 4 do.
-- S's targets are deltas over up to 64 frames (action q99 up to 1.27 rad against 0.25 for F), so the same
-  normalized error is a larger joint error.
+- S's points place the grasp pose a few centimetres off. Its targets are deltas over up to 64 frames
+  (action q99 up to 1.27 rad against 0.25 for F), so the same normalized error is a larger joint error.
+- With density 0 the grasp is covered by one or two of the 10 points, and the stop at the object adds no
+  progress to the curvature coordinate, so the labels give the model little resolution there.
+- Retries start from states the demonstrations do not contain (closed fingers above the object): S's later
+  closes lift the object in 15 of 65 (full) against 44 of 115 for F.
 
 ## Next Experiment
 
-Record per trial the frame of the commanded close and the gripper-to-can distance at that frame, S against F
-at rate 1 and cap 4; train S with event density 2 (the `curvature-s40-d2` datasets exist) and compare the
-not-lifted count; evaluate the step-5000 checkpoints for the training trend.
+Train S with event density 2 (the `curvature-s40-d2` datasets exist) and compare the share of closes on
+nothing; open-loop grasp-pose error of the points in end-effector space, S against F, on held-out
+recordings; evaluate the step-5000 checkpoints for the training trend.
 
 ## Resolution
 
@@ -603,5 +613,41 @@ labels at e = 8: no missed switch, switch-pose error max 0.116 rad.
 
 Distance of episode 8 to its nearest training episodes in `diversity.json`; edge shifts over several runs
 per episode (fresh noise each request) to separate the model's bias from sampling spread.
+
+## Resolution
+
+# ISSUE-016
+
+Status: Open
+
+Area: closed-loop policy trained on per-frame `time` s10 labels (LIBERO simulator), gripper command
+
+## Observation
+
+At rate 1, sync, L = 0, 39% (e = 5, 73 of 187) and 42% (full chunks, 70 of 165) of F's commanded closes open
+again within 6 frames, before the fingers finish closing; S does so in 17% and 2%. F's closed segments last
+a median 5 frames.
+
+## Impact
+
+Each reopen delays the grasp; F still succeeds 28 and 36 of 50 in these runs, and its closes that stay
+closed lift the object in most attempts.
+
+## Evidence
+
+`FTpi05/runs/libero_alphabet_soup/sim/sync_full/trace/F_r1_{e5,full}.json`, classified by
+`reports/sim-eval-src/gripper_attempts.py`. With full chunks a reopen inside one chunk comes from the
+chunk's own points: the gripper of each target is the binarised value of its point, and F's points are one
+frame apart.
+
+## Hypotheses
+
+- Near the close the predicted gripper values of consecutive points straddle 0.5, so the binarised command
+  alternates.
+
+## Next Experiment
+
+Per inference near the close, the predicted gripper values of the 10 points (recorded in the trace files);
+count chunks whose binarised gripper values switch more than once.
 
 ## Resolution

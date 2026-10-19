@@ -467,7 +467,43 @@ labels`). Speed-ups are median completion frames of the successes against the re
   at 0.33.
 - Two runs of the same open-loop condition differ by up to 1 success.
 
-**Commands**, from the project root (simulator variables as in the module docstring of `vla_libero.env`;
+**Whole chunks.** Measured 2026-10-19, same policies and task, kp 400, L = 0, sync (at L = 0 sync and async
+run the same code), 50 trials per cell; "full" executes every target of a chunk before the next observation
+(`--execute 1000`). Labels: the same setting open loop from the recordings' first states.
+
+| Policy | Timing | Execute | Successes of 50 | Not lifted / dropped / not placed | Frames (successes) | Inferences per trial | Labels |
+|---|---|---|---|---|---|---|---|
+| S | rate 1 | 5 | 17 | 17 / 10 / 6 | 192 | 56 | 45 |
+| S | rate 1 | full | 22 | 25 / 3 / 0 | 144 | 5 | 46 |
+| S | velocity cap 4 + holds | 4 | 33 | 13 / 4 / 0 | 82 | 28 | 44 |
+| S | velocity cap 4 + holds | full | 26 | 21 / 3 / 0 | 54 | 6 | 46 |
+| F | rate 1 | 5 | 32 | 5 / 8 / 5 | 192 | 48 | 48 |
+| F | rate 1 | full | 39 | 3 / 7 / 1 | 159 | 18 | 48 |
+| F | velocity cap 4 + holds | 4 | 42 | 4 / 4 / 0 | 108 | 47 | 45 |
+| F | velocity cap 4 + holds | full | 43 | 4 / 3 / 0 | 98 | 38 | 46 |
+
+S at rate 1, e = 5 succeeded 9, 17 and 14 of 50 in three runs of the same setting (the last in the traced
+runs below); S at cap 4, e = 4 31 and 33; F at rate 1, e = 5 31, 32 and 28.
+
+**Close attempts.** A script outside this repository (`reports/sim-eval-src/gripper_trace.py`) runs the same
+closed loop and records per control frame the commanded gripper, the finger opening, and the grip site and
+object positions; `gripper_attempts.py` classes every commanded close up to the next open. Rate 1, sync,
+L = 0; attempts of 50 trials:
+
+| Policy, execute | Successes | Close attempts | Lifted the object | Reopened within 6 frames | Fingers closed on nothing | Fingers on the object, not lifted |
+|---|---|---|---|---|---|---|
+| S, 5 | 14 | 193 | 45, at 0.036 m | 33 | 85, at 0.068 m | 30 |
+| S, full | 25 | 115 | 34, at 0.029 m | 2 | 72, at 0.060 m | 7 |
+| F, 5 | 28 | 187 | 90, at 0.021 m | 73 | 18, at 0.041 m | 6 |
+| F, full | 36 | 165 | 70, at 0.024 m | 70 | 21, at 0.042 m | 4 |
+
+Distances are the median from the grip site to the object's centre at the close. Of S's empty closes, the
+grip site never came within the lifting closes' 90th-percentile distance (0.050 / 0.042 m) from 10 frames
+before to 5 frames after the close in 48 of 85 (e = 5) and 54 of 72 (full); in 9 and 5 it came within that
+distance at another frame. No close lifted the object in 19 of S's 25 failed full-chunk trials and 13 of its
+36 failed trials at e = 5. A missed close is followed by an open and another approach: a median 3 (full)
+and 4.5 (e = 5) closes per failed S trial.
+
 training and serving from the openpi root with `examples/libero_object` on `PYTHONPATH`):
 
 ```bash
