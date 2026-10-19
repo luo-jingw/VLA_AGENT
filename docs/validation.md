@@ -7,8 +7,10 @@ task (50 demonstrations, simulated Franka Panda, 20 Hz), taken through the data 
 current tools (see [LIBERO run](#libero-run)). A subset of DROID (60 teleoperated pick-and-place episodes,
 Franka Panda, 15 Hz, joint positions only) and the LIBERO task measure the rate ceiling (see
 [Rate ceiling](#rate-ceiling)). In the LIBERO simulator the labels and two policies trained on them run
-closed loop (see [LIBERO simulator](#libero-simulator)). The test suite re-checks the mechanisms on synthetic
-data on every run.
+closed loop (see [LIBERO simulator](#libero-simulator)). A second dual-arm UR3 dataset (40 episodes) went
+through S0–S8 with a frozen-VLM policy evaluated open loop on held-out episodes (see
+[UR3 optical bench](#ur3-optical-bench)). The test suite re-checks the mechanisms on synthetic data on every
+run.
 
 ## Test suite
 
@@ -91,7 +93,7 @@ Real-data observations in this table are on UR3 unless a row names LIBERO.
 | `arc_interp` (chunk construction) | first and synchronous chunks are the rebuild from the observed pose cut to e; an asynchronous chunk 2 frames late is the arrival rebuild at chunk time 2, and at e 12 with 8 targets left repeats its last target 4 times; a switch at the last commanded frame owes 5 hold frames, an asynchronous chunk starts with 5, a synchronous one after a 3-frame wait with 2 | LIBERO and DROID replays identical before and after the extraction, see [LIBERO simulator](#libero-simulator) | `test_arc_interp.py::test_first_and_sync_chunks_start_at_the_observed_pose`, `::test_async_chunk_is_rebuilt_after_the_latency_and_padded`, `::test_owed_hold_leads_the_next_chunk_less_the_wait`, `::test_interpolator_chunk_targets_matches_the_function` |
 | `vla_libero.rollout` | with a perfectly tracking fake environment: asynchronous at L 2, e 4 holds 2 frames for the first inference, then observes every 4 frames; synchronous holds 2 frames before every chunk; stop at the first success or the budget, failure phases from the object height; a close holds 6 frames across chunks of 2 targets; e < L asynchronous refused | LIBERO closed loop, see [LIBERO simulator](#libero-simulator) | `test_vla_libero_rollout.py` |
 | `rate_ceiling` | velocity timing keeps every cap within the limit and passes the uniform ceiling (5.28 against 3.00 on a minimum-jerk profile); velocity and acceleration ratios scale with the rate; the largest rate within the velocity limit; latency caps the rate of short chunks; a sparse chunk that cuts a corner fails the path bound; the summary selects a rate feasible on 90% but not all episodes | DROID and LIBERO, see [Rate ceiling](#rate-ceiling) | `test_rate_ceiling.py` |
-| `replay_eval` | against an earlier replay script, same model and episodes | same errors (rad) and gripper shifts | — (needs a served policy) |
+| `replay_eval` | against an earlier replay script, same model and episodes; edge shifts: an edge shifted +2 and −1 frames, a missed edge, a switch past the midpoint to the next edge not counted, two command dims scored on their own edges | same errors (rad) and gripper shifts; UR3 optical bench end to end, see [UR3 optical bench](#ur3-optical-bench) | `test_replay_eval.py` (where `openpi_client` is installed) |
 | `lora_merge` | merged attention deltas vs the LoRA forward pass | ≤ 2e-3 against openpi `lora.Einsum` for all four equations (float32 default matmul precision, GPU); a per-head `lora_a @ lora_b` is off by 8.6e-2 on the output projection | `test_lora_merge.py`; `test_openpi_integration.py::test_merged_weight_matches_openpi_lora_einsum` |
 | `lora_to_pytorch` | merged weights in a non-LoRA JAX model vs the LoRA JAX model, same observations and noise | joints 2.2e-3 rad median, 3.5e-3 max; all 160 gripper values equal | — (needs a LoRA checkpoint) |
 | `lora_to_pytorch` + `policy_parity` | converted PyTorch model vs JAX, 16 frames, same observations and noise | joints 2.8e-3 rad median, 8.7e-3 max; all 160 gripper values equal | — (needs a LoRA checkpoint) |
@@ -483,6 +485,69 @@ python -m vla_libero.evaluate --policy websocket --ports 8000 8001 --report <ckp
 ```
 
 Each server answers one request before `evaluate` starts (ISSUE-012).
+
+## UR3 optical bench
+
+Measured 2026-10-18 (data stages, training) and 2026-10-19 (open-loop evaluation) on
+`LGG100/optical-bench-lerobot-cleaned`: dual-arm UR3, 14 dims, 15 Hz, 40 episodes, 9588 frames (176–388 per
+episode), three AV1 cameras at 240 × 320, task "pull the metal rod out of the post holder and place it in
+the white box". The left arm and its gripper never move (gripper open in 11 recordings, closed in 29); the
+right arm closes and opens once per episode.
+
+**Data stages.** The videos were decoded once into parquet-embedded PNG (`dataset_writer` refuses row
+changes on video datasets; every stored image read back equal to its decoded frame). S0–S7 with the current
+tools: 12 joint jumps kept as real fast turns, every still frame kept, 45 padding frames per episode,
+keyframes grasp / pre-grasp stop / lift / release with 35 consistency flags accepted, holdout
+[8, 15, 24, 27]. Labels `curvature` span 30, event density 2, H 10, anchor state, chord 0.1389 rad; train 36
+episodes / 10191 rows (1620 padding), eval 40. Label replay at rate 1, e = 8: path deviation median / p90 /
+max 0.0003 / 0.0032 / 0.092 rad, switch-pose error max 0.116 rad, no missed switch. Rate ceiling with the UR3
+limits at L = 0.1 s asynchronous (90% of 37 episodes): uniform 0.89×, velocity timing 4.50× without holds,
+3.80× with 0.533 / 0.667 s holds.
+
+**Training.** `examples/ur3_optical_bench`: pi0.5 from `pi05_base`, SigLIP and Gemma 2B frozen (430M
+trainable, 2923M frozen), no state input, joints and the left gripper as deltas, right gripper absolute,
+quantile norm stats with dims 0–6 floored to a 0.05 range (`norm_floor`), batch 32 over two L40S
+(`NCCL_P2P_DISABLE=1`), 10k steps in 5 h 01 min (1.7 s per step). Loss 0.2236 / 0.1293 / 0.0159 / 0.0061 /
+0.0039 at steps 0 / 100 / 1000 / 5000 / 9900.
+
+**Open loop.** `replay_eval` against `run.py serve` (rate 1) on the eval dataset, e = 8; worst arm joint in
+rad, pooled median / p90 over real rows; one frame of motion 0.017 rad:
+
+| | Held-out 8, 15, 24, 27 | Training 0, 10, 20, 30 |
+|---|---|---|
+| points vs label | 0.340 / 0.967 | 0.120 / 0.333 |
+| head (first 8 targets) | 0.159 / 0.414 | 0.112 / 0.306 |
+| stitched | 0.077 / 0.285 | 0.057 / 0.214 |
+| hold (padding rows) | 0.005 / 0.125 | 0.004 / 0.007 |
+| static (left arm), max | 1.2e-3 | 7.4e-4 |
+| close shift, frames | +8, +5, +5, +5 | +2, +1, +7, +3 |
+| open shift, frames | −1, −2, −4; 1 missed | −2, −8; 2 missed |
+| round trip, median | 98 ms | 101 ms |
+
+Stitched / points median by phase: held-out approach 0.071 / 0.215, carry (grasp to release)
+0.081 / 0.457; training approach 0.064 / 0.113, carry 0.052 / 0.131. The first request to a server takes
+15 s (compilation). Missed opens: ISSUE-014 (scoring), ISSUE-015 (model).
+
+**Serving outside the harness.** A self-contained serving config (upstream openpi plus `arc_interp.py`,
+published with the checkpoint) against `vla_openpi.launch.serving_config`, one loaded model, 6 recorded
+frames, identical noise: per-frame targets (30, 14) float32, points (10, 14) and point frames identical
+(maximum difference 0). Built in two separate processes, the two differ by up to 2.9e-3 rad; each
+configuration repeats its own outputs exactly across processes.
+
+**Commands**, from the project root (training and serving from the openpi root with
+`examples/ur3_optical_bench` on `PYTHONPATH`):
+
+```bash
+python -m vla_tools.build_labels --dataset data/<src>-timed --spec runs/<task>/robot_spec.json --keyframes runs/<task>/keyframes.json \
+    --config runs/<task>/label_config_curvature_s30_d2.json --exclude 8 15 24 27 --out data/<src>-curvature-s30-d2-train
+python examples/ur3_optical_bench/run.py norm-stats --name <config> --data-root <data> --repo-id <dataset>-train
+python -m vla_tools.norm_floor --stats <norm_stats.json> --key actions --dims 0 1 2 3 4 5 6 --min-range 0.05 --out <floored.json>
+NCCL_P2P_DISABLE=1 python examples/ur3_optical_bench/run.py train --name <config> --data-root <data> --repo-id <dataset>-train --exp-name run
+python examples/ur3_optical_bench/run.py serve --name <config> --data-root <data> --repo-id <dataset>-train \
+    --checkpoint checkpoints/<config>/run/9999 --port 8100 --rate 1
+python -m vla_tools.replay_eval --dataset data/<src>-curvature-s30-d2-eval --spec runs/<task>/robot_spec.json \
+    --replay-spec runs/<task>/replay_spec.json --episodes 8 15 24 27 --execute 8 --port 8100 --out runs/<task>/replay_eval_holdout.json
+```
 
 ## integrations/openpi
 

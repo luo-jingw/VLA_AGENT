@@ -489,3 +489,110 @@ Answering one request per port before the pool starts removes the failures.
 evaluation against freshly started servers and count failed handshakes.
 
 ## Resolution
+
+# ISSUE-013
+
+Status: Resolved
+
+Area: `vla_tools.replay_eval`
+
+## Observation
+
+`python -m vla_tools.replay_eval` fails at import: `from vla_tools.label_replay import matched_shifts` names
+a function that no longer exists (removed when the label replay was rewritten in f51ab7c). No test imports
+`replay_eval`, which needs a served policy to run end to end.
+
+## Impact
+
+Open-loop evaluation of a served policy on held-out episodes is unavailable.
+
+## Evidence
+
+ImportError in the simulator environment (openpi-client installed), 2026-10-18.
+
+## Hypotheses
+
+Computing the edge shifts inside `replay_eval` with `arc_core.command_edges` restores it.
+
+## Next Experiment
+
+`replay_eval.edge_shifts` with tests on constructed command sequences, and an import test.
+
+## Resolution
+
+`replay_eval.edge_shifts` matches each recorded command edge to the nearest stitched switch of the same
+direction within half the distance to the neighbouring edges of its dim (`arc_core.command_edges`); 4 tests
+in `tests/test_replay_eval.py`. End to end on the UR3 optical bench checkpoint (8 episodes, 2393 requests,
+e = 8): every column computed, results in `docs/validation.md` → UR3 optical bench.
+
+# ISSUE-014
+
+Status: Open
+
+Area: `vla_tools.replay_eval` edge scoring near the end of a recording
+
+## Observation
+
+`edge_shifts` is computed on real rows only. The UR3 optical bench recordings end 2–3 frames after the open
+command, so a stitched open 3 or more frames late falls on padding rows and is counted as missed. In the
+optical bench evaluation, episode 30 was scored as never opening; a second run that included the padding
+rows opened 4 frames after the recorded edge, inside the padding.
+
+## Impact
+
+`edges_missed` mixes a late switch at the end of a recording with a switch that never happens. On the optical
+bench the two cannot be told apart from the result file.
+
+## Evidence
+
+`FTpi05/runs/optical_bench/replay_eval_{holdout,train}.json`; scratch rerun over the full episodes
+(stitched every 8 frames including padding rows): episode 30 recorded open 235, first padding row 237,
+stitched open 239; episode 8 no open through its 45 padding rows.
+
+## Hypotheses
+
+Scoring edges on the whole stitched trajectory, padding rows included, separates late switches from missing
+ones without changing any other shift.
+
+## Next Experiment
+
+Score `edge_shifts` on the stitched trajectory including padding rows, with the window after the last edge
+running to the end of the episode; compare the optical bench results with the current ones.
+
+## Resolution
+
+# ISSUE-015
+
+Status: Open
+
+Area: UR3 optical bench policy (`pi05_ur3_optical_bench_curvature_s30_d2`), gripper timing
+
+## Observation
+
+Open loop at e = 8, rate 1, the stitched close comes a median 5 frames after the recorded close on the
+held-out episodes (+8, +5, +5, +5) and +1 to +7 on training episodes. Held-out episode 8 never opens the
+gripper, in two runs, through the 45 padding rows; its arm keeps moving there (hold median 0.10 rad).
+
+## Impact
+
+On the robot a 5-frame late close (0.33 s) grasps after the recorded pre-grasp pause; a missing open leaves
+the rod in the gripper.
+
+## Evidence
+
+`FTpi05/runs/optical_bench/replay_eval_holdout.json`, `replay_eval_train.json`; label replay of the same
+labels at e = 8: no missed switch, switch-pose error max 0.116 rad.
+
+## Hypotheses
+
+- The model receives no state, so whether the gripper has closed is visible only in the wrist image; a
+  close predicted from the images can trail the recorded command.
+- Episode 8's box placement is far from the training episodes' in the diversity space, so its release
+  pose is not predicted.
+
+## Next Experiment
+
+Distance of episode 8 to its nearest training episodes in `diversity.json`; edge shifts over several runs
+per episode (fresh noise each request) to separate the model's bias from sampling spread.
+
+## Resolution

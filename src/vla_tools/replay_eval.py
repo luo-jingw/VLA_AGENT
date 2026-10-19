@@ -34,6 +34,7 @@ import argparse
 import dataclasses
 import json
 import time
+from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
@@ -41,11 +42,11 @@ import pandas as pd
 import pyarrow.parquet as pq
 from openpi_client import websocket_client_policy
 
+from vla_tools import arc_core
 from vla_tools.episodes import FrameReader
 from vla_tools.episodes import episode_paths
 from vla_tools.episodes import load_episode
 from vla_tools.episodes import tasks
-from vla_tools.label_replay import matched_shifts
 from vla_tools.robot_spec import RobotSpec
 
 
@@ -75,7 +76,7 @@ class EpisodeResult:
     head_err: list[float]
     stitched_err: list[float]  # rad, per real frame
     hold_err: list[float]  # rad, per padding frame
-    edge_shifts: list[float]
+    edge_shifts: list[int]  # frames, stitched switch minus recorded edge
     edges_missed: int
     static_move: float
     latency_ms: list[float]
@@ -136,7 +137,7 @@ def evaluate_episode(
     )[:n]
     real = ~padding[: len(stitched)]
     errors = np.abs(stitched[:, joints] - e.actions[: len(stitched), joints]).max(axis=1)
-    shifts, missed = matched_shifts(stitched[real], e.actions[: len(stitched)][real], spec.command_dims)
+    shifts, missed = edge_shifts(stitched[real], e.actions[: len(stitched)][real], spec.command_dims)
     return EpisodeResult(
         episode=episode,
         frames=n,
@@ -149,6 +150,25 @@ def evaluate_episode(
         static_move=static_move,
         latency_ms=latency,
     )
+
+
+def edge_shifts(stitched: np.ndarray, recorded: np.ndarray, command_dims: Sequence[int]) -> tuple[list[int], int]:
+    """Signed frame shift of each recorded command edge to the nearest stitched switch of the same direction
+    within half the distance to the neighbouring recorded edges of its dim, and the count with none there."""
+    shifts, missed = [], 0
+    for dim in command_dims:
+        switches = arc_core.command_edges(stitched, dim)
+        edges = arc_core.command_edges(recorded, dim)
+        for k, edge in enumerate(edges):
+            low = (edges[k - 1] + edge) / 2 if k > 0 else 0
+            high = (edge + edges[k + 1]) / 2 if k + 1 < len(edges) else len(stitched)
+            rising = recorded[edge, dim] > 0.5
+            same = [s for s in switches if low <= s <= high and (stitched[s, dim] > 0.5) == rising]
+            if same:
+                shifts.append(min(same, key=lambda s: abs(s - edge)) - edge)
+            else:
+                missed += 1
+    return shifts, missed
 
 
 def _has_column(path: Path, column: str) -> bool:
