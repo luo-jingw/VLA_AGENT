@@ -436,6 +436,15 @@ At this data and training budget the resampled labels buy speed (S at cap 8: 3.6
 `sim/label_replay/`. No initial state fails in all 15 conditions with holds; per-state success counts of S
 and F correlate at 0.33.
 
+The trial records hold the phase and the object's highest lift, not the cause. Every failed trial runs to
+the 280-frame budget. In 13 of the 16 conditions more than half of the not-lifted trials raised the object
+0.5–2 cm (S at rate 1: 17 of 22), so the gripper reached it. Under 0.5 cm: 9 of 42 without holds; 5, 8 and
+7 for S at L 0.1 s sync, 0.2 s async and 0.2 s sync; at most 1 in every other condition. Dropped trials had
+lifted it first, a median 0.06–0.21 m per condition. Per-state successes over S's 8 conditions with holds
+(histogram 0–8: 0, 1, 12, 11, 12, 7, 6, 0, 1) are close to what failures independent of the state give
+(0.3, 2.2, 7.1, 12.7, 13.8, 9.4, 3.7, 0.8, 0.1); over F's 5 conditions (0, 2, 5, 7, 22, 14 against
+0, 0.5, 3.6, 12.5, 20.7, 12.6) slightly more concentrated.
+
 ## Hypotheses
 
 - With density 0 no point sits at the gripper switch: an S chunk spans up to 64 frames in 10 points, so the
