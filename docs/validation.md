@@ -529,6 +529,36 @@ Closes on nothing fall from 44% to 38% (e = 5) and from 63% to 48% (full) of S's
 for F. In 44 of S2's 51 full-chunk empty closes the grip site never came within 0.040 m of the object from
 10 frames before to 5 after the close.
 
+**Grasp accuracy open loop and close timing.** A script outside this repository
+(`reports/sim-eval-src/grasp_diagnostic.py`) sends recorded observations, from 16 frames before each
+episode's first recorded close up to the close, to each checkpoint with four seeded noise draws (the same
+for every checkpoint), rebuilds the per-frame targets at rate 1, and compares the target for the recorded
+close frame with the recorded target there through the Panda's kinematics. Episodes held out of training
+3, 5, 12, 21, 34 and training episodes 0, 10, 20, 30, 40; tool-centre-point distance, median (held-out /
+training):
+
+| Lookahead | F | S | S at step 5000 | S2 |
+|---|---|---|---|---|
+| 1–5 frames | 8.0 / 5.8 mm | 9.0 / 7.7 mm | 8.7 / 9.0 mm | 11.0 / 11.8 mm |
+| 6–10 frames | 18.5 / 11.1 mm | 18.4 / 13.1 mm | 24.2 / 16.6 mm | 24.3 / 22.1 mm |
+| 11–16 frames | — | 27.6 / 19.6 mm | 29.3 / 22.7 mm | 34.2 / 25.9 mm |
+
+S's points against its labels, held-out: 16 mm at the first point, 48–69 mm at points 6–9 (F 3 mm at the
+first, 19 mm at the tenth); the mean over noise draws is off by nearly as much (14 and 43–67 mm), the draws
+spread 5–21 mm around it.
+
+The rebuild gives every target the command of the nearest point in time; the observed pose is not a knot
+for commands, so at rate 1 with S's spacing (6.4 frames) targets 1–9 carry point 1's command. Built from the
+labels themselves, observation by observation, the first target commands the close 4 frames before the
+recorded close for S (p10 / p90 3 / 6; the recorded tool centre point is then 22 mm from where the
+recording closes, p90 36 mm), 1 frame for S2 (4 mm) and on the recorded frame for F. Closed loop at rate 1
+(traces of the whole-chunk grid): at e = 5 every first close of S and S2 is the first target of a chunk, the
+grip site 49 mm (S) and 45 mm (S2) from the object at first closes that close on nothing against 34 and
+32 mm at first closes that lift it, while F's first closes come a median 2–4 targets into the chunk, 23 mm
+from the object when they lift it. With whole chunks S's first
+close comes a median 41 frames after the observation that produced it (S2 54), taken when the grip site was
+0.32 m from the object.
+
 training and serving from the openpi root with `examples/libero_object` on `PYTHONPATH`):
 
 ```bash

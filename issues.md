@@ -450,10 +450,12 @@ chunks): executing every target of each chunk (5–6 inferences per S trial) S s
 26 at cap 4, F 39 and 43; the labels executed the same way succeed 46 and 46 (S), 48 and 46 (F). Most of S's
 failures are still not lifted (25 and 21).
 
-Closes are mostly in the wrong place, not at the wrong time (`sim/sync_full/trace/`, rate 1): 63% of S's
-full-chunk closes (72 of 115) and 44% at e = 5 close the fingers on nothing, at a median 0.060 / 0.068 m from
-the object's centre against 0.029 / 0.036 m for closes that lift it. In 54 of the 72 the grip site never
-came within 0.042 m of the object from 10 frames before to 5 after the close; in 5 it did at another frame.
+Most of S's closes shut on nothing (`sim/sync_full/trace/`, rate 1): 63% of S's full-chunk closes (72 of
+115) and 44% at e = 5, at a median 0.060 / 0.068 m from the object's centre against 0.029 / 0.036 m for
+closes that lift it. In 54 of the 72 the grip site did not come within 0.042 m of the object from 10 frames
+before to 5 after the close. Over the 10 frames after an empty first close the grip site still closes in on
+the object horizontally by a median 8 mm (whole chunks) and 3 mm (e = 5) and rises 4–5 mm; the fingers
+close within about 4 frames, before it arrives.
 After a missed close the next chunk opens and approaches again (median 3 closes per failed full-chunk
 trial). F closes on nothing in 10–13% of its closes; its closes that lift sit at 0.021–0.024 m.
 
@@ -463,18 +465,34 @@ succeeds 12, 26, 30, 28 of 50 in the four whole-chunk cells against S's 17, 22, 
 43. Its closes on nothing fall to 38% (e = 5) and 48% (full) of its closes, from 44% and 63%, at a median
 0.050–0.053 m from the object.
 
+The close is commanded early, not the arm misplaced (docs/validation.md → LIBERO simulator, Grasp accuracy
+open loop and close timing): open loop on recorded observations S places the target for the recorded close
+frame as accurately as F at the same lookahead (1–5 frames: 9.0 against 8.0 mm held-out, 7.7 against
+5.8 mm training). The rebuild gives the first targets point 1's command (6.4 frames ahead at rate 1), so a
+close in point 1 is executed at the next frame: S's own labels, rebuilt this way, close 4 frames early,
+22 mm before the recorded grasp pose; S2's 1 frame early, 4 mm. Closed loop at e = 5 every first close of S
+and S2 is a chunk's first target, at 45–49 mm from the object when it misses against 32–34 mm when it lifts
+(F 23 mm). With whole chunks the close is planned 41–54 frames ahead, from 0.32 m away, where S's points are
+off by 48–69 mm.
+
 ## Hypotheses
 
-- S's points place the grasp pose a few centimetres off. Its targets are deltas over up to 64 frames
-  (action q99 up to 1.27 rad against 0.25 for F), so the same normalized error is a larger joint error.
+- Executing a close only when the rebuilt targets reach the switch time (the commanded gripper as a knot at
+  time 0, switching between the last point with the old command and the first with the new) removes the
+  anticipation the nearest-point rule adds; S2's labels then close on time, S's 4 frames early.
+- S2's model flips point 1 to closed while the grip site is still about 13 mm farther from the object than
+  at lifting closes; a switch time predicted directly (a knot for the command edge) would carry that timing
+  without the 6.4-frame quantization.
 - Retries start from states the demonstrations do not contain (closed fingers above the object): S's later
   closes lift the object in 15 of 65 (full) against 44 of 115 for F.
+- Training budget (batch 32, 10k steps, VLM frozen, no EMA; openpi's pi05_libero: batch 256, 30k steps,
+  full fine-tuning, EMA 0.999) limits every policy: S's held-out error at lookahead 6–10 fell from 24.2 mm at
+  step 5000 to 18.4 mm at 9999.
 
 ## Next Experiment
 
-Open-loop grasp-pose error of the points in end-effector space, S, S2 and F, on held-out recordings; a span
-32 policy with event density 2 (deltas about half of span 64) against S2; repeated closed-loop runs of each
-cell to resolve differences of a few successes.
+Closed loop of S and S2 with the switch-time command rule (server side, no retraining) in the whole-chunk
+cells; the labels open loop with the same rule.
 
 ## Resolution
 
