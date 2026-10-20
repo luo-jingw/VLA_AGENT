@@ -501,10 +501,15 @@ leading the fingers onto the object.
   full fine-tuning, EMA 0.999) limits every policy: S's held-out error at lookahead 6–10 fell from 24.2 mm at
   step 5000 to 18.4 mm at 9999.
 
+Span 32 with event density 1 and per-point action statistics close the gap under velocity timing
+(docs/validation.md → LIBERO simulator, Span 32, event density 1, per-point statistics): S3b 42, 41, 39 of 50 at
+cap 4 (F 42) in 64–78 frames (F 108), 43 at cap 8 in 47 frames; S3a, the same labels with pooled statistics,
+33, 34, 33 at cap 4. Point 1 against its label: S3a 11 mm, S3b 10 mm held-out (S 16 mm).
+
 ## Next Experiment
 
-S2 trained with normalization statistics per point index (each of the 10 points its own q01 / q99) against
-S2: open-loop point-1 error and the horizontal offset at the first close.
+F at caps 2, 8, 16 and at L = 0.1 s async with the same execution length, for a matched comparison; repeated
+runs of the S3b cells; S3b at L = 0.1 s, where it drops to 37 (cap 4) and 32 (cap 8).
 
 ## Resolution
 
@@ -683,5 +688,41 @@ between 0.2 and 0.8 in 24 of 2405 and 5 of 1029 inferences) and switch more than
 
 Per reopen, the finger opening at the observation that produced the opening chunk; the same count for a
 policy given the commanded gripper as state input.
+
+## Resolution
+
+# ISSUE-017
+
+Status: Open
+
+Area: LIBERO joint-space data and the simulator's joint controller (state semantics)
+
+## Observation
+
+The converted LIBERO data define action[t] = joints[t + 1], so state[t + 1] = action[t] exactly. Closed loop at
+kp 400 the arm covers about half of a commanded step in one frame, and every chunk is anchored on that lagging
+state. Replanning every frame at rate 1, F succeeds 0 of 50 (S 3, S2 6, S3b 22); its labels open loop 48.
+
+## Impact
+
+Closed-loop results depend on the execution length through this lag, not only through the policy: more
+frequent replanning slows the arm.
+
+## Evidence
+
+docs/validation.md → LIBERO simulator, Replanning more often. With the commanded joints and command as the
+observation state, rate 1: F e 1 0 → 14, S e 5 14 → 22, S2 12.6 → 22, S3b 27 → 35; at velocity cap 4 every
+policy falls to 0–2 of 50, where the commanded pose runs well ahead of the arm the images show.
+
+## Hypotheses
+
+- A controller that reaches each target within the frame (higher kp) or labels built from the commands a
+  lagging controller needs would remove the dependence; anchoring on the commanded pose only helps while it
+  stays close to the arm.
+
+## Next Experiment
+
+The same cells at kp 1000 (tracking error 0.016 rad, 1-frame lag on the recordings); state augmentation in
+training (anchor shifted back along the motion by 0–2 frames).
 
 ## Resolution

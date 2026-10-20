@@ -31,6 +31,9 @@ successes, failure phases, close-attempt classes.
   holdout 3 5 12 21 34), trained as S on two L40S. S3b: the same labels with action normalization statistics
   per point index (10 x 8 q01 / q99, mean, std; state per dimension). Both evaluated as S2 was, with both
   state sources.
+- Velocity timing with switch holds (the execution intended for resampled labels): S3a, S3b and F, measured
+  state, e 4, caps 2, 4, 8, 16 at L = 0 and caps 4, 8 at L = 0.1 s async; cap 4 three times; labels open loop
+  of S3 and F in the same cells (`runs/libero_alphabet_soup/sim/velocity/`).
 
 # Structure
 

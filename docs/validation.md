@@ -632,6 +632,37 @@ placed in the world frame by an offset fitted at a 1–2-frame lag (residual med
   whose GPU holds a preallocating JAX policy; the EGL device numbering does not follow nvidia-smi's (device
   0 failed with nvidia-smi GPU 0 idle).
 
+**Replanning more often.** Rate 1 with e = 1, 2, 3 (closed loop / labels): S 3 / 8 / 11 (37 / 41 / 42), S2
+6 / 9 / 9 (43 / 45 / 45), F 0 / 7 / 18 (48 / 48 / 48); velocity cap 4 with holds, e = 1, 2: S 14 / 20, S2
+22 / 17, F 38 / 39. The training data define state[t + 1] = action[t] exactly (0 difference over the recorded
+rows); closed loop the joint controller covers about half of a commanded step per frame (F at e = 1: 0.0098 rad
+commanded per frame, 0.005 rad left at the next observation), and each chunk is anchored on that lagging
+state. With the commanded joints and command as the observation state, at rate 1: S 22 (e 5) / 6 (e 1) / 17
+(full), S2 22 / 9 / 23, F 29 / 14 / 39; at velocity cap 4, e 4, every policy falls to 0–2 of 50.
+
+**Span 32, event density 1, per-point statistics.** S3a: `curvature` span 32, event density 1 (keyframe windows
+at the free part's density, the recorded pace at rate 1), otherwise S's labels and training (two L40S, 10k
+steps; loss 0.0055 at step 9900). S3b: the same labels with action normalization statistics per point index
+(`launch.norm_stats(per_point_actions=True)`; joint 6's q99 − q01 0.22 rad at point 1 to 1.53 rad at point 10
+against 1.23 rad pooled; loss 0.0070 at step 9900). Open loop (held-out / training), point 1 against its label:
+S3a 11 / 9 mm, S3b 10 / 8 mm (S 16 / 12, S2 14 / 12; F's point 3, the same lookahead, 7 / 6 mm). Labels open
+loop, rate 1, e = 1 / 5 / full: 47 / 47 / 49. Closed loop at rate 1, e = 5 / full / e = 1 / e = 5 with the
+commanded state: S3a 9 / 26 / 0 / 22, S3b 27 / 31 / 22 / 35.
+
+Velocity timing with holds, measured state, e = 4 (successes; median completion frames of the successes; the
+recordings take a median 152):
+
+| Cap | S3a | S3b | F | S3 labels |
+|---|---|---|---|---|
+| 2 | 27 (165) | 33 (113) | — | 49 |
+| 4, three runs | 33, 34, 33 (80, 73, 91) | 42, 41, 39 (64, 78, 66) | 42 (108); e 2: 39 (109) | 44 |
+| 8 | 28 (58) | 43 (47) | — | 37 |
+| 16 | 31 (49) | 40 (59) | — | 38 |
+| 4, L = 0.1 s async | 31 (84) | 37 (61) | — | 46 |
+| 8, L = 0.1 s async | 28 (72) | 32 (56) | — | 39 |
+
+At cap 4 S averaged 30 and S2 31.5 of 50 over their runs.
+
 **Data checks** (`label_data_check.py`, outside this repository). For S, S2 and F, the training datasets'
 `action_chunk` rows equal the labels recomputed from the source recordings with each dataset's report (8772
 rows, largest difference 1.2e-7). Through openpi's loader and training transforms, on 300 rows each: the
