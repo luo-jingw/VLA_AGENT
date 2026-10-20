@@ -600,6 +600,38 @@ centre against 10 mm for F's successful closes. Over the whole approach the grip
 S and S2 at e = 5 (0 frames within 3 mm before and after; F 1 and 1). The kinematic tool centre point is
 placed in the world frame by an offset fitted at a 1–2-frame lag (residual median 2.3–4.3 mm).
 
+**Simulator pipeline checks** (scripts outside this repository; same task, kp 400, sync, L = 0).
+
+- Observations (`obs_fidelity.py`): the simulator set to the recording's own state at 170 frames (16 before
+  each first close up to it, episodes 3, 5, 12, 21, 34, 0, 10, 20, 30, 40) renders images that differ from
+  the recorded ones by a mean absolute 4.4 (agentview) and 7.4 (wrist) of 255. The same checkpoint, state
+  and noise on rendered against recorded images: tool-centre-point error of the points against the labels,
+  median, point 1 / 5 / 10 — S 13.9 / 34.7 / 51.2 mm against 13.5 / 28.4 / 48.2 mm, S2 12.6 / 26.2 /
+  61.1 against 12.9 / 24.8 / 52.3, F 2.4 / 9.7 / 15.9 against 2.4 / 9.3 / 16.1.
+- Execution (`recorded_trace.py`, `gripper_trace.py` with measured joints, the grip site at the commanded
+  joints from the simulator's own kinematics, and gripper contacts): the recordings' joint targets succeed
+  48 of 50; at their close the grip site is 7 mm from the commanded one (joint gap 0.022 rad), 14 mm off the
+  object's centre and 12 mm above it.
+- Closed loop at the first close, successful / failed trials:
+
+| Source | Successes | Commanded height above the centre | Actual height | Grip site to commanded | Joint gap | Touching the object in the 10 frames before |
+|---|---|---|---|---|---|---|
+| recordings | 48 | +7 / +25 mm | +12 / +26 mm | 7 / 3 mm | 0.022 / 0.010 rad | 10 / 0 |
+| F, rate 1, e 5 | 33 | +13 / +14 | +16 / +27 | 4 / 13 | 0.021 / 0.023 | 15 / 12 |
+| F, rate 0.5, e 10 | 33 | +11 / +13 | +14 / +22 | 3 / 8 | 0.011 / 0.011 | 15 / 11 |
+| S, rate 1, e 5 | 15 | +18 / +15 | +33 / +40 | 21 / 25 | 0.026 / 0.029 | 12 / 32 |
+| S, rate 0.5, e 10 | 14 | +19 / +13 | +34 / +39 | 10 / 27 | 0.018 / 0.030 | 9 / 34 |
+| S2, rate 1, e 5 | 12 | +16 / +17 | +27 / +34 | 7 / 19 | 0.012 / 0.021 | 8 / 35 |
+| S2, rate 0.5, e 10 | 14 | +15 / +11 | +31 / +26 | 21 / 22 | 0.017 / 0.020 | 14 / 34 |
+
+  In failed trials S's and S2's gripper first touches the object with its grip site 45–48 mm above the
+  object's centre (S at half speed: a median 12 frames before the close, fingers fully open at 80 mm) and
+  stays 19–27 mm from the commanded grip site, at half speed as at full speed. F's grip site meets its command within 3–4 mm in
+  successful trials although half of them touch the object on the way down at the same height.
+- Rendering fails with "Offscreen framebuffer is not complete" when `MUJOCO_EGL_DEVICE_ID` names a device
+  whose GPU holds a preallocating JAX policy; the EGL device numbering does not follow nvidia-smi's (device
+  0 failed with nvidia-smi GPU 0 idle).
+
 **Data checks** (`label_data_check.py`, outside this repository). For S, S2 and F, the training datasets'
 `action_chunk` rows equal the labels recomputed from the source recordings with each dataset's report (8772
 rows, largest difference 1.2e-7). Through openpi's loader and training transforms, on 300 rows each: the

@@ -479,9 +479,14 @@ Neither the command rule, half speed nor settling before the switch changes S's 
 run-to-run spread (docs/validation.md → LIBERO simulator, Command rule, execution speed, settling). The
 training data are the labels the replay executes and openpi encodes them as intended (Data checks). At the
 first close the commanded height is the same as F's, but in failed trials S's and S2's grip site stays
-13–26 mm above it, at half speed too, 21–24 mm horizontally from the object's centre (F 10 mm when it lifts),
-and S2's failures push the object about 20 mm first: the gripper meets the object off centre and cannot
-descend to the commanded pose.
+19–27 mm from the commanded one, in contact with the object (32–35 of 34–36 failed trials touch it before the
+close, first at 45–48 mm above its centre), at half speed as at full speed.
+
+The simulator is not the cause (docs/validation.md → LIBERO simulator, Simulator pipeline checks): rendered
+observations leave each checkpoint's point errors against the labels unchanged near the arm (point 1: S
+13.9 against 13.5 mm, F 2.4 against 2.4 mm); the recordings' own targets are tracked to 7 mm at the close
+and succeed 48 of 50; F's commands are met within 3–4 mm. The failures come from S's and S2's commands
+leading the fingers onto the object.
 
 ## Hypotheses
 
