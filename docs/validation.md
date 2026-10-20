@@ -559,6 +559,54 @@ from the object when they lift it. With whole chunks S's first
 close comes a median 41 frames after the observation that produced it (S2 54), taken when the grip site was
 0.32 m from the object.
 
+**Command rule, execution speed, settling.** Scripts outside this repository: `command_rule.py` replaces the
+rebuild's command assignment at run time (`nearest`, the rebuild's own rule, reproduces it exactly on 200
+random chunks; `midpoint`: the commanded command at time 0 is a knot, a switch to point 1 comes half way;
+`hold`: a switch comes at the point that carries it; `settle`: `nearest` plus 3 frames at the switching pose
+with the old command before every switch); `gripper_trace.py` now also records the commanded joints;
+`close_lag.py` compares the commanded and the actual tool centre point at each first close. Same task, kp
+400, sync, L = 0, 50 trials; half speed with a 560-frame budget (its labels succeed a median 276–325 frames
+in). Successes closed loop (labels open loop); `hold` at e = 5, rate 1 never switches (its first switch
+falls after the next observation) and is left out:
+
+| Policy | Cell | nearest | midpoint | hold | settle |
+|---|---|---|---|---|---|
+| S | rate 1, e 5 | 15 (45) | 14 (50) | — | 13 (44) |
+| S | rate 0.5, e 10 | 19 (38) | — | — | — |
+| S | rate 1, full | 17 (46) | 22 (47) | 22 (42) | 19 (46) |
+| S | velocity cap 4 + holds, e 4 | 26 (44) | 30 (44) | 27 (40) | 32 (44) |
+| S2 | rate 1, e 5 | 12 (45) | 13 (47) | — | 7 (45) |
+| S2 | rate 0.5, e 10 | 13 (42) | — | — | — |
+| S2 | rate 1, full | 31 (45) | 17 (45) | 29 (49) | 25 (48) |
+| S2 | velocity cap 4 + holds, e 4 | 33 (46) | 32 (45) | 32 (47) | 26 (45) |
+| F | rate 1, e 5 | 30 (48) | — | — | 33 |
+| F | rate 0.5, e 10 | 35 (44) | — | — | — |
+
+At the first close (median over failed / successful trials), distance to the object's centre:
+
+| Policy, cell | Commanded tool centre point | Grip site | Grip site to commanded | Commanded height above the centre | Actual height | Object pushed before the close |
+|---|---|---|---|---|---|---|
+| F, rate 1, e 5 | 24 / 19 mm | 38 / 21 mm | 12 / 5 mm | 19 / 14 mm | 34 / 17 mm | 6 / 0 mm |
+| F, rate 0.5, e 10 | 23 / 19 mm | 29 / 20 mm | 9 / 2 mm | 15 / 12 mm | 26 / 13 mm | 15 / 0 mm |
+| S, rate 1, e 5 | 28 / 21 mm | 43 / 36 mm | 24 / 16 mm | 13 / 12 mm | 37 / 29 mm | 6 / 5 mm |
+| S, rate 0.5, e 10 | 27 / 24 mm | 43 / 38 mm | 30 / 11 mm | 11 / 15 mm | 37 / 33 mm | 8 / 3 mm |
+| S2, rate 1, e 5 | 27 / 26 mm | 36 / 42 mm | 16 / 17 mm | 14 / 20 mm | 27 / 37 mm | 20 / 2 mm |
+| S2, rate 0.5, e 10 | 25 / 18 mm | 39 / 26 mm | 19 / 11 mm | 13 / 14 mm | 27 / 18 mm | 22 / 4 mm |
+
+The commanded height at the close is the same for every policy; in failed trials S's and S2's grip site
+stays 13–26 mm above it, at half speed as at full speed, a median 21–24 mm horizontally from the object's
+centre against 10 mm for F's successful closes. Over the whole approach the grip site trails the commanded tool centre point by
+1.2–1.7 frames of commanded motion for every policy. The commanded path does not dwell at the close pose for
+S and S2 at e = 5 (0 frames within 3 mm before and after; F 1 and 1). The kinematic tool centre point is
+placed in the world frame by an offset fitted at a 1–2-frame lag (residual median 2.3–4.3 mm).
+
+**Data checks** (`label_data_check.py`, outside this repository). For S, S2 and F, the training datasets'
+`action_chunk` rows equal the labels recomputed from the source recordings with each dataset's report (8772
+rows, largest difference 1.2e-7). Through openpi's loader and training transforms, on 300 rows each: the
+target's joints are the label's minus the row's `observation.state` (6e-8), its command the label's, the
+loader's state the parquet row's; with the training norm stats the targets fall within −1.25…+1.19 (p0.5 /
+p99.5), commands −1 / +1; the serving outputs give the labels back (6e-8).
+
 training and serving from the openpi root with `examples/libero_object` on `PYTHONPATH`):
 
 ```bash

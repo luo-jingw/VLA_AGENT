@@ -6,94 +6,100 @@ Plan Status: completed
 
 ## Current
 
-- LIBERO alphabet soup (libero_object task 0), two pi0.5 policies trained identically with the VLM frozen:
-  S on `curvature` span 64, event density 0 labels, F on per-frame `time` span 10 labels.
-- Sync whole-chunk grid and close-attempt traces, 2026-10-19 (docs/validation.md → LIBERO simulator): S
-  succeeds 17–33 of 50 against 32–43 for F; executing whole chunks does not close the gap; 44–63% of S's
-  commanded closes shut the fingers on nothing, a median 6–7 cm from the object, against 10–13% for F; the
-  labels open loop succeed 44–48 of 50 in every cell.
-- S's labels have event density 0: the keyframe windows (close, lift, release) get no extra points; with the
-  stop at the object adding no progress to the curvature coordinate, the grasp is covered by one or two of
-  the 10 points (ISSUE-011).
+- `ArcInterpolator` gives every per-frame target the command of the nearest point in time; the observed pose
+  is not a knot for commands. With S's spacing at rate 1 (points 6.4 frames apart) targets 1–9 carry point
+  1's command, so a close predicted for point 1 is executed at the next frame (docs/validation.md → LIBERO
+  simulator, Grasp accuracy open loop and close timing).
+- Rebuilt from the labels, S's (density 0) first target closes 4 frames before the recorded close, 22 mm
+  before the grasp pose; S2's (density 2) 1 frame early, 4 mm. Closed loop at e = 5 every first close of S
+  and S2 is a chunk's first target, 45–49 mm from the object when it misses (ISSUE-011).
+- Open loop S places the grasp as accurately as F at the same lookahead.
 
 ## Problem
 
-Whether denser points in the keyframe windows (event density 2) remove S's missed grasps is not measured.
+Whether a command rule that does not move a predicted switch forward raises S's and S2's success is not
+measured.
 
 ## Goal
 
-- Labels `curvature` span 64, event density 2, everything else as S (H 10, anchor state, chord 0.1224 rad,
-  key and pad weight 1; train excludes episodes 3, 5, 12, 21, 34; eval all 50).
-- Policy S2 trained as S (`pi05_base`, SigLIP and Gemma 2B frozen, batch 32, 10k steps, cosine learning
-  rate 500 warm-up, peak 2.5e-5, end 2.5e-6), on two L40S data parallel.
-- S2 closed loop in the S cells of the whole-chunk grid (rate 1, e 5 and full; velocity cap 4 with holds,
-  e 4 and full), the labels open loop at the same settings, close-attempt classes at rate 1 (e 5, full);
-  compared with S and F of 2026-10-19.
+Closed loop of S and S2 (existing checkpoints) and their labels open loop, sync, L = 0, kp 400, 50 trials,
+in the cells rate 1 e 5, rate 1 whole chunks, velocity cap 4 with holds e 4, under three command rules:
+
+- `nearest`: the nearest point in time (current rule);
+- `midpoint`: the nearest knot with the commanded gripper as a knot at time 0 (a switch between the observed
+  command and point 1 happens half way to point 1);
+- `hold`: the last knot at or before the target's time, the commanded gripper at time 0 (a switch happens at
+  the first point that carries it).
+
+Per cell successes, failure phases and close-attempt classes.
+
+Whether the arm lags the plan at the close: commanded joints recorded per frame; at each first close the
+commanded and the actual tool-centre-point distance to the object. Two remedies that need no training:
+half speed (rate 0.5, 10 targets per chunk, budget 560 frames), and `settle`, the nearest point's command
+with the switching target held 3 frames with the old command before every switch.
 
 # Structure
 
 ## Modules
 
-- Data stages, existing tools: `vla_tools.build_labels`; `FTpi05/reports/sim-eval-src/parquet_features_compat.py`
-  (ISSUE-009).
-- Training and serving: `examples/libero_object/run.py`, unchanged.
-- Simulator evaluation: `vla_libero.evaluate`, `vla_libero.replay`, unchanged; drivers and the close-attempt
-  scripts in `FTpi05/reports/sim-eval-src/`.
+- The rule under test replaces `vla_tools.arc_interp._timed` at run time from a script outside the
+  repository (`FTpi05/reports/sim-eval-src/command_rule.py`, selected by the environment variable
+  `COMMAND_RULE`); the repository is not changed.
+- Closed loop: `reports/sim-eval-src/gripper_trace.py` (successes, phases and per-frame traces); labels open
+  loop: `vla_libero.replay --source labels` through a launcher that applies the rule.
 
 ## Responsibilities
 
-`build_labels` writes the label datasets; `run.py` computes norm stats, trains and serves; the drivers run the
-grid cells and classify close attempts.
+`command_rule.py` owns the three rules; the launcher applies the rule in the main process and in every
+spawned worker; `gripper_attempts.py` classes the closes.
 
 ## State Ownership
 
-- Label config: `runs/libero_alphabet_soup/label_config_curvature_s64_d2.json`.
-- Datasets: `data/libero-alphabet-soup-curvature-s64-d2-{train,eval}`.
-- Norm stats: `openpi/assets/pi05_libero_alphabet_soup_curvature_s64_d2/<repo_id>/norm_stats.json`.
-- Checkpoint: `openpi/checkpoints/pi05_libero_alphabet_soup_curvature_s64_d2/run/`.
-- Results: `runs/libero_alphabet_soup/sim/s64_d2/`.
+Results: `runs/libero_alphabet_soup/sim/command_rule/`.
 
 # Interface
 
 ## Interfaces
 
-None changed.
+`command_rule.timed(points, current, times, command_dims, timing, rule) -> (targets, chunk_times)`, the
+signature of `arc_interp._timed` plus the rule; `COMMAND_RULE` in {nearest, midpoint, hold}.
 
 ## Inputs
 
-`data/libero-alphabet-soup-timed`, `runs/libero_alphabet_soup/{robot_spec,keyframes}.json`, `pi05_base`.
+Checkpoints `pi05_libero_alphabet_soup_curvature_s64_{d0,d2}/run/9999`; label configs and datasets of S and S2.
 
 ## Outputs
 
-The datasets, norm stats, checkpoint and results above; `runs/libero_alphabet_soup/train/*.log`.
+Trace and label replay files per rule, policy and cell.
 
 ## State Changes
 
-None beyond the outputs.
+None.
 
 # Flow
 
 ## Main Flow
 
-1. Label config → `build_labels` train and eval → features block rewrite → `run.py norm-stats`.
-2. `vla_libero.replay --source labels` for the 4 cells.
-3. `run.py train` once two GPUs are free (`NCCL_P2P_DISABLE=1`, `PYTHONUNBUFFERED=1`, `WANDB_MODE=offline`).
-4. Two `run.py serve-points` servers, one warm-up request each → `run_closed_loop.py` for the 4 cells →
-   `gripper_trace.py` at rate 1, e 5 and full → `gripper_attempts.py`.
+1. Unit check of the rules on constructed points: `nearest` reproduces `arc_interp._timed` exactly; the
+   first closed target under each rule for a close at point 1, 2 and between.
+2. Two servers per policy (S on one GPU, S2 on another), one warm-up request each.
+3. Per rule and cell: `gripper_trace.py` for S and S2; labels open loop for both label sets.
+4. Table of successes and close-attempt classes; results in `docs/validation.md`, ISSUE-011.
 
 # Code Mapping
 
 ## Modules
 
-No repository code changes; results in `docs/validation.md` and `issues.md`.
+`FTpi05/reports/sim-eval-src/command_rule.py`, `replay_with_command_rule.py` (launcher for the labels open loop); `gripper_trace.py`
+reads `COMMAND_RULE`.
 
 ## Interfaces
 
-None.
+`command_rule.timed`, `command_rule.apply`.
 
 ## State
 
-As in State Ownership.
+`runs/libero_alphabet_soup/sim/command_rule/`.
 
 # Implementation
 
@@ -105,19 +111,19 @@ Round: 1
 
 ### Goal
 
-S2 label datasets, norm stats, labels open loop in the simulator.
+The rules, unit-checked.
 
 ### Files
 
-Outside the repository: label config, datasets, norm stats, `runs/libero_alphabet_soup/sim/s64_d2/label_replay/`.
+Outside the repository: `reports/sim-eval-src/command_rule.py`, `replay_with_command_rule.py`, `gripper_trace.py`.
 
 ### Structures
 
-None.
+`timed`, `apply`.
 
 ### Affected Modules
 
-Data stages.
+None in the repository.
 
 ### Dependencies
 
@@ -125,14 +131,13 @@ None.
 
 ### Observation
 
-Episodes and frames, points inside keyframe windows and padded points against S, `action_chunk` shape;
-action q01 / q99 against S; labels open-loop successes per cell.
+`nearest` against `arc_interp._timed` on random chunks (maximum difference); first closed target per rule
+on constructed chunks.
 
-Result: train 45 episodes / 8772 frames, eval 50; reach median 51.5 frames (S 64.0), points inside keyframe
-windows 24.9% (S 16.1%), padded points 34.6% (S 38.5%); `action_chunk` (80,). After the features block
-rewrite `datasets` 3.6 and 5.1 load the same values. Action q01 / q99 of the 7 joints −0.19…−0.73 /
-+0.33…+1.20 (S −0.18…−0.77 / +0.35…+1.27). Labels open loop, kp 400: rate 1 e 5 45, full 45; velocity cap 4
-e 4 46, full 48 (S's labels 45, 46, 44, 46); at rate 1 the first success comes a median 163 frames in (S 143).
+Result: `nearest` equals `arc_interp._timed` on 200 random chunks with and without velocity timing (maximum
+difference 0). With S's spacing (6.4 frames) a close at point 1 gives the first closed target at frame 1
+(`nearest`), 4 (`midpoint`), 7 (`hold`); at point 2: 10, 10, 13. The rule is in effect in spawned workers
+and through `ArcInterpolator`.
 
 ## Phase 2
 
@@ -142,48 +147,11 @@ Round: 2
 
 ### Goal
 
-Trained S2 checkpoint.
+Grid results; results recorded.
 
 ### Files
 
-Outside the repository: checkpoint, `runs/libero_alphabet_soup/train/pi05_libero_alphabet_soup_curvature_s64_d2.log`.
-
-### Structures
-
-None.
-
-### Affected Modules
-
-None (training run).
-
-### Dependencies
-
-Phase 1; two free GPUs.
-
-### Observation
-
-Seconds per step, loss at steps 0, 1000, 5000, 9900; `arc_resample.json` in the final checkpoint's assets.
-
-Run: GPUs 2 and 3, started 2026-10-19 14:06 PDT (`NCCL_P2P_DISABLE=1`), 1.7 s per step, 41.6 GB held per
-GPU.
-
-Result: 10k steps finished 19:00 PDT (4 h 52 min); loss 0.1458 / 0.0203 / 0.0096 / 0.0062 at steps 0 / 1000
-/ 5000 / 9900. Checkpoints 5000 and 9999; `arc_resample.json` copied into `9999/assets/` (byte-identical to
-the dataset's), norm stats identical to the computed ones.
-
-## Phase 3
-
-Phase Status: completed
-
-Round: 3
-
-### Goal
-
-S2 closed loop and close-attempt classes; results recorded.
-
-### Files
-
-Outside the repository `runs/libero_alphabet_soup/sim/s64_d2/`; `docs/validation.md`, `issues.md`.
+Outside the repository `runs/libero_alphabet_soup/sim/command_rule/`; `docs/validation.md`, `issues.md`.
 
 ### Structures
 
@@ -195,14 +163,16 @@ Knowledge.
 
 ### Dependencies
 
-Phase 2.
+Phase 1; two free GPUs.
 
 ### Observation
 
-Per cell successes, failure phases, completion frames; per close-attempt class counts and distances, against
-S and F.
+Per rule, policy and cell: successes, phases, close-attempt classes and distances; labels open-loop
+successes.
 
-Result: four servers on GPUs 2 and 3, first request 23–26 s. S2 succeeds 12, 26, 30, 28 of 50 (rate 1 e 5,
-full; velocity cap 4 e 4, full) against S's 17, 22, 33, 26 and F's 32, 39, 42, 43. Closes on nothing 38% and
-48% of S2's closes (rate 1 e 5, full) against 44% and 63% for S and 10–13% for F. Recorded in
-docs/validation.md → LIBERO simulator, Event density 2; ISSUE-011 updated.
+Result: no rule, half speed or settling raises S's or S2's successes beyond run-to-run spread (S 13–32,
+S2 7–33, F 30–35 of 50 across the cells; labels 38–50). At the first close the commanded height equals F's,
+while S's and S2's grip site stays 13–26 mm above it in failed trials, 21–24 mm off the object's centre
+horizontally. The training data check out (stored labels equal recomputed ones; openpi's targets are label
+minus state, normalized within −1.25…+1.19). Recorded in docs/validation.md → LIBERO simulator (Command rule,
+execution speed, settling; Data checks); ISSUE-011 updated.

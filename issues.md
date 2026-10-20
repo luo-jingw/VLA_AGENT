@@ -475,14 +475,21 @@ and S2 is a chunk's first target, at 45–49 mm from the object when it misses a
 (F 23 mm). With whole chunks the close is planned 41–54 frames ahead, from 0.32 m away, where S's points are
 off by 48–69 mm.
 
+Neither the command rule, half speed nor settling before the switch changes S's or S2's successes beyond
+run-to-run spread (docs/validation.md → LIBERO simulator, Command rule, execution speed, settling). The
+training data are the labels the replay executes and openpi encodes them as intended (Data checks). At the
+first close the commanded height is the same as F's, but in failed trials S's and S2's grip site stays
+13–26 mm above it, at half speed too, 21–24 mm horizontally from the object's centre (F 10 mm when it lifts),
+and S2's failures push the object about 20 mm first: the gripper meets the object off centre and cannot
+descend to the commanded pose.
+
 ## Hypotheses
 
-- Executing a close only when the rebuilt targets reach the switch time (the commanded gripper as a knot at
-  time 0, switching between the last point with the old command and the first with the new) removes the
-  anticipation the nearest-point rule adds; S2's labels then close on time, S's 4 frames early.
-- S2's model flips point 1 to closed while the grip site is still about 13 mm farther from the object than
-  at lifting closes; a switch time predicted directly (a knot for the command edge) would carry that timing
-  without the 6.4-frame quantization.
+- Between observations S's targets head for point 1, 6.4 frames ahead, which open loop sits 16 mm from its
+  label (14 mm of it the mean over noise draws) against 3 mm for F's point 1; the gripper arrives about
+  2 cm off centre. Quantile normalization pools the 10 points of a dimension, so its range is set by
+  64-frame deltas (q99 up to 1.27 rad against 0.25 for F): in normalized units S2's point 1 is off by 0.095,
+  less than F's point 3 (0.142), in radians twice as much (0.059 against 0.030).
 - Retries start from states the demonstrations do not contain (closed fingers above the object): S's later
   closes lift the object in 15 of 65 (full) against 44 of 115 for F.
 - Training budget (batch 32, 10k steps, VLM frozen, no EMA; openpi's pi05_libero: batch 256, 30k steps,
@@ -491,8 +498,8 @@ off by 48–69 mm.
 
 ## Next Experiment
 
-Closed loop of S and S2 with the switch-time command rule (server side, no retraining) in the whole-chunk
-cells; the labels open loop with the same rule.
+S2 trained with normalization statistics per point index (each of the 10 points its own q01 / q99) against
+S2: open-loop point-1 error and the horizontal offset at the first close.
 
 ## Resolution
 
