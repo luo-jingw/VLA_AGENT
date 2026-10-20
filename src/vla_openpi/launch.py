@@ -20,21 +20,32 @@ from openpi.shared import normalize
 from openpi.training import config as _config
 
 from vla_openpi.arc_transforms import ArcOutputs
+from vla_openpi.per_point_stats import per_point
 from vla_tools.arc_interp import ArcInterpolator
 
 
-def norm_stats(config: _config.TrainConfig, max_frames: int | None = None) -> Path:
-    """openpi's compute_norm_stats.main for a config object. Returns the directory written."""
+def norm_stats(config: _config.TrainConfig, max_frames: int | None = None, per_point_actions: bool = False) -> Path:
+    """openpi's compute_norm_stats.main for a config object. Returns the directory written.
+
+    `per_point_actions`: the action statistics are kept per point of the chunk, (H, D) arrays, instead of pooled
+    over its H points, (D,); openpi's Normalize and Unnormalize broadcast either shape over the (H, D) actions.
+    """
     data_config = config.data.create(config.assets_dirs, config.model)
     loader, batches = openpi_norm_stats.create_torch_dataloader(
         data_config, config.model.action_horizon, config.batch_size, config.model, config.num_workers, max_frames
     )
     stats = {key: normalize.RunningStats() for key in ("state", "actions")}
+    chunk_shape: tuple[int, ...] = ()
     for batch in tqdm.tqdm(loader, total=batches, desc="norm stats"):
-        for key, running in stats.items():
-            running.update(np.asarray(batch[key]))
+        stats["state"].update(np.asarray(batch["state"]))
+        actions = np.asarray(batch["actions"])
+        chunk_shape = actions.shape[1:]
+        stats["actions"].update(actions.reshape(len(actions), -1) if per_point_actions else actions)
+    result = {key: running.get_statistics() for key, running in stats.items()}
+    if per_point_actions:
+        result["actions"] = per_point(result["actions"], chunk_shape)
     output = config.assets_dirs / data_config.repo_id
-    normalize.save(output, {key: running.get_statistics() for key, running in stats.items()})
+    normalize.save(output, result)
     return output
 
 

@@ -106,3 +106,29 @@ def test_lerobot_loads_the_derived_datasets(chain: ChainRun) -> None:
         assert len(dataset) == dataset.meta.total_frames
         if "action_chunk" in item:
             assert tuple(item["action_chunk"].shape) == (HORIZON * SPEC.action_dim,)
+
+
+def test_per_point_stats_normalize_each_point_and_invert_through_model_padding() -> None:
+    from openpi import transforms as _transforms
+    from openpi.shared import normalize
+
+    from vla_openpi.per_point_stats import per_point
+
+    rng = np.random.default_rng(0)
+    scale = np.linspace(0.1, 2.0, 10)[:, None] * np.ones((1, 8))  # far points move more than near ones
+    chunks = rng.normal(0.0, 1.0, (500, 10, 8)) * scale
+    running = normalize.RunningStats()
+    running.update(chunks.reshape(len(chunks), -1))
+    stats = per_point(running.get_statistics(), (10, 8))
+    assert stats.q01.shape == stats.q99.shape == stats.mean.shape == stats.std.shape == (10, 8)
+    data = {"actions": chunks[0]}
+    normalized = _transforms.Normalize({"actions": stats}, use_quantiles=True)(dict(data))["actions"]
+    spread = np.abs(_transforms.Normalize({"actions": stats}, use_quantiles=True)({"actions": chunks})["actions"])
+    near, far = np.percentile(spread[:, 0], 98), np.percentile(spread[:, -1], 98)
+    assert abs(near - far) < 0.2  # each point uses its own range
+    padded = np.concatenate([normalized, rng.normal(size=(10, 24))], axis=-1)  # the model's 32-dim output
+    back = _transforms.Unnormalize({"actions": stats}, use_quantiles=True)({"actions": padded})["actions"]
+    assert np.abs(back[:, :8] - chunks[0]).max() < 1e-9
+    assert np.array_equal(back[:, 8:], padded[:, 8:])
+    loaded = normalize.deserialize_json(normalize.serialize_json({"actions": stats}))["actions"]
+    assert np.asarray(loaded.q99).shape == (10, 8)
