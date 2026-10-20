@@ -1,6 +1,6 @@
 # Plan
 
-Plan Status: approved
+Plan Status: completed
 
 # Problem
 
@@ -136,7 +136,7 @@ e 4 46, full 48 (S's labels 45, 46, 44, 46); at rate 1 the first success comes a
 
 ## Phase 2
 
-Phase Status: active
+Phase Status: completed
 
 Round: 2
 
@@ -165,11 +165,15 @@ Phase 1; two free GPUs.
 Seconds per step, loss at steps 0, 1000, 5000, 9900; `arc_resample.json` in the final checkpoint's assets.
 
 Run: GPUs 2 and 3, started 2026-10-19 14:06 PDT (`NCCL_P2P_DISABLE=1`), 1.7 s per step, 41.6 GB held per
-GPU; loss 0.1458 at step 0, 0.1054 at 100.
+GPU.
+
+Result: 10k steps finished 19:00 PDT (4 h 52 min); loss 0.1458 / 0.0203 / 0.0096 / 0.0062 at steps 0 / 1000
+/ 5000 / 9900. Checkpoints 5000 and 9999; `arc_resample.json` copied into `9999/assets/` (byte-identical to
+the dataset's), norm stats identical to the computed ones.
 
 ## Phase 3
 
-Phase Status: pending
+Phase Status: completed
 
 Round: 3
 
@@ -197,3 +201,8 @@ Phase 2.
 
 Per cell successes, failure phases, completion frames; per close-attempt class counts and distances, against
 S and F.
+
+Result: four servers on GPUs 2 and 3, first request 23–26 s. S2 succeeds 12, 26, 30, 28 of 50 (rate 1 e 5,
+full; velocity cap 4 e 4, full) against S's 17, 22, 33, 26 and F's 32, 39, 42, 43. Closes on nothing 38% and
+48% of S2's closes (rate 1 e 5, full) against 44% and 63% for S and 10–13% for F. Recorded in
+docs/validation.md → LIBERO simulator, Event density 2; ISSUE-011 updated.

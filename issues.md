@@ -457,20 +457,24 @@ came within 0.042 m of the object from 10 frames before to 5 after the close; in
 After a missed close the next chunk opens and approaches again (median 3 closes per failed full-chunk
 trial). F closes on nothing in 10–13% of its closes; its closes that lift sit at 0.021–0.024 m.
 
+Denser points in the keyframe windows do not close the gap (S2, `sim/s64_d2/`, 2026-10-19;
+docs/validation.md → LIBERO simulator, Event density 2): S2, trained as S on span 64 event density 2 labels,
+succeeds 12, 26, 30, 28 of 50 in the four whole-chunk cells against S's 17, 22, 33, 26 and F's 32, 39, 42,
+43. Its closes on nothing fall to 38% (e = 5) and 48% (full) of its closes, from 44% and 63%, at a median
+0.050–0.053 m from the object.
+
 ## Hypotheses
 
 - S's points place the grasp pose a few centimetres off. Its targets are deltas over up to 64 frames
   (action q99 up to 1.27 rad against 0.25 for F), so the same normalized error is a larger joint error.
-- With density 0 the grasp is covered by one or two of the 10 points, and the stop at the object adds no
-  progress to the curvature coordinate, so the labels give the model little resolution there.
 - Retries start from states the demonstrations do not contain (closed fingers above the object): S's later
   closes lift the object in 15 of 65 (full) against 44 of 115 for F.
 
 ## Next Experiment
 
-Train S with event density 2 (the `curvature-s40-d2` datasets exist) and compare the share of closes on
-nothing; open-loop grasp-pose error of the points in end-effector space, S against F, on held-out
-recordings; evaluate the step-5000 checkpoints for the training trend.
+Open-loop grasp-pose error of the points in end-effector space, S, S2 and F, on held-out recordings; a span
+32 policy with event density 2 (deltas about half of span 64) against S2; repeated closed-loop runs of each
+cell to resolve differences of a few successes.
 
 ## Resolution
 

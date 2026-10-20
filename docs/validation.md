@@ -504,6 +504,31 @@ distance at another frame. No close lifted the object in 19 of S's 25 failed ful
 36 failed trials at e = 5. A missed close is followed by an open and another approach: a median 3 (full)
 and 4.5 (e = 5) closes per failed S trial.
 
+**Event density 2.** S2: `curvature` span 64 with event density 2, otherwise S's labels (points inside
+keyframe windows 24.9% against 16.1%; the 10th point a median 51.5 recorded frames ahead against 64.0) and
+S's training on two L40S data parallel (global batch 32, 1.7 s per step, 4 h 52 min; loss 0.1458 / 0.0203 /
+0.0096 / 0.0062 at steps 0 / 1000 / 5000 / 9900). Measured 2026-10-19 in the whole-chunk cells; successes of
+50 (not lifted / dropped / not placed) and the successes' median completion frames:
+
+| Timing | Execute | S2 | S | F | Labels S2 / S / F |
+|---|---|---|---|---|---|
+| rate 1 | 5 | 12 (22 / 10 / 6), 196 | 17 (17 / 10 / 6), 192 | 32 (5 / 8 / 5), 192 | 45 / 45 / 48 |
+| rate 1 | full | 26 (13 / 8 / 3), 166 | 22 (25 / 3 / 0), 144 | 39 (3 / 7 / 1), 159 | 45 / 46 / 48 |
+| velocity cap 4 + holds | 4 | 30 (14 / 5 / 1), 72 | 33 (13 / 4 / 0), 82 | 42 (4 / 4 / 0), 108 | 46 / 44 / 45 |
+| velocity cap 4 + holds | full | 28 (20 / 2 / 0), 70 | 26 (21 / 3 / 0), 54 | 43 (4 / 3 / 0), 98 | 48 / 46 / 46 |
+
+S2's successes differ from S's by −5 to +4 per cell, within the spread of repeated runs of one setting (S
+at rate 1, e = 5: 9, 17, 14). Close attempts at rate 1 (traced runs, S2 13 and 26 of 50):
+
+| Policy, execute | Close attempts | Lifted the object | Reopened within 6 frames | Fingers closed on nothing | Fingers on the object, not lifted |
+|---|---|---|---|---|---|
+| S2, 5 | 123 | 40, at 0.032 m | 21 | 47, at 0.050 m | 15 |
+| S2, full | 107 | 40, at 0.028 m | 4 | 51, at 0.053 m | 12 |
+
+Closes on nothing fall from 44% to 38% (e = 5) and from 63% to 48% (full) of S's closes, against 10–13%
+for F. In 44 of S2's 51 full-chunk empty closes the grip site never came within 0.040 m of the object from
+10 frames before to 5 after the close.
+
 training and serving from the openpi root with `examples/libero_object` on `PYTHONPATH`):
 
 ```bash
