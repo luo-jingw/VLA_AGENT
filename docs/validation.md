@@ -663,6 +663,23 @@ recordings take a median 152):
 
 At cap 4 S averaged 30 and S2 31.5 of 50 over their runs.
 
+**Matched comparison of the strategies.** Per-frame F at the recorded pace (uniform timing, rate 1, no holds)
+against S3b with velocity timing and holds; task, the 50 initial states, kp 400, measured state and the
+280-frame budget equal; three runs per cell (F at rate 1, e = 5: five), earlier runs under the same conditions
+included (`runs/libero_alphabet_soup/sim/matched/`; servers allocate memory on demand). Successes of 50 per run,
+their mean, and the successes' median completion frames (the recordings: 152):
+
+| Latency | F at the recorded pace | Mean | Frames | S3b, velocity timing | Mean | Frames |
+|---|---|---|---|---|---|---|
+| 0 | e 10: 39, 36, 35 | 36.7 | 166 | cap 4: 42, 41, 39 | 40.7 | 73 |
+| 0 | e 5: 31, 32, 28, 30, 33 | 30.8 | 199 | cap 8: 43, 37, 36 | 38.7 | 50 |
+| 0.1 s async | e 8: 39, 38, 37 | 38.0 | 178 | cap 4: 37, 43, 39 | 39.7 | 65 |
+| 0.1 s async | — | | | cap 8: 32, 35, 36 | 34.3 | 52 |
+| 0.1 s sync | e 10: 33, 35, 30 | 32.7 | 204 | cap 4: 40, 38, 37 | 38.3 | 103 |
+
+Labels open loop in the new cells: F e 10 48, e 8 at 0.1 s async 48, e 10 at 0.1 s sync 47; S3 cap 4 at 0.1 s
+sync 44. F was trained with pooled action statistics on one GPU, S3b with per-point statistics on two.
+
 **Data checks** (`label_data_check.py`, outside this repository). For S, S2 and F, the training datasets'
 `action_chunk` rows equal the labels recomputed from the source recordings with each dataset's report (8772
 rows, largest difference 1.2e-7). Through openpi's loader and training transforms, on 300 rows each: the

@@ -34,6 +34,12 @@ successes, failure phases, close-attempt classes.
 - Velocity timing with switch holds (the execution intended for resampled labels): S3a, S3b and F, measured
   state, e 4, caps 2, 4, 8, 16 at L = 0 and caps 4, 8 at L = 0.1 s async; cap 4 three times; labels open loop
   of S3 and F in the same cells (`runs/libero_alphabet_soup/sim/velocity/`).
+- Matched comparison of the two strategies, everything else equal (task, 50 initial states, kp 400, measured
+  state, budget 280, three runs per cell counting earlier runs under the same conditions): per-frame F at the
+  recorded pace (uniform timing, no holds; e 10 and e 5 at L = 0, e 8 at L = 0.1 s async, e 10 at L = 0.1 s
+  sync) against S3b with velocity timing and holds (caps 4 and 8, e 4, at L = 0 and L = 0.1 s async; cap 4 at
+  L = 0.1 s sync). Then Fpp, F's labels with per-point action statistics trained on two GPUs as S3b was, in
+  the same cells (`runs/libero_alphabet_soup/sim/matched/`).
 
 # Structure
 
