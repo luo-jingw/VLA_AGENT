@@ -738,3 +738,44 @@ The same cells at kp 1000 (tracking error 0.016 rad, 1-frame lag on the recordin
 training (anchor shifted back along the motion by 0–2 frames).
 
 ## Resolution
+
+# ISSUE-018
+
+Status: Open
+
+Area: LIBERO simulator (reproducibility of closed-loop trials)
+
+## Observation
+
+Replaying a closed-loop record's commanded targets (joints and command, after the rollout's 10 settling frames
+from the same initial state) does not reproduce the trial once the gripper reaches the object. TP at cap 8,
+initial state 40 (recorded: success at frame 148): three replays in one process, fresh env, the same env again,
+and after another trial, depart from the recorded joints by more than 1e-9 rad from frame 12–13, about the
+first close at frame 15, and from each other by up to 0.03 rad; at 128-pixel cameras one of the three never
+succeeds. Trials without retries replay to within 1e-5 rad and succeed at the recorded frame (state 0: Fpp 147,
+S3b 37, TP 52).
+
+## Impact
+
+A recorded trial can be re-rendered only up to the first contact; videos are recorded from live closed-loop runs,
+whose outcomes are new samples. Run-to-run spread under the matched conditions includes this simulator variation,
+not only the policy's sampling noise.
+
+## Evidence
+
+`reports/sim-eval-src/record_rollouts.py` (live recording) and the replay test (scratch script, replays of
+`runs/libero_alphabet_soup/sim/two_phase/trace/TP_cap8_run1.json` trial 40 at camera sizes 400 and 128).
+Each reset rebuilds the simulation (robosuite `hard_reset=True`) before the initial state is set.
+
+## Hypotheses
+
+- Contact resolution depends on state the reset does not fix: the rebuilt model (LIBERO samples object
+  placements in the XML before `set_state_from_flattened` overrides the joints), solver warm start, or contact
+  ordering.
+
+## Next Experiment
+
+Two replays with the same rebuilt model (no reset between them, state set directly) and with
+`deterministic_reset`; compare `sim.model` arrays between two resets.
+
+## Resolution
