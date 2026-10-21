@@ -315,3 +315,50 @@ def test_interpolator_chunk_targets_matches_the_function(tmp_path: Path) -> None
     b = chunk_targets(points, interp.frames(), (2,), interp.timing, history, 1, 1, "async", 5)
     np.testing.assert_array_equal(a.targets, b.targets)
     assert a.stalls == b.stalls
+
+
+def _deployment_report(path: Path, robot_extra: dict) -> Path:
+    config = ResampleConfig(metric="curvature", span_frames=20, action_horizon=10, anchor="state", curvature_length=0.1)
+    robot = {"action_dim": 3, "command_dims": [2], "state_dims": [0, 1, -1], "fps": 10.0, **robot_extra}
+    path.write_text(json.dumps({"robot": robot, "config": config.to_dict()}), encoding="utf-8")
+    return path
+
+
+def test_deployment_interpolator_is_velocity_timing_from_the_report(tmp_path: Path) -> None:
+    report = _deployment_report(tmp_path / "arc_resample.json",
+                                {"joint_velocity_limits": [1.0, 2.0], "switch_hold_s": [0.4, 0.8]})  # fmt: skip
+    deploy = ArcInterpolator.for_deployment(report)
+    explicit = ArcInterpolator.from_report(report, 4.0, VelocityTiming((1.0, 2.0), 1.0, 10.0, 0.4, 0.8))
+    assert deploy == explicit
+    rng = np.random.default_rng(3)
+    points = np.zeros((10, 3))
+    points[:, :2] = np.cumsum(rng.normal(0.0, 0.3, (10, 2)), axis=0)
+    points[4:, 2] = 1.0
+    state = np.array([0.0, 0.0, 0.0])
+    out = deploy(points, state)
+    steps = np.abs(np.diff(np.vstack([state[None, :2], out[:, :2]]), axis=0)) * 10.0  # rad/s
+    switch = int(np.flatnonzero(out[:, 2] > 0.5)[0])
+    print(f"{len(out)} targets, peak speed / limit {(steps / np.array([1.0, 2.0])).max():.3f}, hold rows after the "
+          f"switch {int((np.abs(out[switch:, :2] - out[switch, :2]).max(axis=1) == 0).sum())}")  # fmt: skip
+    assert (steps <= np.array([1.0, 2.0]) * (1 + 1e-6)).all()
+    assert np.array_equal(out, explicit(points, state))
+
+
+def test_deployment_needs_limits_and_holds_in_the_report(tmp_path: Path) -> None:
+    no_holds = _deployment_report(tmp_path / "a.json", {"joint_velocity_limits": [1.0, 2.0]})
+    with pytest.raises(ValueError, match="switch_hold_s"):
+        ArcInterpolator.for_deployment(no_holds)
+    no_limits = _deployment_report(tmp_path / "b.json", {"switch_hold_s": [0.4, 0.8]})
+    with pytest.raises(ValueError, match="joint_velocity_limits"):
+        ArcInterpolator.for_deployment(no_limits)
+
+
+def test_robot_spec_switch_holds_round_trip_and_are_checked(tmp_path: Path) -> None:
+    path = tmp_path / "robot_spec.json"
+    path.write_text(json.dumps({"action_dim": 3, "joint_dims": [0, 1], "command_dims": [2], "state_dims": [0, 1, -1],
+                                "fps": 10.0, "switch_hold_s": [0.2, 0.55]}), encoding="utf-8")  # fmt: skip
+    assert RobotSpec.load(path).switch_hold_s == (0.2, 0.55)
+    with pytest.raises(ValueError, match="switch_hold_s"):
+        RobotSpec(
+            action_dim=3, joint_dims=(0, 1), command_dims=(2,), state_dims=(0, 1, -1), fps=10.0, switch_hold_s=(0.2,)
+        )

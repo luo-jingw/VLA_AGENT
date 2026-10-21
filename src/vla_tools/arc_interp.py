@@ -40,6 +40,11 @@ d of the chunk timed from the pose commanded at the observation (arrival_time), 
 Execution (chunk_targets): the targets one chunk executes, from the poses commanded so far and the index of
 its observation: the owed hold, then the chunk (rebuilt after the latency in async mode), cut to the execution
 length. The label replay and a robot or simulator loop that own the commanded history both call it.
+
+Deployment default (ArcInterpolator.for_deployment): velocity timing at DEPLOY_FRACTION of the joint velocity
+limits, capped at DEPLOY_CAP times the recording's average pace, with the robot's measured switch holds, all
+read from the label report's robot block. Uniform timing at a fixed rate (from_report without timing) is the
+reference it is compared with.
 """
 
 from __future__ import annotations
@@ -54,6 +59,8 @@ import numpy as np
 import scipy.interpolate
 
 Mode = Literal["sync", "async"]  # sync: the robot waits for each inference; async: it keeps executing
+DEPLOY_CAP = 4.0  # LIBERO, S3b: 77-81% of 50 trials at latency 0 / 0.1 s, 65-103 frames against the recordings' 152
+DEPLOY_FRACTION = 1.0  # of each joint velocity limit
 
 
 def point_frames(span_frames: int, action_horizon: int, anchor: str, rate: float) -> np.ndarray:
@@ -83,6 +90,17 @@ class VelocityTiming:
             raise ValueError(f"velocity_limits must be positive, got {self.velocity_limits}")
         if self.fraction <= 0.0 or self.fps <= 0.0 or min(self.rise_hold_s, self.fall_hold_s) < 0.0:
             raise ValueError(f"fraction and fps must be positive and holds >= 0, got {self}")
+
+    @staticmethod
+    def from_robot(robot: dict, fraction: float) -> VelocityTiming:
+        """Limits, control rate and switch holds from a label report's robot block (RobotSpec fields)."""
+        for key in ("joint_velocity_limits", "switch_hold_s"):
+            if not robot.get(key):
+                raise ValueError(f"the report's robot block has no {key}; add it to the robot spec and rebuild the "
+                                 "labels, or build VelocityTiming explicitly")  # fmt: skip
+        rise, fall = (float(v) for v in robot["switch_hold_s"])
+        return VelocityTiming(tuple(float(v) for v in robot["joint_velocity_limits"]), float(fraction),
+                              float(robot["fps"]), rise, fall)  # fmt: skip
 
     def frame_times(self, spline: scipy.interpolate.CubicSpline, end: float) -> np.ndarray:
         """Chunk time T of control frames 1, 2, ..., floor(s(end)) along the joint spline. The integrand is
@@ -269,6 +287,13 @@ class ArcInterpolator:
             rate=float(rate),
             timing=timing,
         )
+
+    @staticmethod
+    def for_deployment(path: Path, cap: float = DEPLOY_CAP, fraction: float = DEPLOY_FRACTION) -> ArcInterpolator:
+        """The deployment interpolator: velocity timing at `fraction` of the joint velocity limits, `cap` times
+        the recording's average pace at most, holding the arm still for the robot's switch holds."""
+        robot = json.loads(Path(path).read_text(encoding="utf-8"))["robot"]
+        return ArcInterpolator.from_report(path, cap, VelocityTiming.from_robot(robot, fraction))
 
     def frames(self) -> np.ndarray:
         return point_frames(self.span_frames, self.action_horizon, self.anchor, self.rate)

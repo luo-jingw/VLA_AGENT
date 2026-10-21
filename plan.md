@@ -1,102 +1,110 @@
 # Plan
 
-Plan Status: completed
+Plan Status: approved
 
 # Problem
 
 ## Current
 
-- LIBERO alphabet soup, policies S (`curvature` s64 d0), S2 (s64 d2) and F (`time` s10), trained identically.
-  Closed loop, sync, L = 0 (docs/validation.md → LIBERO simulator): S 28–60%, S2 25–63%, F 61–86% over the
-  settings measured; executing 5 targets per inference at rate 1 (e 5), 4 at velocity cap 4, or whole chunks.
-- The simulator pipeline and the training data are checked; S's and S2's failures are their grippers resting
-  on the object above the commanded pose (ISSUE-011).
+- Velocity timing with switch holds (`arc_interp.VelocityTiming`: the chunk's spline re-timed so every joint
+  stays within a fraction of its velocity limit, the rate as a cap, the arm held still for the gripper's
+  actuation time at each command switch) is the execution that gave resampled labels their measured advantage
+  (docs/validation.md → LIBERO simulator: S3b at cap 4, 77–81% in 65–103 frames against the recordings' 152).
+- Deployment defaults to uniform timing: `launch.serving_config(config, checkpoint, rate=1.0)`,
+  `launch.serve(..., rate=1.0)`, the examples' `serve --rate 1`, the vla-downstream skill ("执行倍速 r 是部署参数
+  （默认 1）"). Velocity timing is reachable only through `vla_libero.evaluate` / `label_replay` flags.
+- The joint velocity limits are in `RobotSpec` and travel in `arc_resample.json`'s robot block; the gripper's
+  actuation times (the hold durations) are measured by a script outside the repository
+  (`reports/rate-ceiling-src/gripper_actuation.py`) and passed by hand.
 
 ## Problem
 
-How S, S2 and F behave when they replan more often (fewer targets executed per inference) is not measured;
-whether a resampling configuration with nearer points (span 32), keyframe windows at the recorded pace (event
-density 1) and, separately, per-point normalization statistics narrows the gap to F is not measured.
+A deployment built from the harness executes resampled points with uniform timing unless the person knows to
+switch, and the hold durations have no home in the robot description.
 
 ## Goal
 
-Closed loop of S, S2 and F, sync, L = 0, kp 400, 50 trials, nearest-point command rule: rate 1 with e 1, 2, 3;
-velocity cap 4 with holds (0.2 / 0.55 s) with e 1, 2; the labels open loop in the same cells. Per cell
-successes, failure phases, close-attempt classes.
-
-- The training data define state[t + 1] = action[t]; closed loop the arm reaches about half of a commanded
-  step per frame. The same cells with the commanded joints and command as the observation state
-  (`gripper_trace.py --state commanded`).
-- S3a: labels `curvature` span 32, event density 1, otherwise S's (H 10, anchor state, chord 0.1224 rad,
-  holdout 3 5 12 21 34), trained as S on two L40S. S3b: the same labels with action normalization statistics
-  per point index (10 x 8 q01 / q99, mean, std; state per dimension). Both evaluated as S2 was, with both
-  state sources.
-- Velocity timing with switch holds (the execution intended for resampled labels): S3a, S3b and F, measured
-  state, e 4, caps 2, 4, 8, 16 at L = 0 and caps 4, 8 at L = 0.1 s async; cap 4 three times; labels open loop
-  of S3 and F in the same cells (`runs/libero_alphabet_soup/sim/velocity/`).
-- Matched comparison of the two strategies, everything else equal (task, 50 initial states, kp 400, measured
-  state, budget 280, three runs per cell counting earlier runs under the same conditions): per-frame F at the
-  recorded pace (uniform timing, no holds; e 10 and e 5 at L = 0, e 8 at L = 0.1 s async, e 10 at L = 0.1 s
-  sync) against S3b with velocity timing and holds (caps 4 and 8, e 4, at L = 0 and L = 0.1 s async; cap 4 at
-  L = 0.1 s sync). Then Fpp, F's labels with per-point action statistics trained on two GPUs as S3b was, in
-  the same cells (`runs/libero_alphabet_soup/sim/matched/`).
+Velocity timing with switch holds is the default execution for deployment: the hold durations are part of the
+robot spec and of every label report; one constructor builds the deployment interpolator from a report (cap,
+velocity fraction); the serving paths and examples default to it; uniform timing remains available only when
+requested explicitly; the skills describe it as the default.
 
 # Structure
 
 ## Modules
 
-Existing scripts outside the repository: `reports/sim-eval-src/gripper_trace.py` (closed loop with traces),
-`replay_with_command_rule.py` (labels open loop; no rule applied when COMMAND_RULE is unset),
-`gripper_attempts.py`, `close_check.py`.
+- Robot description: `src/vla_tools/robot_spec.py`.
+- Interpolation: `src/vla_tools/arc_interp.py` (single file delivered to serving machines).
+- Serving: `src/vla_openpi/launch.py`; examples' `run.py` (`ur3_dual_arm`, `ur3_optical_bench`, `libero_object`).
+- Evaluation client: `src/vla_libero/evaluate.py`.
+- Skills: `.claude/skills/vla-downstream/SKILL.md`, `.claude/skills/vla-action-labels/SKILL.md`.
 
 ## Responsibilities
 
-As in the scripts' docstrings.
+The robot spec owns the hold durations; `arc_interp` builds the deployment timing from a report; `launch` and
+the examples choose velocity timing unless told otherwise.
 
 ## State Ownership
 
-Results: `runs/libero_alphabet_soup/sim/replan/`.
+Hold durations: `RobotSpec.switch_hold_s` (rise, fall, seconds), copied into `arc_resample.json`'s robot block by
+`build_labels` as the other robot fields are.
 
 # Interface
 
 ## Interfaces
 
-None new.
+- `RobotSpec.switch_hold_s: tuple[float, float] = ()`: seconds the arm stays still after a command rises /
+  falls; empty when not measured.
+- `VelocityTiming.from_robot(robot: dict, fraction: float) -> VelocityTiming`: limits, fps and holds from a
+  report's robot block; raises with the missing field named when limits or holds are absent.
+- `ArcInterpolator.for_deployment(path: Path, cap: float = 4.0, fraction: float = 1.0) -> ArcInterpolator`:
+  `from_report(path, cap, VelocityTiming.from_robot(report["robot"], fraction))`.
+- `launch.serving_config(config, checkpoint, cap=4.0, velocity_fraction=1.0)` and `launch.serve(...)` with the
+  same parameters; `velocity_fraction=None` gives uniform timing at rate `cap`.
+- Examples' `run.py serve`: `--cap 4 --velocity-fraction 1` by default, `--uniform` for uniform timing.
+- `vla_libero.evaluate`: velocity timing with the report's holds when `--velocity-fraction` is given and
+  `--switch-hold` is not.
 
 ## Inputs
 
-The S, S2 and F checkpoints at step 9999 and their label configs.
+Robot specs of the runs (`runs/*/robot_spec.json`, outside the repository) gain `switch_hold_s` where measured
+(LIBERO 0.2 / 0.55 s; UR3 optical bench 0.533 / 0.667 s).
 
 ## Outputs
 
-Trace and label replay files per policy and cell.
+Code, tests, skills, docs; the commits pushed to `luo-jingw/VLA_AGENT`.
+
+Alongside, outside the repository: a simulator grid of the labels open loop over the sampling and execution
+parameters (span 16, 24, 32, 48 x event density 0, 1, 2 x velocity fraction 0.6, 0.8, 1.0 x cap 4, 8; e 4, holds
+0.2 / 0.55 s, sync, L = 0), `runs/libero_alphabet_soup/sim/label_grid/`.
 
 ## State Changes
 
-None.
+Label reports written after the change carry `switch_hold_s`; earlier reports lack it and need the holds passed
+explicitly (`from_robot` names the missing field).
 
 # Flow
 
 ## Main Flow
 
-1. Servers: S on GPU 3, S2 on GPU 4, F on GPU 7; rendering on EGL devices 6, 1, 2 (devices that rendered with
-   that server placement); one warm-up request each.
-2. Closed loop per policy and cell, then the labels open loop.
-3. Table with the earlier e 4 / e 5 / whole-chunk cells; results in `docs/validation.md`, ISSUE-011.
+Serving: `launch.serve(config, checkpoint, port)` → `serving_config` → `ArcInterpolator.for_deployment(report)` →
+`ArcOutputs` per-frame targets re-timed within each chunk with holds. Robot-side clients that keep the commanded
+history use `for_deployment(report).chunk_targets(...)`, which also carries a hold across chunk boundaries.
 
 # Code Mapping
 
 ## Modules
 
-No repository code changes.
+As in Structure.
 
 ## Interfaces
 
-None.
+`switch_hold_s` → `robot_spec.py`; `from_robot`, `for_deployment` → `arc_interp.py`; serving defaults →
+`launch.py`, `examples/*/run.py`; evaluation default holds → `evaluate.py`.
 
 ## State
 
-`runs/libero_alphabet_soup/sim/replan/`.
+`RobotSpec.switch_hold_s`; report robot block.
 
 # Implementation
 
@@ -108,11 +116,86 @@ Round: 1
 
 ### Goal
 
-Replanning grid results; results recorded.
+Hold durations in the robot spec and report; deployment constructor.
 
 ### Files
 
-Outside the repository `runs/libero_alphabet_soup/sim/replan/`; `docs/validation.md`, `issues.md`.
+`src/vla_tools/robot_spec.py`, `src/vla_tools/arc_interp.py`, `tests/test_arc_interp.py`, tests of the robot spec.
+
+### Structures
+
+`RobotSpec.switch_hold_s`, `VelocityTiming.from_robot`, `ArcInterpolator.for_deployment`.
+
+### Affected Modules
+
+Robot description, interpolation.
+
+### Dependencies
+
+None.
+
+### Observation
+
+Tests: a report with limits and holds gives the same targets as the explicit `VelocityTiming`; a report without
+holds raises naming `switch_hold_s`; the LIBERO S3b report with holds added reproduces a recorded trace's first
+chunk.
+
+Result: `RobotSpec.switch_hold_s`, `VelocityTiming.from_robot`, `ArcInterpolator.for_deployment` (`DEPLOY_CAP` 4,
+`DEPLOY_FRACTION` 1.0); three tests pass (peak joint speed 1.000 of the limit, 5 still rows after a 0.4 s rise
+at 10 Hz). The LIBERO S3b report with the holds added gives the interpolator of the evaluated velocity-timing
+runs. Run robot specs: LIBERO 0.2 / 0.55 s, UR3 optical bench 0.533 / 0.667 s.
+
+## Phase 2
+
+Phase Status: completed
+
+Round: 2
+
+### Goal
+
+Serving and evaluation defaults; skills and docs.
+
+### Files
+
+`src/vla_openpi/launch.py`, `src/vla_libero/evaluate.py`, `examples/*/run.py`, the two skills,
+`docs/validation.md`, `README.md` where it describes serving.
+
+### Structures
+
+None new.
+
+### Affected Modules
+
+Serving, evaluation client, skills.
+
+### Dependencies
+
+Phase 1.
+
+### Observation
+
+`serving_config` on the S3b checkpoint returns targets equal to `for_deployment(report)(points, state)`; full
+test suite; ruff.
+
+Result: `launch.serving_config` / `serve` default to `cap=4, velocity_fraction=1.0` (`None`: uniform timing);
+UR3 examples' `serve --cap --velocity-fraction --uniform`; `vla_libero.evaluate` takes the spec's holds when
+`--switch-hold` is absent; skills, README and docs updated. On the S3b checkpoint (report with holds, the dataset
+and checkpoint copies identical) `serving_config` gives `for_deployment`'s interpolator and equal targets. Tests
+150 passed, 2 skipped; openpi integration 8 passed; ruff clean.
+
+## Phase 3
+
+Phase Status: active
+
+Round: 3
+
+### Goal
+
+Push.
+
+### Files
+
+None.
 
 ### Structures
 
@@ -120,16 +203,13 @@ None.
 
 ### Affected Modules
 
-Knowledge.
+None.
 
 ### Dependencies
 
-Free GPUs.
+Phases 1 and 2.
 
 ### Observation
 
-Per policy and cell: successes, phases, close-attempt classes; labels open-loop successes.
-
-Result: replanning grid, commanded-state check, S3a / S3b, velocity grid and the matched comparison recorded in
-docs/validation.md → LIBERO simulator; ISSUE-011 and ISSUE-017 updated. F at caps 2, 8, 16 under velocity timing
-was not run (GPUs taken by other jobs); Fpp replaced it as the matched per-frame policy.
+`git push` to `luo-jingw/VLA_AGENT` with the project token through a temporary GIT_ASKPASS; remote main equals
+local main.

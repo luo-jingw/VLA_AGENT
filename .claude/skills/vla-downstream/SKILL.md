@@ -36,8 +36,10 @@ description: 训练就绪数据集的下游使用：接入 openpi 训练、在�
 
 ## 交付
 
-- 服务端把模型输出的点插值成逐帧目标：`vla_tools/arc_interp.py` 可单独拷贝，参数用 `ArcInterpolator.from_report(<ckpt>/assets/<asset_id>/arc_resample.json, rate)` 读取；机器人执行前几帧后重新请求。
-- 执行倍速 r 是部署参数（默认 1），不写入 `arc_resample.json`：`vla_openpi.launch.serve(config, checkpoint, port, rate)`，示例 `examples/ur3_dual_arm/run.py serve --rate <r>`。r 只改变走完同一条插值路径用的帧数；先用 `label_replay --rate <r>` 看速度比是否在机器人的关节速度上限之内，执行长度不超过 span / r。
+- 服务端把模型输出的点插值成逐帧目标，`vla_tools/arc_interp.py` 可单独拷贝。**默认按速度定时部署**：`ArcInterpolator.for_deployment(<ckpt>/assets/<asset_id>/arc_resample.json)` 从报告的 robot 块读取关节速度上限和夹爪停留 `switch_hold_s`，同一条样条按关节速度上限的 `DEPLOY_FRACTION`（1.0）分配时间，最快 `DEPLOY_CAP`（4）倍录制平均节奏，每个夹爪切换处手臂停住实测的动作时间。机器人执行 e 帧后重新请求（LIBERO：e = 4）。
+- 服务：`vla_openpi.launch.serve(config, checkpoint, port)`（默认 `cap=4, velocity_fraction=1.0`），示例 `run.py serve [--cap 4] [--velocity-fraction 1]`；`--uniform`（`velocity_fraction=None`）是按 `cap` 倍速均匀定时，只作对照。服务端每块单独定时，被下一次请求截断的停留不会补到下一块；保存指令历史的机器人端循环用 `for_deployment(report).chunk_targets(points, history, observed, latency_frames, mode, execute)`，未完成的停留会带到下一块（仿真闭环即如此）。
+- 夹爪停留写在 `robot_spec.json` 的 `switch_hold_s`（合、张，秒），取夹爪实测的动作时间（开合宽度到 90% 行程），`build_labels` 把它带进 `arc_resample.json`；报告缺关节速度上限或该字段时 `for_deployment` 报错并指出缺的字段，补进规格后重建标签，或显式构造 `VelocityTiming`。
+- 部署前在部署延迟下核对标签本身在该上限的表现：仿真用 `vla_libero.replay --source labels`，运动学用 `label_replay` 和 `rate_ceiling`。标签开环成功率随上限下降（LIBERO，`curvature` s32 d1：上限 2 / 4 / 8 为 98% / 88% / 74%），上限按任务对速度和成功率的取舍选。
 - 推理配置与训练一致：模型配置、分位数归一化、差分掩码、观测键映射、checkpoint 中的 norm stats。
 - LoRA 训练的模型转 PyTorch 用 `lora_to_pytorch`：先把适配器合并进主权重，注意力输出投影的 `lora_b` 要在 head 维上求和；转换后用 `policy_parity` 与 JAX 在同观测、同噪声下比较。
 - 上传模型仓库前确认可见性，凭据按 `PROJECT.md`；上传后比对文件大小，大文件再比对校验和。

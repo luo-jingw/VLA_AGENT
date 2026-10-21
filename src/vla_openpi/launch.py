@@ -21,6 +21,8 @@ from openpi.training import config as _config
 
 from vla_openpi.arc_transforms import ArcOutputs
 from vla_openpi.per_point_stats import per_point
+from vla_tools.arc_interp import DEPLOY_CAP
+from vla_tools.arc_interp import DEPLOY_FRACTION
 from vla_tools.arc_interp import ArcInterpolator
 
 
@@ -53,12 +55,25 @@ def train(config: _config.TrainConfig) -> None:
     openpi_train.main(config)
 
 
-def serving_config(config: _config.TrainConfig, checkpoint: Path, rate: float = 1.0) -> _config.TrainConfig:
-    """The training config with its outputs replaced by per-frame interpolation from the checkpoint's report,
-    executed at `rate` times the recording's average pace."""
+def serving_config(
+    config: _config.TrainConfig,
+    checkpoint: Path,
+    cap: float = DEPLOY_CAP,
+    velocity_fraction: float | None = DEPLOY_FRACTION,
+) -> _config.TrainConfig:
+    """The training config with its outputs replaced by per-frame interpolation from the checkpoint's report.
+
+    Default: velocity timing (ArcInterpolator.for_deployment) at `velocity_fraction` of the joint velocity limits,
+    at most `cap` times the recording's average pace, holding the arm still for the robot's switch holds; each
+    chunk is timed on its own, so a hold cut short by the next request is not carried over (a robot-side loop
+    that keeps the commanded history uses chunk_targets for that). `velocity_fraction=None`: uniform timing at
+    `cap` times the recording's average pace."""
     data_config = config.data.create(config.assets_dirs, config.model)
     report = Path(checkpoint) / "assets" / str(data_config.asset_id) / "arc_resample.json"
-    interp = ArcInterpolator.from_report(report, rate)
+    if velocity_fraction is None:
+        interp = ArcInterpolator.from_report(report, cap)
+    else:
+        interp = ArcInterpolator.for_deployment(report, cap, velocity_fraction)
     return dataclasses.replace(config, data=dataclasses.replace(config.data, outputs=ArcOutputs(interp)))
 
 
@@ -71,8 +86,14 @@ def serve_points(config: _config.TrainConfig, checkpoint: Path, port: int) -> No
     ).serve_forever()
 
 
-def serve(config: _config.TrainConfig, checkpoint: Path, port: int, rate: float = 1.0) -> None:
-    policy = policy_config.create_trained_policy(serving_config(config, checkpoint, rate), str(checkpoint))
+def serve(
+    config: _config.TrainConfig, checkpoint: Path, port: int, cap: float = DEPLOY_CAP,
+    velocity_fraction: float | None = DEPLOY_FRACTION,
+) -> None:  # fmt: skip
+    """Per-frame targets over websocket, timed as serving_config describes."""
+    policy = policy_config.create_trained_policy(
+        serving_config(config, checkpoint, cap, velocity_fraction), str(checkpoint)
+    )
     websocket_policy_server.WebsocketPolicyServer(
         policy=policy, host="0.0.0.0", port=port, metadata=policy.metadata
     ).serve_forever()

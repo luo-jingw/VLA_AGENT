@@ -9,7 +9,7 @@ description: 设计并构建 VLA 动作块标签：在每帧之后 span 个录�
 
 想让策略一次预测得更远，或想改变监督点在轨迹上的分布时使用。不改标签时同样走这一步，按 `time`、`span = H` 构建：它与逐帧 chunk 完全相同，后续工具和比较口径保持一致。
 
-输入：定时版数据集、定稿的 `keyframes.json`、`diversity.json` 中的留出集、`robot_spec.json`（选倍速时需要 `joint_velocity_limits`，可选 `joint_acceleration_limits`），以及模型的 `action_horizon`（H）、部署的推理延迟和运控对首点跳变的上限。
+输入：定时版数据集、定稿的 `keyframes.json`、`diversity.json` 中的留出集、`robot_spec.json`（选倍速和部署时需要 `joint_velocity_limits` 与 `switch_hold_s`，可选 `joint_acceleration_limits`），以及模型的 `action_horizon`（H）、部署的推理延迟和运控对首点跳变的上限。
 
 工具：`vla_tools.sweep`、`vla_tools.label_replay`、`vla_tools.rate_ceiling`、`vla_tools.build_labels`。方法定义见 [方法](references/method.md)。
 
@@ -59,7 +59,7 @@ python -m vla_tools.rate_ceiling --dataset data/<src>-timed --spec robot_spec.js
 - 选 r、e：取部署延迟下候选配置中 90% 结果最高者；它落在阈值上时（恰好 90% 的集可行），参考每集中位数和相邻倍速的可行集数，不要只看一个数。
 - 录制本身超速的 episode 被排除并列出；排除很多时先回到清洗。
 - 倍数上限把执行的指令当成机器人的运动：跟踪滞后和跟踪误差没有建模，实机上是上限而不是保证。
-- **按速度定时**（`--velocity-fraction 1 --switch-hold <闭合 s> <张开 s>`）：服务端按关节速度上限给每块重新分配时间，倍速只作上限，慢段和停顿不再被最快的一段拖住；每个夹爪切换处固定停 h 秒，h 取夹爪实测的动作时间（DROID：0.533 s / 0.667 s，见 `gripper_actuation.py`）。部署时用 `ArcInterpolator.from_report(path, rate, VelocityTiming(...))`，传给 `after_latency` 的观测位姿是观测时的指令位姿，起始位姿的指令值必须是已下发的指令。统一定时和按速度定时各跑一份 `rate_ceiling`，按部署延迟选。
+- **按速度定时**（`--velocity-fraction 1 --switch-hold <闭合 s> <张开 s>`）：服务端按关节速度上限给每块重新分配时间，倍速只作上限，慢段和停顿不再被最快的一段拖住；每个夹爪切换处固定停 h 秒，h 取夹爪实测的动作时间（DROID：0.533 s / 0.667 s，见 `gripper_actuation.py`）。按速度定时是默认部署方式：`ArcInterpolator.for_deployment(path, cap, fraction)`，停留取 `robot_spec.json` 的 `switch_hold_s`（随标签写进 `arc_resample.json`）；传给 `after_latency` 的观测位姿是观测时的指令位姿，起始位姿的指令值必须是已下发的指令。统一定时只作对照；两种定时各跑一份 `rate_ceiling`，按部署延迟选上限。
 
 ### 3. 构建
 

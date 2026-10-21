@@ -132,7 +132,8 @@ def main() -> None:
     parser.add_argument("--latency", type=float, default=0.0, help="inference latency (s)")
     parser.add_argument("--mode", choices=["async", "sync"], default="async")
     parser.add_argument("--velocity-fraction", type=float, default=None)
-    parser.add_argument("--switch-hold", nargs=2, type=float, default=None, metavar=("RISE_S", "FALL_S"))
+    parser.add_argument("--switch-hold", nargs=2, type=float, default=None, metavar=("RISE_S", "FALL_S"),
+                        help="holds at command switches; default the robot spec's switch_hold_s (0 0 for none)")  # fmt: skip
     parser.add_argument("--kp", type=float, required=True)
     parser.add_argument("--suite", default="libero_object")
     parser.add_argument("--task", type=int, default=0)
@@ -144,10 +145,14 @@ def main() -> None:
     args = parser.parse_args()
 
     spec = RobotSpec.load(args.spec)
-    hold = tuple(args.switch_hold) if args.switch_hold else (0.0, 0.0)
     timing = None
     if args.velocity_fraction is not None:
+        if args.switch_hold is None and not spec.switch_hold_s:
+            raise SystemExit(f"--velocity-fraction needs --switch-hold or switch_hold_s in {args.spec}")
+        hold = tuple(args.switch_hold) if args.switch_hold is not None else spec.switch_hold_s
         timing = VelocityTiming(tuple(spec.joint_velocity_limits), args.velocity_fraction, spec.fps, *hold)
+    else:
+        hold = (0.0, 0.0)
     interp = ArcInterpolator.from_report(args.report, args.rate, timing)
     condition = Condition(report=str(args.report), rate=args.rate, execute=args.execute, latency_s=args.latency,
                           latency_frames=round(args.latency * spec.fps), mode=args.mode,
