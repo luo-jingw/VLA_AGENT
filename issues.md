@@ -511,10 +511,17 @@ strategies), Fpp (per-frame labels, per-point statistics) at the recorded pace s
 50 at latency 0, 0.1 s async and 0.1 s sync against S3b's 40.7, 39.7 and 38.3 with velocity timing at cap 4,
 which completes 2.1–2.6 times sooner.
 
+Two-phase labels close the gap at cap 8 (docs/validation.md → LIBERO simulator, Two-phase labels): `time` labels
+one point per 3.2 recorded frames during the gross motion and one per frame inside keyframe windows widened to
+grasp −8 / +4, lift −2 / +6, release −10 / +6 frames, trained as S3b, succeed 46, 44, 43 of 50 at cap 8 in 58
+frames, as often as Fpp at the recorded pace (158 frames) and more than S3b at cap 8 (38.7 in 50 frames). At
+cap 4 TP gives 41.7 in 96 frames, within S3b's spread.
+
 ## Next Experiment
 
-Fpp with velocity timing and holds (caps 2, 4, 8), for success and completion time against S3b under the same
-execution; S3b with predicted point times.
+Fpp with velocity timing and holds (caps 2, 4, 8), for success and completion time against TP and S3b under
+the same execution; TP at cap 16 and with the fine-phase windows narrowed back to the keyframe windows, to
+separate the windows' extent from the density.
 
 ## Resolution
 

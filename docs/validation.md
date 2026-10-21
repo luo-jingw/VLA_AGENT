@@ -715,6 +715,45 @@ Over the 150 trials of a cell, Fpp against S3b: 133 against 122 (z = 1.8), 133 a
 training recipe the per-frame policy at the recorded pace succeeds 6–10 points more often, and S3b completes
 2.1–2.6 times sooner (1.5 times with 0.1 s sync latency).
 
+S3b at 0.8 of the joint velocity limits, same conditions (`runs/libero_alphabet_soup/sim/two_phase/`): cap 4 37, 43,
+44 (mean 41.3, median frames 66) against 42, 41, 39 (40.7, 73) at 1.0; cap 8 41, 37, 41 (39.7, 56) against 43, 37,
+36 (38.7, 50). The differences, 0.6 and 1.0 successes, lie inside the run-to-run spread (37–44 at cap 4).
+
+**Two-phase labels (TP).** `time` metric, span 32, H 10, event density 3.2 = span/H inside keyframe windows widened
+to grasp −8 / +4, lift −2 / +6, release −10 / +6 frames (32.5% of the frames;
+`runs/libero_alphabet_soup/keyframes_two_phase.json`): one point per recorded frame during the fine manipulation,
+one per 3.2 recorded frames, evenly in time, during the gross motion. The rebuild places the points 3.2 chunk
+frames apart, so under uniform timing at rate 1 the fine phase runs at 1/3.2 of the recorded pace, and under
+velocity timing at cap/3.2 of it wherever the joint limits do not bind. Labels open loop (kp 400, e = 4, holds
+0.2 / 0.55 s; successes of 50, median success frame):
+
+| Execution | TP labels | The recording (per-frame labels) |
+|---|---|---|
+| cap 4, fraction 1.0 | 47, 61 | 45, 45 |
+| cap 4, fraction 0.8 | 46, 62 | 46, 46 |
+| cap 8, fraction 1.0 | 42, 42 | 40, 36 |
+| cap 8, fraction 0.8 | 47, 47 | 44, 41 |
+| cap 4, fraction 1.0, L = 0.1 s async | 48, 62 | — |
+| uniform rate 1, no holds | 47, 224 | 48 at the recorded pace, e 10 |
+
+TP trained as S3b (per-point action statistics, two L40S, 10k steps; loss 0.0061 at step 9900), closed loop under
+the matched conditions; successes of 50 per run, their mean, the successes' median completion frames:
+
+| Execution, e 4 | TP | Mean | Frames | S3b | Mean | Frames |
+|---|---|---|---|---|---|---|
+| cap 4, fraction 1.0 | 43, 41, 41 | 41.7 | 96 | 42, 41, 39 | 40.7 | 73 |
+| cap 4, fraction 0.8 | 42, 37, 39 | 39.3 | 100 | 37, 43, 44 | 41.3 | 66 |
+| cap 8, fraction 1.0 | 46, 44, 43 | 44.3 | 58 | 43, 37, 36 | 38.7 | 50 |
+| cap 8, fraction 0.8 | 42, 41, 43 | 42.0 | 68 | 41, 37, 41 | 39.7 | 56 |
+| cap 4, fraction 1.0, L = 0.1 s async | 41, 42, 47 | 43.3 | 80 | 37, 43, 39 | 39.7 | 65 |
+| uniform rate 1, no holds | 8, 12, 11 | 10.3 | 257 | — | | |
+
+At uniform rate 1, 66 of TP's 119 failures hold the object unplaced when the 280-frame budget runs out (its labels need
+a median 224 frames, p90 270). TP at cap 8 succeeds as often as Fpp at the recorded pace (133 of 150 trials each)
+and completes in 58 frames against 158, 2.7 times sooner; against S3b at cap 8, 133 against 116 trials (z = 2.6;
+the runs share the 50 initial states). At cap 4 TP and S3b differ by less than the run-to-run spread, TP taking
+96 frames against 73.
+
 **Data checks** (`label_data_check.py`, outside this repository). For S, S2 and F, the training datasets'
 `action_chunk` rows equal the labels recomputed from the source recordings with each dataset's report (8772
 rows, largest difference 1.2e-7). Through openpi's loader and training transforms, on 300 rows each: the
@@ -722,7 +761,8 @@ target's joints are the label's minus the row's `observation.state` (6e-8), its 
 loader's state the parquet row's; with the training norm stats the targets fall within −1.25…+1.19 (p0.5 /
 p99.5), commands −1 / +1; the serving outputs give the labels back (6e-8).
 
-training and serving from the openpi root with `examples/libero_object` on `PYTHONPATH`):
+**Commands**, from the project root (training and serving from the openpi root with `examples/libero_object` on
+`PYTHONPATH`):
 
 ```bash
 python -m vla_libero.replay --hdf5 <demo.hdf5> --source osc --out runs/<task>/sim/replay_osc.json
