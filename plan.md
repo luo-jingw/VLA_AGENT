@@ -1,6 +1,6 @@
 # Plan
 
-Plan Status: approved
+Plan Status: completed
 
 # Problem
 
@@ -102,7 +102,7 @@ None.
 
 ## Phase 1
 
-Phase Status: active
+Phase Status: completed
 
 Round: 1
 
@@ -129,3 +129,7 @@ Free GPUs.
 ### Observation
 
 Per policy and cell: successes, phases, close-attempt classes; labels open-loop successes.
+
+Result: replanning grid, commanded-state check, S3a / S3b, velocity grid and the matched comparison recorded in
+docs/validation.md → LIBERO simulator; ISSUE-011 and ISSUE-017 updated. F at caps 2, 8, 16 under velocity timing
+was not run (GPUs taken by other jobs); Fpp replaced it as the matched per-frame policy.

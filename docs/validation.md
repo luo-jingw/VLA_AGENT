@@ -680,6 +680,21 @@ their mean, and the successes' median completion frames (the recordings: 152):
 Labels open loop in the new cells: F e 10 48, e 8 at 0.1 s async 48, e 10 at 0.1 s sync 47; S3 cap 4 at 0.1 s
 sync 44. F was trained with pooled action statistics on one GPU, S3b with per-point statistics on two.
 
+Fpp: F's labels with per-point action statistics, trained on two L40S as S3b (loss 0.0058 at step 9900;
+joint 6's q99 − q01 0.063 rad at point 1 against 0.456 pooled). At the recorded pace, same cells:
+
+| Latency | Fpp at the recorded pace | Mean | Frames | S3b, velocity timing, cap 4 | Mean | Frames |
+|---|---|---|---|---|---|---|
+| 0 | e 10: 42, 45, 46 | 44.3 | 158 | 42, 41, 39 | 40.7 | 73 |
+| 0 | e 5: 36, 43, 38 | 39.0 | 189 | — | | |
+| 0.1 s async | e 8: 44, 42, 47 | 44.3 | 168 | 37, 43, 39 | 39.7 | 65 |
+| 0.1 s sync | e 10: 40, 44, 40 | 41.3 | 189 | 40, 38, 37 | 38.3 | 103 |
+
+Over the 150 trials of a cell, Fpp against S3b: 133 against 122 (z = 1.8), 133 against 119 (z = 2.2), 124 against
+115 (z = 1.3); the three runs share the 50 initial states, so the trials are not independent. With the same
+training recipe the per-frame policy at the recorded pace succeeds 6–10 points more often, and S3b completes
+2.1–2.6 times sooner (1.5 times with 0.1 s sync latency).
+
 **Data checks** (`label_data_check.py`, outside this repository). For S, S2 and F, the training datasets'
 `action_chunk` rows equal the labels recomputed from the source recordings with each dataset's report (8772
 rows, largest difference 1.2e-7). Through openpi's loader and training transforms, on 300 rows each: the

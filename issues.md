@@ -506,10 +506,15 @@ Span 32 with event density 1 and per-point action statistics close the gap under
 cap 4 (F 42) in 64–78 frames (F 108), 43 at cap 8 in 47 frames; S3a, the same labels with pooled statistics,
 33, 34, 33 at cap 4. Point 1 against its label: S3a 11 mm, S3b 10 mm held-out (S 16 mm).
 
+With the training recipe matched (docs/validation.md → LIBERO simulator, Matched comparison of the
+strategies), Fpp (per-frame labels, per-point statistics) at the recorded pace succeeds 44.3, 44.3 and 41.3 of
+50 at latency 0, 0.1 s async and 0.1 s sync against S3b's 40.7, 39.7 and 38.3 with velocity timing at cap 4,
+which completes 2.1–2.6 times sooner.
+
 ## Next Experiment
 
-F at caps 2, 8, 16 and at L = 0.1 s async with the same execution length, for a matched comparison; repeated
-runs of the S3b cells; S3b at L = 0.1 s, where it drops to 37 (cap 4) and 32 (cap 8).
+Fpp with velocity timing and holds (caps 2, 4, 8), for success and completion time against S3b under the same
+execution; S3b with predicted point times.
 
 ## Resolution
 
