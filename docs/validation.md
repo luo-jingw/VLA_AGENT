@@ -601,6 +601,20 @@ centre against 10 mm for F's successful closes. Over the whole approach the grip
 S and S2 at e = 5 (0 frames within 3 mm before and after; F 1 and 1). The kinematic tool centre point is
 placed in the world frame by an offset fitted at a 1–2-frame lag (residual median 2.3–4.3 mm).
 
+**Label grid in the simulator.** The labels open loop (`vla_libero.replay --source labels`, kp 400, sync,
+L = 0, e = 4, holds 0.2 / 0.55 s) over `curvature` span 16, 24, 32, 48 × event density 0, 1, 2 × velocity fraction
+0.6, 0.8, 1.0 × cap 4, 8 (72 cells, `runs/libero_alphabet_soup/sim/label_grid/`). Successes of 50, mean over the
+12 label configurations (range), and the mean of the cells' median success frames:
+
+| | Fraction 0.6 | Fraction 0.8 | Fraction 1.0 |
+|---|---|---|---|
+| Cap 4 | 47.3 (45–48), 54 | 46.8 (45–48), 48 | 45.0 (41–48), 47 |
+| Cap 8 | 46.6 (45–48), 51 | 45.0 (43–47), 41 | 38.3 (35–40), 36 |
+
+Over all fractions and caps the span changes the mean by less than one success (16: 45.3, 24: 44.6, 32: 45.1,
+48: 44.4) and the density by about one (0: 44.4, 1: 44.5, 2: 45.6); at cap 8, fraction 0.8, density 2 gives 46–47
+against 43–45 for density 0. Span 32, density 1 at cap 4, fraction 1 gives 44, as measured before.
+
 **Simulator pipeline checks** (scripts outside this repository; same task, kp 400, sync, L = 0).
 
 - Observations (`obs_fidelity.py`): the simulator set to the recording's own state at 170 frames (16 before

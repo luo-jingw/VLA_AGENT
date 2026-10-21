@@ -1,6 +1,6 @@
 # Plan
 
-Plan Status: approved
+Plan Status: completed
 
 # Problem
 
@@ -185,7 +185,7 @@ and checkpoint copies identical) `serving_config` gives `for_deployment`'s inter
 
 ## Phase 3
 
-Phase Status: active
+Phase Status: completed
 
 Round: 3
 
@@ -213,3 +213,5 @@ Phases 1 and 2.
 
 `git push` to `luo-jingw/VLA_AGENT` with the project token through a temporary GIT_ASKPASS; remote main equals
 local main.
+
+Result: pushed to `luo-jingw/VLA_AGENT`, remote main = local main = 3216a75 (26 commits).
