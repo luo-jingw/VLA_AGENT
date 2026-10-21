@@ -615,6 +615,11 @@ Over all fractions and caps the span changes the mean by less than one success (
 48: 44.4) and the density by about one (0: 44.4, 1: 44.5, 2: 45.6); at cap 8, fraction 0.8, density 2 gives 46–47
 against 43–45 for density 0. Span 32, density 1 at cap 4, fraction 1 gives 44, as measured before.
 
+The recording itself through the same execution (per-frame `time` span 10 labels, one point per recorded frame):
+cap 4 at fraction 0.6 / 0.8 / 1.0 46 / 46 / 45 (median success frame 53 / 46 / 45), cap 8 48 / 44 / 40 (52 / 41 /
+36); at the recorded pace without holds 48. The resampled labels lose with speed as the recording does, within
+0–2 successes of it at every setting.
+
 **Simulator pipeline checks** (scripts outside this repository; same task, kp 400, sync, L = 0).
 
 - Observations (`obs_fidelity.py`): the simulator set to the recording's own state at 170 frames (16 before
