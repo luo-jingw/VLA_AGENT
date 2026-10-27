@@ -1,7 +1,10 @@
-"""openpi TrainConfig for a dual-arm UR3 (14 dims: per arm 6 joints + binary gripper, 3 cameras, 15 Hz).
+"""openpi TrainConfig for a dual-arm UR3 (14 dims: per arm 6 joints + binary gripper, 3 cameras).
 
-pi0.5 with LoRA on both experts, action_horizon 10, quantile normalisation, joints as deltas and grippers
-absolute. The dataset is one written by vla_tools.build_labels.
+pi0.5 from pi05_base with the VLM frozen (SigLIP and Gemma 2B): only the action expert (Gemma 300M) and the
+action and time projections are trained, as in examples/libero_object. action_horizon 10, quantile
+normalisation, joints as deltas from the state and grippers absolute, no state input. Each training sample's
+prompt is drawn from its episode's instructions (meta/episodes.jsonl `tasks`). The dataset is one written by
+vla_tools.build_labels; its control rate is carried by its arc_resample.json.
 """
 
 from __future__ import annotations
@@ -17,6 +20,7 @@ from openpi.training import weight_loaders
 from vla_openpi import ArcInputs
 from vla_openpi import LeRobotArcDataConfig
 from vla_openpi import RawOutputs
+from vla_openpi import vlm_filter
 
 ACTION_DIM = 14
 ACTION_HORIZON = 10
@@ -28,16 +32,10 @@ CAMERAS = (
 
 
 def train_config(name: str, data_root: pathlib.Path, repo_id: str, exp_name: str) -> _config.TrainConfig:
-    model = pi0_config.Pi0Config(
-        pi05=True,
-        action_horizon=ACTION_HORIZON,
-        discrete_state_input=False,
-        paligemma_variant="gemma_2b_lora",
-        action_expert_variant="gemma_300m_lora",
-    )
+    model = pi0_config.Pi0Config(pi05=True, action_horizon=ACTION_HORIZON, discrete_state_input=False)
     data = LeRobotArcDataConfig(
         repo_id=repo_id,
-        base_config=_config.DataConfig(local_root=data_root, prompt_from_task=True, action_sequence_keys=("action",)),
+        base_config=_config.DataConfig(local_root=data_root, prompt_from_task=False, action_sequence_keys=("action",)),
         observation_columns=(
             *((key, column) for key, column, _ in CAMERAS),
             ("observation/state", "observation.state"),
@@ -49,6 +47,7 @@ def train_config(name: str, data_root: pathlib.Path, repo_id: str, exp_name: str
         ),
         delta_mask=tuple(transforms.make_bool_mask(6, -1, 6, -1)),
         outputs=RawOutputs(action_dim=ACTION_DIM),
+        rotate_prompts=True,
     )
     return _config.TrainConfig(
         name=name,
@@ -67,6 +66,6 @@ def train_config(name: str, data_root: pathlib.Path, repo_id: str, exp_name: str
             warmup_steps=500, peak_lr=2.5e-5, decay_steps=10_000, decay_lr=2.5e-6
         ),
         optimizer=_optimizer.AdamW(b1=0.9, b2=0.95, eps=1e-8, weight_decay=1e-4, clip_gradient_norm=1.0),
-        freeze_filter=model.get_freeze_filter(),
+        freeze_filter=vlm_filter(),
         ema_decay=None,
     )

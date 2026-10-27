@@ -4,7 +4,8 @@ Run from the openpi root, in an openpi environment where the harness is installe
 with openpi's scripts and this directory on PYTHONPATH:
 
     export PYTHONPATH=<openpi>/scripts:<VLA_AGENT>/examples/ur3_dual_arm
-    uv run python <VLA_AGENT>/examples/ur3_dual_arm/run.py norm-stats --data-root <data> --repo-id <dataset>-train
+    uv run python <VLA_AGENT>/examples/ur3_dual_arm/run.py norm-stats --data-root <data> --repo-id <dataset>-train \
+        [--per-point-actions]
     uv run python <VLA_AGENT>/examples/ur3_dual_arm/run.py train --data-root <data> --repo-id <dataset>-train --exp-name <run>
     uv run python <VLA_AGENT>/examples/ur3_dual_arm/run.py serve --data-root <data> --repo-id <dataset>-train \
         --checkpoint checkpoints/<name>/<run>/<step> --port 8000
@@ -34,6 +35,11 @@ def main() -> None:
     parser.add_argument("--checkpoint", type=Path, default=None)
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument(
+        "--per-point-actions",
+        action="store_true",
+        help="norm-stats: action statistics per point of the chunk instead of pooled over its points",
+    )
+    parser.add_argument(
         "--cap",
         type=float,
         default=DEPLOY_CAP,
@@ -52,7 +58,7 @@ def main() -> None:
 
     config = train_config(args.name, args.data_root, args.repo_id, args.exp_name)
     if args.command == "norm-stats":
-        print(f"wrote {launch.norm_stats(config)}")
+        print(f"wrote {launch.norm_stats(config, per_point_actions=args.per_point_actions)}")
     elif args.command == "train":
         launch.train(config)
     else:

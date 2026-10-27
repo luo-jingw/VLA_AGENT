@@ -6,6 +6,7 @@ tests do not take GPU memory.
 
 from __future__ import annotations
 
+import json
 import os
 
 import numpy as np
@@ -132,3 +133,47 @@ def test_per_point_stats_normalize_each_point_and_invert_through_model_padding()
     assert np.array_equal(back[:, 8:], padded[:, 8:])
     loaded = normalize.deserialize_json(normalize.serialize_json({"actions": stats}))["actions"]
     assert np.asarray(loaded.q99).shape == (10, 8)
+
+
+def test_episode_prompt_draws_every_instruction_of_the_sample_episode(tmp_path) -> None:
+    from vla_openpi import EpisodePrompt
+
+    (tmp_path / "meta").mkdir()
+    rows = [
+        {"episode_index": 0, "tasks": ["a"], "length": 3},
+        {"episode_index": 1, "tasks": ["b", "c", "d"], "length": 3},
+    ]
+    (tmp_path / "meta" / "episodes.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    transform = EpisodePrompt(tmp_path)
+    drawn = [transform({"episode_index": np.int64(1), "x": 7}) for _ in range(300)]
+    counts = {p: sum(d["prompt"] == p for d in drawn) for p in ("b", "c", "d")}
+    print(counts)
+    assert set(counts) == {d["prompt"] for d in drawn} and min(counts.values()) > 50
+    assert all("episode_index" not in d and d["x"] == 7 for d in drawn)
+
+
+def test_rotate_prompts_config_reads_no_file_when_built(tmp_path) -> None:
+    from openpi.models import pi0_config
+    from openpi.training import config as _config
+
+    from vla_openpi import EpisodePrompt
+    from vla_openpi import LeRobotArcDataConfig
+
+    def factory(prompt_from_task: bool) -> LeRobotArcDataConfig:
+        return LeRobotArcDataConfig(
+            repo_id="missing-dataset",
+            base_config=_config.DataConfig(local_root=tmp_path, prompt_from_task=prompt_from_task),
+            observation_columns=(("observation/state", "observation.state"),),
+            inputs=ArcInputs(cameras=(), action_dim=2, action_horizon=2),
+            outputs=RawOutputs(action_dim=2),
+            rotate_prompts=True,
+        )
+
+    model = pi0_config.Pi0Config(pi05=True, action_horizon=2, discrete_state_input=False)
+    data = factory(prompt_from_task=False).create(tmp_path / "assets", model)
+    repack = data.repack_transforms.inputs
+    print([type(t).__name__ for t in repack], repack[0].structure)
+    assert isinstance(repack[1], EpisodePrompt) and repack[0].structure["episode_index"] == "episode_index"
+    assert "prompt" not in repack[0].structure
+    with pytest.raises(ValueError, match="prompt_from_task"):
+        factory(prompt_from_task=True).create(tmp_path / "assets", model)

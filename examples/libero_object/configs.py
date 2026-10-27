@@ -10,10 +10,8 @@ from __future__ import annotations
 
 import pathlib
 
-import flax.nnx as nnx
 from openpi import transforms
 from openpi.models import pi0_config
-from openpi.shared import nnx_utils
 from openpi.training import config as _config
 from openpi.training import optimizer as _optimizer
 from openpi.training import weight_loaders
@@ -21,6 +19,7 @@ from openpi.training import weight_loaders
 from vla_openpi import ArcInputs
 from vla_openpi import LeRobotArcDataConfig
 from vla_openpi import RawOutputs
+from vla_openpi import vlm_filter
 
 ACTION_DIM = 8
 ACTION_HORIZON = 10
@@ -29,12 +28,6 @@ CAMERAS = (
     ("observation/image", "observation.images.agentview", "base_0_rgb"),
     ("observation/wrist_image", "observation.images.eye_in_hand", "left_wrist_0_rgb"),
 )
-
-
-def vlm_filter() -> nnx.filterlib.Filter:
-    """Parameters of the VLM: SigLIP (img) and every Gemma parameter that is not the action expert's (suffix _1)."""
-    gemma_2b = nnx.All(nnx_utils.PathRegex(".*llm.*"), nnx.Not(nnx_utils.PathRegex(".*llm.*_1.*")))
-    return nnx.All(nnx.Param, nnx.Any(nnx_utils.PathRegex(".*img.*"), gemma_2b))
 
 
 def train_config(name: str, data_root: pathlib.Path, repo_id: str, exp_name: str) -> _config.TrainConfig:
