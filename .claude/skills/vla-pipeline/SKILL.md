@@ -1,6 +1,6 @@
 ---
 name: vla-pipeline
-description: VLA 示教数据预处理的总流程：把录制数据处理成训练就绪的数据集——体检与清洗、关键帧、静止帧与末尾补帧、数据评估与留出集、动作标签——并生成数据报告；训练、评估、部署作为下游交给 vla-downstream。新机器人、新任务或新数据集从这里开始。
+description: VLA 示教数据预处理的总流程：把录制数据处理成训练就绪的数据集——原始录制接入与指令标注、体检与清洗、关键帧、静止帧与末尾补帧、数据评估与留出集、动作标签——并生成数据报告；训练、评估、部署作为下游交给 vla-downstream。新机器人、新任务或新数据集从这里开始。
 ---
 
 # VLA 数据预处理
@@ -17,7 +17,7 @@ description: VLA 示教数据预处理的总流程：把录制数据处理成训
 
 | 输入 | 用途 |
 |---|---|
-| 数据集（LeRobot v2.1）路径，只读 | 源头；派生版本另存，不覆盖源数据 |
+| 数据集（LeRobot v2.1）路径，只读；原始录制（其他格式）先经 `vla-data-intake` 转换和标注 | 源头；派生版本另存，不覆盖源数据 |
 | `robot_spec.json`：动作维、关节维、指令维、状态维对应、fps、相机列 | 所有工具共用，格式见 [产物](references/artifacts.md#robot_specjson) |
 | 任务描述与末端执行器类型 | 关键帧怎么定义 |
 | 模型 `action_horizon`；运控对首点跳变的上限 | 标签选择；上限未知时只交付候选清单 |
@@ -28,7 +28,7 @@ description: VLA 示教数据预处理的总流程：把录制数据处理成训
 
 | 阶段 | skill | 输入 → 输出 | 放行条件 |
 |---|---|---|---|
-| S0 范围 | 本 skill | 上表 → `robot_spec.json`、`run.json` | 关节维与指令维恰好覆盖全部动作维；状态维对应已核对 |
+| S0 接入与范围 | `vla-data-intake`、本 skill | 原始录制 → 标注版源数据集、`conversion.json`、`prompts.json`；上表 → `robot_spec.json`、`run.json` | 每个排除都有理由；每集拼图看过；指令覆盖全部保留的集；关节维与指令维恰好覆盖全部动作维；状态维对应已核对 |
 | S1 体检 | `vla-data-cleaning` | 源数据 → `audit.json`、跳变核对图 | 已确认 `action[t] ≈ state[t+1]`；每类发现都有处理决定 |
 | S2 清洗 | `vla-data-cleaning` | 源数据 + `cleaning_plan.json` → 清洗版 | 所有非孤立跳变都有书面决定 |
 | S3 关键帧初检 | `vla-keyframes` | 清洗版 → `keyframes_pass1.json` | 检测跑通；只用于给静止段分类 |
@@ -54,6 +54,8 @@ S3 和 S5 是同一个工具跑两次：S4 改变了行和帧号，人工核对�
 | 保留持续运动的跳变 | agent，看过核对图 | `jump_decisions` |
 | 断点跳变的修复或保留 | 人 | `jump_decisions` |
 | 排除 episode（含机位、批次异常） | 人 | `exclude_episodes` |
+| 接入时排除 episode（帧率、丢帧、没有运动、画面里有人或任务失败） | 人，agent 附拼图或统计 | `conversion.json` |
+| 每集的指令标注 | agent 写，人抽查 | `prompts.json` |
 | 接受关键帧检查的问题 | 人，agent 提出理由 | 关键帧修正文件的 `accept` |
 | 裁掉开头、中途或结尾的静止帧 | 人 | `timing_plan.json` |
 | 末尾补帧的帧数（不少于一个 span） | agent | `timing_plan.json` |

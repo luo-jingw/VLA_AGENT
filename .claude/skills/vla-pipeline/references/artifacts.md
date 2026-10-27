@@ -6,6 +6,9 @@
 runs/<task>/                     一个任务的计划文件、报告与核对图（小文件）
   run.json                       S0 起，每生成一个数据集版本时更新
   decisions.md                   待人决定的事项
+  conversion.json                S0 输入（原始录制的排除及理由）
+  sheets/                        S0，每集一张关键画面拼图
+  prompts.json                   S0，每集的场景描述与指令
   robot_spec.json                S0
   audit.json, audit_review/      S1
   cleaning_plan.json             S2 输入
@@ -21,7 +24,9 @@ runs/<task>/                     一个任务的计划文件、报告与核对�
   replay_spec.json               S8 输入
   eval_<model>.json              S8
   parity_*.npz                   S8
-data/<source>                    源数据，只读
+<raw>/                           原始录制（非 LeRobot），只读
+data/<source>                    源数据，只读；原始录制转换后的版本
+data/<source>-annotated          S0，写入每集指令后的版本，作为 S1 的源
 data/<source>-clean              S2
 data/<source>-timed              S4
 data/<source>-<labels>-train     S7，去掉留出集
@@ -100,6 +105,23 @@ data/<source>-<labels>-eval      S7，全部 episode，编号与定时版一致
 ### cleaning_plan.json、timing_plan.json、keyframes_spec.json、keyframe_overrides.json
 
 格式分别写在 `clean`、`episode_timing`、`keyframe_spec`、`keyframe_detect` 模块的说明里（`python -m vla_tools.<module> --help`）。共同规则：凡是需要判断的处理，都要有一条决定和理由；工具对缺少决定的情况拒绝写出。
+
+### conversion.json、conversion_report.json
+
+```json
+{"source": "<仓库>@<版本>", "exclude": {"2": "step gap of 6.3 s; measured rate 20.6 Hz"}}
+```
+
+键是原始编号。转换脚本把 `meta/conversion_report.json` 写进转换后的数据集：`source`、`excluded`、`episode_map`（原始编号 → 新编号）、`max_step_s`（每集相邻两步的最大间隔，秒）。
+
+### prompts.json
+
+```json
+{"3": {"scene": "picks the orange cube from the table and puts it on the white box",
+       "prompts": ["Place the orange cube on top of the white box.", "..."]}}
+```
+
+键是原始编号，`prompt_annotation --source-map <conversion_report.json>` 把它们对应到数据集的编号。第一条指令是每一行的 task，全部指令进 `meta/episodes.jsonl` 的 `tasks`；`meta/prompt_annotation.json` 记录文件路径和每集的 `scene`。
 
 ### label_config.json
 

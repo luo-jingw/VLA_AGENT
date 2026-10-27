@@ -18,6 +18,7 @@ split → action labels → a training-ready dataset with a data report, handed 
 
 | 阶段 | skill | 做什么 | 产物 |
 |---|---|---|---|
+| S0 接入 | `vla-data-intake` | 原始录制转换成 LeRobot（转换前用原始时间戳查丢帧）；逐集看关键画面排除不能训练的集；每集标注 5 条描述实际内容的指令 | 标注版源数据集、`conversion.json`、`prompts.json` |
 | S0 范围 | `vla-pipeline` | 机器人布局、任务与末端执行器、模型 H 与运控约束 | `robot_spec.json`、`run.json` |
 | S1–S2 体检与清洗 | `vla-data-cleaning` | 确认索引约定；找出静止维、时间戳缺口、指令毛刺、相机冻结、重复 episode、关节跳变；按书面决定修复或排除 | `audit.json`、清洗版 |
 | S3、S5 关键帧 | `vla-keyframes` | 按任务与末端执行器定义关键帧；检测、一致性检查、逐类看图核对、记录修正 | `keyframes.json`、核对图 |
@@ -85,6 +86,10 @@ S0–S7 都通过后，`data_report` 写出 `runs/<task>/data_report.md`：数�
 
 ```bash
 pip install -e .
+# 原始录制（非 LeRobot）时先接入，见 vla-data-intake；之后各步的 data/<src> 换成 data/<src>-annotated：
+python examples/ur3_dual_arm/convert_hdf5.py --raw <raw_dir> --conversion runs/<task>/conversion.json --task "<占位指令>" --out data/<src>
+python -m vla_tools.episode_sheets  --dataset data/<src> --spec runs/<task>/robot_spec.json --every 40 --out runs/<task>/sheets
+python -m vla_tools.prompt_annotation --dataset data/<src> --prompts runs/<task>/prompts.json --source-map data/<src>/meta/conversion_report.json --out data/<src>-annotated
 python -m vla_tools.run_index       runs/<task> --task <task> --spec runs/<task>/robot_spec.json --source data/<src>
 python -m vla_tools.audit           --dataset data/<src> --spec runs/<task>/robot_spec.json --out runs/<task>/audit.json --review-dir runs/<task>/audit_review
 python -m vla_tools.clean           --dataset data/<src> --spec runs/<task>/robot_spec.json --plan runs/<task>/cleaning_plan.json --out data/<src>-clean
@@ -132,7 +137,7 @@ AGENTS.md, CLAUDE.md, PROJECT.md, plan.md, issues.md, opportunities.md   explici
 src/vla_tools/                                                           工具包（python -m vla_tools.<module>）
 src/vla_openpi/, integrations/openpi/                                    openpi 接入
 src/vla_libero/                                                          LIBERO 仿真器里的开环回放与闭环评测
-examples/ur3_dual_arm/, examples/libero_object/                          双臂 UR3、LIBERO 的配置示例
+examples/ur3_dual_arm/, examples/libero_object/                          双臂 UR3（含原始 HDF5 转换脚本）、LIBERO 的配置示例
 tests/                                                                   合成数据测试
 docs/validation.md, docs/figures/                                        已验证的行为；README 中的图及生成脚本
 ```

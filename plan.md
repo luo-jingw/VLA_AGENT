@@ -1,96 +1,86 @@
 # Plan
 
-Plan Status: completed
+Plan Status: approved
 
 # Problem
 
 ## Current
 
-- Labels in the LIBERO alphabet-soup simulator come in two families (docs/validation.md → LIBERO simulator):
-  per-frame time labels (Fpp: time metric, span 10, H 10, per-point action statistics) succeed most at the
-  recorded pace (83–89% in 158–189 frames); curvature-resampled labels executed with velocity timing (S3b:
-  curvature, span 32, event density 1, per-point statistics) finish 2.1–2.6× faster at 77–81%.
-- `arc_core.chunks` already expresses a two-phase sampling: under metric `time` outside keyframe windows the
-  points are spaced `span/H` recorded frames apart, evenly in time; a segment inside a keyframe window carries
-  `event_density` points per `span/H` frames. `event_density = span/H` puts one point on every recorded frame
-  inside the windows.
-- The keyframe windows of the run (grasp −6 / +4, lift −2 / +6, release −4 / +6 frames) cover the frames
-  right at the events. The end effector is within 20 / 40 / 60 mm of the grasp pose 3 / 5 / 7 frames before
-  the grasp, and of the release pose 5 / 8 / 10 frames before the release.
-- Deployment executes at 1.0 of the joint velocity limits (`arc_interp.DEPLOY_FRACTION`); S3b was evaluated
-  closed loop only at that fraction, while the labels open loop succeed more at 0.6–0.8 than at 1.0 under cap 8.
+- `data/pick-and-place-cube-quick-timed` (published as `JingwuLuo/pick_and_place_cube_quick_ur3`): 52 UR3
+  episodes at 30 Hz, right arm only, still frames dropped outside 8 frames before to 15 after each gripper
+  switch, 60-row end hold, five instructions per episode (first one as `task`). Built from the raw HDF5 by
+  `examples/ur3_dual_arm/convert_hdf5.py`, `vla_tools.prompt_annotation` and `vla_tools.episode_timing` with
+  the configuration in `runs/pick_place_cube_quick/`.
+- On LIBERO (docs/validation.md → LIBERO simulator) three label families were trained with one recipe (pi0.5
+  base, VLM frozen, per-point action statistics, 10k steps): per-frame (Fpp), curvature-resampled (S3b) and
+  two-phase (TP); TP at cap 8 matched Fpp's success at about twice the demonstration speed.
 
 ## Problem
 
-Whether labels that are sparse and uniform in time during the gross motion and dense (one point per recorded
-frame) during the fine manipulation train a policy that keeps the per-frame labels' success at the resampled
-labels' speed is unmeasured; and whether S3b's deployment fraction should be below 1.0 is unmeasured closed
-loop.
+The three label families have not been built or trained on a real-robot recording.
 
 ## Goal
 
-- Two-phase labels (TP): metric `time`, span 32, H 10, `event_density` 3.2, anchor `state`, fine-phase
-  windows grasp −8 / +4, lift −2 / +6, release −10 / +6 frames; same held-out episodes (3 5 12 21 34) and
-  training recipe as S3b (per-point action statistics, 2 GPUs, 10k steps).
-- Closed-loop success and frames for TP under the matched conditions (task, initial states, kp 400, measured
-  state, budget 280, three runs per cell), beside Fpp and S3b; TP labels open loop under the same execution.
-- S3b closed loop at velocity fraction 0.8 (cap 4 and cap 8, three runs); `DEPLOY_FRACTION` becomes 0.8 when
-  its success exceeds fraction 1.0's by more than the run-to-run spread at both caps.
+Three training datasets of the same 47 episodes (5 held out) that differ only in their labels, their
+per-point normalisation statistics, and one training recipe for all three, ready for review before training:
+
+- per-frame: `time`, span 10, H 10;
+- resampled sparse: the sweep's selection at the largest admissible span;
+- two-phase: `time`, span 48, `event_density` 4.8 (one point per recorded frame inside the windows), windows
+  grasp −12 / +6, lift −3 / +9, release −15 / +9 frames (LIBERO's TP windows scaled from 20 to 30 Hz).
 
 # Structure
 
 ## Modules
 
-- Label sampling: `src/vla_tools/arc_core.py`, `src/vla_tools/build_labels.py` (used unchanged).
-- Interpolation: `src/vla_tools/arc_interp.py` (`DEPLOY_FRACTION`).
-- Evaluation scripts outside the repository: `reports/sim-eval-src/gripper_trace.py`,
-  `reports/sim-eval-src/replay_with_command_rule.py`.
-- Run inputs and outputs outside the repository: `runs/libero_alphabet_soup/`.
-- Validation record: `docs/validation.md`.
+- Label tools (unchanged): `vla_tools.keyframe_detect`, `vla_tools.diversity`, `vla_tools.sweep`,
+  `vla_tools.build_labels`.
+- openpi integration: `examples/ur3_dual_arm/configs.py` (train config), `examples/ur3_dual_arm/run.py`
+  (norm stats with `--per-point-actions`, train, serve).
+- Run configuration outside the repository: `runs/pick_place_cube_quick/`.
 
 ## Responsibilities
 
-The run directory owns the TP keyframe windows and label config; `build_labels` turns them into datasets;
-the evaluation scripts measure; `docs/validation.md` records the measured results.
+The run directory owns every parameter; the tools turn them into datasets and statistics; the example owns
+the training recipe.
 
 ## State Ownership
 
-- Fine-phase windows: `runs/libero_alphabet_soup/keyframes_two_phase.json` (the run's keyframes with the
-  windows widened).
-- TP label config: `runs/libero_alphabet_soup/label_config_two_phase.json`.
-- Deployment fraction: `arc_interp.DEPLOY_FRACTION`.
+- Keyframe windows: `runs/pick_place_cube_quick/keyframes_spec_labels.json` (per-frame, resampled) and
+  `keyframes_spec_two_phase.json`.
+- Held-out episodes: `runs/pick_place_cube_quick/diversity.json`.
+- Label parameters: `runs/pick_place_cube_quick/label_config_{time_s10,curvature_s48_d0,two_phase_s48}.json`.
+- Joint velocity limits and switch holds: `runs/pick_place_cube_quick/robot_spec.json`.
+- Training recipe: `examples/ur3_dual_arm/configs.py`.
 
 # Interface
 
 ## Interfaces
 
-No new interface. `build_labels --keyframes keyframes_two_phase.json --config label_config_two_phase.json`;
-`run.py norm-stats --per-point-actions`, `run.py train`, `run.py serve-points` with config name
-`pi05_libero_alphabet_soup_two_phase_pp`; `gripper_trace.py` cells as in
-`runs/libero_alphabet_soup/sim/matched/run.sh`.
+`run.py norm-stats --per-point-actions` (new option, as in `examples/libero_object/run.py`); otherwise
+unchanged.
 
 ## Inputs
 
-`data/libero-alphabet-soup-timed`, `runs/libero_alphabet_soup/robot_spec.json`, the run's keyframes.
+`data/pick-and-place-cube-quick-timed`.
 
 ## Outputs
 
-Datasets `data/libero-alphabet-soup-two-phase-{train,eval}`; checkpoint
-`openpi/checkpoints/pi05_libero_alphabet_soup_two_phase_pp/run/9999`; traces and logs under
-`runs/libero_alphabet_soup/sim/two_phase/`; a section of `docs/validation.md`.
+`data/pick-and-place-cube-quick-{time-s10,curvature-s48-d0,two-phase-s48}-{train,eval}`; norm stats under
+`openpi/assets/pi05_ur3_cube_quick_{time_s10,curvature_s48,two_phase_s48}_pp/`; checkpoints after review.
 
 ## State Changes
 
-None in the repository unless phase 4's condition holds (`DEPLOY_FRACTION` 1.0 → 0.8).
+`examples/ur3_dual_arm/configs.py` trains with the VLM frozen and `rotate_prompts`; `LeRobotArcDataConfig`
+gains `rotate_prompts`; `examples/ur3_dual_arm/run.py` gains `--per-point-actions`; `vla_tools.norm_floor` floors per-point (H, D)
+statistics along the dim axis (`floor_dims`), as well as pooled (D,) ones.
 
 # Flow
 
 ## Main Flow
 
-Keyframes with fine-phase windows + TP config → `build_labels` → parquet features rewrite → per-point norm
-stats → training → checkpoint with `arc_resample.json` copied into its assets → `serve-points` →
-`gripper_trace.py` closed loop per cell; `replay_with_command_rule.py --source labels` for the labels open
-loop.
+Keyframes on the timed dataset → stratified held-out split → sweep → `build_labels` (train without the
+held-out, eval with all) → per-point norm stats → review of the recipe → training.
 
 # Code Mapping
 
@@ -116,12 +106,11 @@ Round: 1
 
 ### Goal
 
-TP labels.
+Keyframes, held-out split, sweep and the three label datasets.
 
 ### Files
 
-`runs/libero_alphabet_soup/keyframes_two_phase.json`, `runs/libero_alphabet_soup/label_config_two_phase.json`,
-`data/libero-alphabet-soup-two-phase-{train,eval}`, `openpi/assets/pi05_libero_alphabet_soup_two_phase_pp/`.
+`runs/pick_place_cube_quick/`, `data/pick-and-place-cube-quick-*-{train,eval}`.
 
 ### Structures
 
@@ -137,12 +126,23 @@ None.
 
 ### Observation
 
-Sample positions of a chunk outside and inside the windows; dataset summary; norm-stats shapes.
+Keyframe issue list; held-out episodes and their distance to training; sweep table; label positions of
+sample frames; dataset summaries.
 
-Result: 45 training and 50 evaluation episodes, window fraction 32.5% of frames, padding 8.8%. Episode 0:
-frame 10's points at recorded frames 12.2, 15.4, …, 31.4 (3.2 apart) then 34.2, 35.2, 36.2 once inside the
-grasp window; frames 38 and 42 one frame apart over 10 frames; frame 128 leaves the release window after
-7 points (then 3.2 apart). Action statistics (10, 8).
+Audit of `data/pick-and-place-cube-quick` (`runs/pick_place_cube_quick/audit.json`): largest
+|action[t] − state[t+1]| 0, largest timestamp gap 1.0 frame, commands binary, static dims 0–5 (left arm), 44
+continuing jumps all on dim 9 (right elbow, 8–12 median steps; review images show smooth motion), no isolated
+or breakpoint jump: no cleaning step.
+
+Result: grasp, lift and release found in all 52 episodes (lift a median 6 frames after the grasp; three long
+carries accepted with reasons). Held-out (stratified) episodes 2, 13, 28, 34, 43 (raw 0003, 0015, 0033, 0039,
+0048; 34 and 43 are multi-move combinations absent from training). Sweep (head 5, path step 0.0212 rad):
+`time` admissible up to span 32, `curvature` up to span 48 at density 0 (density 1: keyframe position median
+1.07 > 1); selected `curvature` span 48 density 0 (path full 0.54, keyframe position 0.91). Two-phase cell
+`time` span 48 density 4.8: admissible, path full 0.31, keyframe position 0.34. Train copies 47 episodes /
+15,876 rows, eval copies 52 / 17,564; reach median 10 / 48 / 29 frames, window fraction 17.4 / 15.9 / 38.5%,
+mean loss weight 1.00. Episode 0: per-frame points at frames +1…+10; curvature at uneven spacings up to +48;
+two-phase every 4.8 frames away from the events and every frame next to the grasp and the release.
 
 ## Phase 2
 
@@ -152,11 +152,11 @@ Round: 2
 
 ### Goal
 
-Train TP.
+Per-point norm stats for the three train copies.
 
 ### Files
 
-`openpi/checkpoints/pi05_libero_alphabet_soup_two_phase_pp/`, `runs/libero_alphabet_soup/train/`.
+`examples/ur3_dual_arm/run.py`, `openpi/assets/pi05_ur3_cube_quick_*_pp/`.
 
 ### Structures
 
@@ -164,7 +164,7 @@ None.
 
 ### Affected Modules
 
-None in the repository.
+openpi integration example.
 
 ### Dependencies
 
@@ -172,10 +172,13 @@ Phase 1.
 
 ### Observation
 
-Training log loss at steps 0, 100, 9900 against Fpp and S3b; checkpoint 9999 present with `arc_resample.json`.
+Statistics shapes (actions (10, 14), state (14,)); constant left-arm dims.
 
-Result: loss 0.1223 / 0.0875 / 0.0061 at steps 0 / 100 / 9900 (Fpp 0.1171 / 0.0804 / 0.0058, S3b 0.0070 at 9900);
-17 GB per GPU with memory on demand, 3.1 s per step on GPUs shared with other jobs; checkpoint 9999 with the report.
+Result: actions (10, 14), state (14,) for all three. The left-arm joints move by at most 4.1e-4 rad (encoder
+noise): delta quantile ranges 1.0e-4–2.2e-4 rad, floored to 0.05 rad on dims 0–5 at every point
+(`norm_floor`, raw files kept as `runs/pick_place_cube_quick/norm_stats_*.raw.json`). The left gripper command
+is 1 in episodes 2–6 and 0 elsewhere, constant within each episode. `arc_resample.json` copied next to each
+norm_stats.json. `tests/test_norm_floor.py` covers pooled and per-point statistics.
 
 ## Phase 3
 
@@ -185,13 +188,65 @@ Round: 3
 
 ### Goal
 
-Closed-loop and open-loop measurements: TP cells (cap 4 at fraction 1.0 and 0.8, cap 8 at 0.8, cap 4 with
-0.1 s async latency, uniform rate 1 with execution 4); TP labels open loop at the same cells; S3b at cap 4
-and cap 8 with fraction 0.8.
+Training recipe: VLM frozen, each sample's prompt drawn from its episode's five instructions; check of the
+label parameters against the recording and of what the model receives.
 
 ### Files
 
-`runs/libero_alphabet_soup/sim/two_phase/`.
+`src/vla_openpi/episode_prompt.py` (EpisodePrompt, load_episode_prompts), `src/vla_openpi/vlm_freeze.py`
+(vlm_filter, moved from `examples/libero_object/configs.py`), `src/vla_openpi/arc_data_config.py`
+(`rotate_prompts`), `src/vla_openpi/__init__.py`, `examples/ur3_dual_arm/configs.py`,
+`examples/libero_object/configs.py`, `tests/test_openpi_integration.py`.
+
+### Structures
+
+`EpisodePrompt(dataset_root)`: in the repack stage (training only), replaces `episode_index` with one of the
+episode's `tasks`, drawn uniformly per call; the file is read on the first sample, so serving builds the
+config without the dataset.
+
+### Affected Modules
+
+openpi integration.
+
+### Dependencies
+
+Phase 2.
+
+### Observation
+
+Fingertip distance and joint speed around the events (raw end-effector poses); sweep and rate ceiling of
+the two-phase windows; samples through openpi's training transform chain; test suite.
+
+Result: before a grasp the operator runs at 0.54–0.67 of the median joint speed from about 18 to 3 frames
+before; the fingertip is within 20 / 40 / 60 mm of the grasp pose a median 5 / 15 / 27 frames before (p90 10 /
+29 / 30), of the release pose 8 / 17 / 24; joint speed passes 1.3 of the median 9 frames after a grasp or a
+release. The two-phase grasp window (−12) starts 33 mm before the grasp, inside the slow approach; windows
+covering 40 mm (grasp −15 / +6, release −17 / +12) or 60 mm (−27 / +6, −24 / +14) cover 33.1% and 43.9% of
+recorded rows against 28.8%, with path full 0.29 and 0.20 against 0.31 path steps, the same keyframe position
+(0.34), and lower rate ceilings (async at 0.1 s: 1.96 and 1.81 against 2.19). Rate ceiling (velocity timing at
+1.0 of the UR3 limits, holds 0.5 / 0.517 s, 90% of 50 episodes; episodes 30 and 38 recorded above the limit
+are left out), async / sync speed-up at latency 0, 0.1, 0.2 s: per-frame 2.74, 1.30 / 1.17, 0.74 / 0.84;
+curvature span 48 3.02, 2.75 / 2.26, 2.13 / 1.83; two-phase 2.59, 2.19 / 1.68, 1.39 / 1.29. Training
+transform chain for all three: repack (RepackTransform, EpisodePrompt) → ArcInputs → DeltaActions → Normalize
+→ ResizeImages, TokenizePrompt, PadStatesAndActions; joint actions equal chunk − state exactly and grippers
+stay absolute; normalised right-joint actions 1.8–2.2% outside [−1, 1], floored left joints at most 0.009;
+three 224 × 224 images with masks; 200 draws of one sample give each of its five instructions 29–46 times.
+pi0.5 with `discrete_state_input=False` adds no state token and no state text: the model sees images and the
+prompt only. 166 tests pass.
+
+## Phase 4
+
+Phase Status: completed
+
+Round: 4
+
+### Goal
+
+Launch the three trainings with the reviewed recipe.
+
+### Files
+
+`openpi/checkpoints/pi05_ur3_cube_quick_*_pp/`, `runs/pick_place_cube_quick/train/`.
 
 ### Structures
 
@@ -203,31 +258,144 @@ None in the repository.
 
 ### Dependencies
 
-Phase 2 for TP; the S3b cells and TP labels open loop depend on phase 1 only.
+Phase 3.
 
 ### Observation
 
-Success per run (of 50), mean frames of successful episodes, per cell.
+Each run past its first steps; step rate; GPU memory.
 
-Result (docs/validation.md → LIBERO simulator, Two-phase labels): TP at cap 4 41.7 (96 frames), cap 8 44.3 (58),
-cap 4 with 0.1 s async 43.3 (80), fraction 0.8 39.3 / 42.0, uniform rate 1 10.3 (budget-bound); labels open loop
-42–48. S3b at fraction 0.8: cap 4 41.3 (66), cap 8 39.7 (56) against 40.7 and 38.7 at 1.0.
+Started on nnmc66 (GPUs 0,1 / 2,3 / 5,6), `runs/pick_place_cube_quick/train/launch_nnmc66.sh`, base weights
+read from the nnmc61 cache over NFS (`OPENPI_DATA_HOME`). The first launch stalled at the first collective
+(NCCL peer-to-peer, PROJECT.md → Environment; logs kept as `*_stalled_nccl_p2p.log`); relaunched with
+`NCCL_P2P_DISABLE=1`: 17 GB per GPU, 1.6 s per step (per-frame, curvature) and 2.0 s per step (two-phase) at
+step 200–280.
 
-## Phase 4
+## Phase 5
 
 Phase Status: completed
 
-Round: 4
+Round: 5
 
 ### Goal
 
-Record the results; set `DEPLOY_FRACTION` to 0.8 when phase 3's S3b condition holds, with its tests, the
-skills and README mentions, and push.
+Per-episode instructions written into a dataset version by a tool rather than by a converter.
 
 ### Files
 
-`docs/validation.md`, `issues.md`; conditionally `src/vla_tools/arc_interp.py`, `tests/test_arc_interp.py`,
-`.claude/skills/vla-downstream/SKILL.md`, `.claude/skills/vla-action-labels/SKILL.md`, `README.md`.
+`src/vla_tools/dataset_writer.py` (`EpisodePlan.tasks`), `src/vla_tools/prompt_annotation.py`,
+`tests/test_prompt_annotation.py`.
+
+### Structures
+
+`EpisodePlan.tasks: list[str] | None`: the episode's instructions; when any plan sets them, the writer
+rewrites `meta/tasks.jsonl`, the episode rows' `tasks` in `meta/episodes.jsonl` and `task_index` (the first
+instruction). `prompt_annotation --dataset --prompts prompts.json --out`: `prompts.json` keyed by episode
+index of that version, every episode covered.
+
+### Affected Modules
+
+Dataset writing.
+
+### Dependencies
+
+Phase 4.
+
+### Observation
+
+Test on a synthetic dataset; the tool on `data/pick-and-place-cube-quick` reproduces its tasks, episodes and
+`task_index` from `runs/pick_place_cube_quick/prompts.json`.
+
+Result: `tests/test_prompt_annotation.py` (task tables, task_index, refusal of an uncovered episode, source-map
+renumbering with an excluded source episode) and `tests/test_dataset_writer.py` pass. On the converted
+dataset with `--source-map meta/conversion_report.json`: 52 episodes, 260 instructions, 222 distinct;
+tasks.jsonl, episodes.jsonl and every episode's task_index identical to the converter-written ones.
+
+## Phase 6
+
+Phase Status: completed
+
+Round: 6
+
+### Goal
+
+Per-episode contact sheets from a LeRobot dataset for annotation and review.
+
+### Files
+
+`src/vla_tools/episode_sheets.py`, `tests/test_episode_sheets.py`.
+
+### Structures
+
+`episode_sheets --dataset --spec --cameras ... --out`: one PNG per episode, a column per moment (first frame,
+`--after` frames after every command edge, last frame), a row per camera.
+
+### Affected Modules
+
+None besides the new tool.
+
+### Dependencies
+
+Phase 5.
+
+### Observation
+
+Test on a synthetic dataset (moments and image size); sheets of `data/pick-and-place-cube-quick` against the
+raw-HDF5 sheets used for the annotation.
+
+Result: `tests/test_episode_sheets.py` passes. Episode 3 (raw 0004): start, close at action 107 (frame 113),
+open 178, close 275, open 433, end 523 — the moments and images of the raw sheet.
+
+## Phase 7
+
+Phase Status: completed
+
+Round: 7
+
+### Goal
+
+The UR3 recorder's HDF5 converter in the repository as the example of a raw-recording intake.
+
+### Files
+
+`examples/ur3_dual_arm/convert_hdf5.py`, `pyproject.toml` (optional dependency `hdf5 = ["h5py"]`).
+
+### Structures
+
+The converter first written outside the repository, without the instructions (a single task
+`--task` until `prompt_annotation`), plus the raw step-interval check in its report.
+
+### Affected Modules
+
+UR3 example.
+
+### Dependencies
+
+Phase 5.
+
+### Observation
+
+Converter + `prompt_annotation` against `data/pick-and-place-cube-quick`: equal rows, images and meta.
+
+Result: every parquet column of all 52 episodes equal; info.json, tasks.jsonl, episodes.jsonl and
+conversion_report.json identical; episodes_stats.jsonl differs only in task_index statistics (not recomputed
+by the writer) and the version adds prompt_annotation.json. Without the exclusion of 0002 the converter stops
+there: largest step interval 6.33 s exceeds 1.5 frames. The converter outside the repository is removed.
+
+## Phase 8
+
+Phase Status: active
+
+Round: 8
+
+### Goal
+
+Skills and references describe the intake, annotation, still-frame and publishing steps.
+
+### Files
+
+`.claude/skills/vla-data-intake/SKILL.md` (new), `.claude/skills/vla-pipeline/SKILL.md`,
+`.claude/skills/vla-pipeline/references/{artifacts,failure-modes}.md`, `.claude/skills/vla-episode-timing/SKILL.md`,
+`.claude/skills/vla-downstream/SKILL.md`, `README.md`.
 
 ### Structures
 
@@ -235,16 +403,73 @@ None.
 
 ### Affected Modules
 
-Validation record; conditionally interpolation.
+Skills.
 
 ### Dependencies
 
-Phase 3.
+Phases 5–7.
 
 ### Observation
 
-Docs tables match the trace files; full test suite and ruff when code changes; remote main equals local main
-after a push.
+Every command in the skills runs as written on this dataset; jargon check of the new skill.
 
-Result: docs/validation.md and ISSUE-011 updated. S3b's fraction-0.8 gain (0.6 and 1.0 successes) lies inside the
-run-to-run spread, so `DEPLOY_FRACTION` stays 1.0; no code change, no push.
+## Phase 9
+
+Phase Status: pending
+
+Round: 9
+
+### Goal
+
+Tests, lint and a local commit.
+
+### Files
+
+All of the above.
+
+### Structures
+
+None.
+
+### Affected Modules
+
+None.
+
+### Dependencies
+
+Phase 8.
+
+### Observation
+
+Full test suite and ruff; `git log` shows the commit under the repository identity.
+
+## Phase 10
+
+Phase Status: pending
+
+Round: 10
+
+### Goal
+
+Training results.
+
+### Files
+
+`openpi/checkpoints/pi05_ur3_cube_quick_*_pp/`, `runs/pick_place_cube_quick/train/`.
+
+### Structures
+
+None.
+
+### Affected Modules
+
+None in the repository.
+
+### Dependencies
+
+Phase 4.
+
+### Observation
+
+Loss at steps 0, 100 and the end per version; checkpoint with `arc_resample.json`; open-loop error on the
+held-out episodes.

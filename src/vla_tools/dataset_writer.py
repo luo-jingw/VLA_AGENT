@@ -7,6 +7,11 @@ columns to replace and which to add. Kept episodes are renumbered 0..N-1, and `f
 `huggingface` schema block that declares image columns survives. Videos are copied with their episode
 renumbered; changing the rows of a video dataset would need re-encoding and is refused.
 
+Instructions: when the plans carry `tasks` (every plan, or none), each episode's instructions replace its
+`tasks` in `meta/episodes.jsonl`, `meta/tasks.jsonl` is rewritten with every distinct instruction in order of
+first use, and every row's `task_index` points to its episode's first instruction. Without them the task
+tables are copied unchanged.
+
 `meta/episodes_stats.jsonl` is copied for kept episodes but not recomputed: openpi computes its own
 normalization statistics and does not read it.
 """
@@ -38,6 +43,7 @@ class EpisodePlan:
     rows: list[int] | None = None  # source row of every new row, in order; None keeps the episode as is
     replace: dict[str, np.ndarray] = dataclasses.field(default_factory=dict)  # column -> (kept rows, dim)
     add: dict[str, NewColumn] = dataclasses.field(default_factory=dict)
+    tasks: tuple[str, ...] | None = None  # the episode's instructions; the first is every row's task
 
 
 def write(src: Path, out: Path, plans: list[EpisodePlan], extra_meta: dict[str, dict]) -> dict[int, int]:
@@ -50,6 +56,17 @@ def write(src: Path, out: Path, plans: list[EpisodePlan], extra_meta: dict[str, 
     has_video = bool(src_info.get("video_path"))
     if has_video and any(p.rows is not None for p in plans):
         raise ValueError("changing the rows of a video dataset needs re-encoding; edit rows before conversion instead")
+    with_tasks = [p.tasks is not None for p in plans]
+    if any(with_tasks) and not all(with_tasks):
+        raise ValueError("either every episode plan carries tasks or none does")
+    if any(p.tasks is not None and not p.tasks for p in plans):
+        raise ValueError("an episode plan carries an empty tasks tuple")
+    task_table: dict[str, int] | None = None
+    if all(with_tasks) and plans:
+        task_table = {}
+        for plan in plans:
+            for task in plan.tasks:
+                task_table.setdefault(task, len(task_table))
 
     # Transforms below are keyed by fingerprint; with caching on, a fingerprint reused from an earlier
     # run silently returns that run's table. Nothing here is worth caching.
@@ -82,6 +99,8 @@ def write(src: Path, out: Path, plans: list[EpisodePlan], extra_meta: dict[str, 
             "frame_index": list(range(n)),
             "timestamp": [i / fps for i in range(n)],
         }
+        if task_table is not None:
+            rewrites["task_index"] = [task_table[plan.tasks[0]]] * n
         for column, values in rewrites.items():
             if column in table.column_names:
                 feature = table.features[column]
@@ -95,7 +114,8 @@ def write(src: Path, out: Path, plans: list[EpisodePlan], extra_meta: dict[str, 
         lengths[new] = n
         running += n
 
-    _write_meta(src, out, src_info, remap, lengths, added_features, chunks_size)
+    episode_tasks = {remap[p.source]: p.tasks for p in plans} if task_table is not None else None
+    _write_meta(src, out, src_info, remap, lengths, added_features, chunks_size, task_table, episode_tasks)
     for name, payload in extra_meta.items():
         payload = payload | {"source_dataset": str(src), "episode_map": {str(k): v for k, v in remap.items()}}
         (out / "meta" / name).write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -120,9 +140,13 @@ def _write_meta(
     lengths: dict[int, int],
     added_features: dict[str, dict],
     chunks_size: int,
+    task_table: dict[str, int] | None,
+    episode_tasks: dict[int, tuple[str, ...]] | None,
 ) -> None:
     for source in (src / "meta").iterdir():
         if not source.is_file() or source.name == "info.json":
+            continue
+        if source.name == "tasks.jsonl" and task_table is not None:
             continue
         if source.name in ("episodes.jsonl", "episodes_stats.jsonl"):
             rows = [json.loads(line) for line in source.read_text(encoding="utf-8").splitlines() if line.strip()]
@@ -134,11 +158,16 @@ def _write_meta(
                 row = row | {"episode_index": new}
                 if "length" in row:
                     row["length"] = lengths[new]
+                if episode_tasks is not None and source.name == "episodes.jsonl":
+                    row["tasks"] = list(episode_tasks[new])
                 kept.append(row)
             kept.sort(key=lambda row: row["episode_index"])
             (out / "meta" / source.name).write_text("".join(json.dumps(r) + "\n" for r in kept), encoding="utf-8")
         else:
             shutil.copyfile(source, out / "meta" / source.name)
+    if task_table is not None:
+        rows = [{"task_index": i, "task": t} for t, i in task_table.items()]
+        (out / "meta" / "tasks.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
 
     new_info = dict(src_info)
     new_info["features"] = dict(src_info["features"]) | added_features
@@ -151,4 +180,6 @@ def _write_meta(
         total_chunks=(episodes + chunks_size - 1) // chunks_size,
         splits={"train": f"0:{episodes}"},
     )
+    if task_table is not None:
+        new_info["total_tasks"] = len(task_table)
     (out / "meta" / "info.json").write_text(json.dumps(new_info, indent=2), encoding="utf-8")

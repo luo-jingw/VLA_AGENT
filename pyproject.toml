@@ -22,6 +22,8 @@ dependencies = [
 [project.optional-dependencies]
 # Open-loop evaluation against a served policy (vla_tools.replay_eval).
 eval = ["openpi-client"]
+# Raw HDF5 recordings converted by examples/ur3_dual_arm/convert_hdf5.py.
+hdf5 = ["h5py"]
 # vla_openpi, vla_tools.lora_to_pytorch and vla_tools.policy_parity need openpi itself, which is not on
 # PyPI: install this package into an openpi environment with integrations/openpi/patches applied.
 test = ["pytest"]
