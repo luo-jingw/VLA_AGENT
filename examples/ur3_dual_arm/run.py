@@ -6,7 +6,8 @@ with openpi's scripts and this directory on PYTHONPATH:
     export PYTHONPATH=<openpi>/scripts:<VLA_AGENT>/examples/ur3_dual_arm
     uv run python <VLA_AGENT>/examples/ur3_dual_arm/run.py norm-stats --data-root <data> --repo-id <dataset>-train \
         [--per-point-actions]
-    uv run python <VLA_AGENT>/examples/ur3_dual_arm/run.py train --data-root <data> --repo-id <dataset>-train --exp-name <run>
+    uv run python <VLA_AGENT>/examples/ur3_dual_arm/run.py train --data-root <data> --repo-id <dataset>-train --exp-name <run> \
+        [--resume]
     uv run python <VLA_AGENT>/examples/ur3_dual_arm/run.py serve --data-root <data> --repo-id <dataset>-train \
         --checkpoint checkpoints/<name>/<run>/<step> --port 8000
 
@@ -16,6 +17,7 @@ with openpi's scripts and this directory on PYTHONPATH:
 from __future__ import annotations
 
 import argparse
+import dataclasses
 from pathlib import Path
 
 from configs import train_config
@@ -34,6 +36,7 @@ def main() -> None:
     parser.add_argument("--exp-name", default="run")
     parser.add_argument("--checkpoint", type=Path, default=None)
     parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--resume", action="store_true", help="train: continue from the run's latest checkpoint")
     parser.add_argument(
         "--per-point-actions",
         action="store_true",
@@ -60,7 +63,7 @@ def main() -> None:
     if args.command == "norm-stats":
         print(f"wrote {launch.norm_stats(config, per_point_actions=args.per_point_actions)}")
     elif args.command == "train":
-        launch.train(config)
+        launch.train(dataclasses.replace(config, resume=args.resume))
     else:
         if args.checkpoint is None:
             raise SystemExit("serve needs --checkpoint")

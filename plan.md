@@ -264,9 +264,9 @@ Phase 3.
 
 Each run past its first steps; step rate; GPU memory.
 
-Started on nnmc66 (GPUs 0,1 / 2,3 / 5,6), `runs/pick_place_cube_quick/train/launch_nnmc66.sh`, base weights
-read from the nnmc61 cache over NFS (`OPENPI_DATA_HOME`). The first launch stalled at the first collective
-(NCCL peer-to-peer, PROJECT.md → Environment; logs kept as `*_stalled_nccl_p2p.log`); relaunched with
+Started on one 8 × L40S node of the cluster (GPUs 0,1 / 2,3 / 5,6), with the base weights read over NFS from
+another node's cache (`OPENPI_DATA_HOME`). The first launch stalled at the first collective
+(NCCL peer-to-peer between the PCIe GPUs); relaunched with
 `NCCL_P2P_DISABLE=1`: 17 GB per GPU, 1.6 s per step (per-frame, curvature) and 2.0 s per step (two-phase) at
 step 200–280.
 
@@ -383,7 +383,7 @@ there: largest step interval 6.33 s exceeds 1.5 frames. The converter outside th
 
 ## Phase 8
 
-Phase Status: active
+Phase Status: completed
 
 Round: 8
 
@@ -413,9 +413,15 @@ Phases 5–7.
 
 Every command in the skills runs as written on this dataset; jargon check of the new skill.
 
+Result: `vla-data-intake` written; S0 in `vla-pipeline` points to it, with its two decisions; references
+gain conversion.json, conversion_report.json and prompts.json and six failure modes; `vla-episode-timing`
+and `vla-downstream` gain the UR3 results and the training and publishing steps. The converter,
+`episode_sheets --every 40` and `prompt_annotation` commands ran as written on this dataset.
+`episode_sheets` gained `--every`: the person in raw 0020 was visible between the edges and the end only.
+
 ## Phase 9
 
-Phase Status: pending
+Phase Status: completed
 
 Round: 9
 
@@ -443,9 +449,12 @@ Phase 8.
 
 Full test suite and ruff; `git log` shows the commit under the repository identity.
 
+Result: 170 tests pass; ruff clean outside the template-owned threejs-video script. Commits 97139ce
+(training recipe) and 346c004 (intake) under Jingwu Luo; not pushed.
+
 ## Phase 10
 
-Phase Status: pending
+Phase Status: active
 
 Round: 10
 
@@ -473,3 +482,7 @@ Phase 4.
 
 Loss at steps 0, 100 and the end per version; checkpoint with `arc_resample.json`; open-loop error on the
 held-out episodes.
+
+All three runs ended together at 23:08 (node time, 2026-10-26) at steps 4,320 / 4,300 / 3,140, with no error in
+their logs, no reboot and no out-of-memory record, while another session on the shared account closed the same
+second. Resumed at 06:15 on 2026-10-27 from checkpoints 4000 / 4000 / 3000 (`run.py train --resume`).
