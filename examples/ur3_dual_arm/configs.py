@@ -60,7 +60,7 @@ def train_config(name: str, data_root: pathlib.Path, repo_id: str, exp_name: str
         num_train_steps=10_000,
         save_interval=1000,
         log_interval=50,
-        keep_period=2000,
+        keep_period=5000,  # keeps the half-way (5000) checkpoint besides the latest
         wandb_enabled=False,
         lr_schedule=_optimizer.CosineDecaySchedule(
             warmup_steps=500, peak_lr=2.5e-5, decay_steps=10_000, decay_lr=2.5e-6

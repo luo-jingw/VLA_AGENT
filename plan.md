@@ -486,3 +486,32 @@ held-out episodes.
 All three runs ended together at 23:08 (node time, 2026-10-26) at steps 4,320 / 4,300 / 3,140, with no error in
 their logs, no reboot and no out-of-memory record, while another session on the shared account closed the same
 second. Resumed at 06:15 on 2026-10-27 from checkpoints 4000 / 4000 / 3000 (`run.py train --resume`).
+
+The source and timed datasets were then rebuilt for cube tasks only (raw 0000, 0004, 0005, 0006 excluded:
+spoon, mug and black block): 48 episodes, 13,186 recorded rows, 202 distinct instructions, and the Hub
+dataset replaced. The running trainings and their six label datasets keep the 52-episode version (47 training
+episodes, 4 of them not cube tasks); the next round rebuilds keyframes, the held-out split and labels from the
+48-episode version.
+
+The three runs finished (step 9999), but every checkpoint, from 2000 on, has non-finite values in 19 trained
+arrays, and the resumed runs logged NaN loss from their first line. Probes on the same node: two GPUs with only
+NCCL peer-to-peer disabled give NaN loss and parameter norm at step 0; one GPU (batch 32) and two GPUs with
+shared memory also disabled give loss 0.152–0.153 at step 0 and 0.053–0.054 at step 110. The models are unusable;
+the runs have to be repeated.
+
+Repeated on the 48-episode cube-only version (`c48` label datasets: held-out 10, 18, 23, 25, 35; 43 training
+episodes): two GPUs per run with peer-to-peer and shared memory disabled still gave NaN or inf loss at step 0;
+one GPU per run starts at loss 0.160 / 0.184 / 0.155 (per-frame / curvature / two-phase), batch 32, keep period
+5000 so the half-way checkpoint stays. Those runs were stopped for a version with both recording days.
+
+Second recording day (raw 0058-0128, 71 episodes) added: instructions annotated from the sheets (raw HDF5 sheets
+with frames every 40 steps), the per-move content kept in `runs/pick_place_cube_quick/moves.json`. Excluded in
+`runs/pick_place_cube_quick_all/conversion.json` (22 of 129): the earlier 10, raw 0125 (a person resets the
+scene after the task; recording left running) and 0126 (empty), raw 0007 and 0127 (teleoperated resets recorded
+as episodes, undone by the next episode), and eight second-day episodes that start with a teleoperated reset of
+the target (66, 71, 73, 78, 79, 86, 87, 89). Seven episodes with a missed grasp and a successful re-grasp are
+kept (about 1.8% of frames). 107 episodes, 25,490 recorded rows; keyframe issues accepted with reasons (long
+carries, slow approaches, multi-move phases, re-grasps); held-out 5, 17, 21, 37, 47, 49, 64, 85, 97, 98 (97
+training episodes). Published as `JingwuLuo/pick_and_place_cube_quick_ur3` (commit aad6c38e, tag `v2.1`).
+Trainings `pi05_ur3_cube_quick_all_*_pp` started on one GPU each: loss 0.151 / 0.171 / 0.178 at step 0 and
+0.126 / 0.149 / 0.128 at step 50, 3.0 s per step.
