@@ -528,3 +528,7 @@ state input) unchanged. Started `pi05_ur3_cube_quick_v4_curvature_s48_pp`, exp `
 step 0, 0.145 at step 50, 3.1 s per step. The three 228-episode runs of the old config were stopped at about 1,000
 steps and their checkpoints deleted. Open: absolute joint output, state input and a larger grasp-window loss
 weight as one-at-a-time variants; a fingertip-height floor at deployment.
+
+Held-out fixed at 5 episodes (54, 102, 122, 180, 185 of the 228): training set 223 episodes, 62,410 rows, 10.3 passes
+at 20,000 steps. Run `pi05_ur3_cube_quick_v4h5_curvature_s48_pp`, exp `ema20k`, one GPU: loss 0.178 at step 0,
+0.144 at step 50, 3.1 s per step. The 206-episode run was stopped at about 10 minutes and its checkpoints deleted.
