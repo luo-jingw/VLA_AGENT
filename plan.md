@@ -515,3 +515,16 @@ carries, slow approaches, multi-move phases, re-grasps); held-out 5, 17, 21, 37,
 training episodes). Published as `JingwuLuo/pick_and_place_cube_quick_ur3` (commit aad6c38e, tag `v2.1`).
 Trainings `pi05_ur3_cube_quick_all_*_pp` started on one GPU each: loss 0.151 / 0.171 / 0.178 at step 0 and
 0.126 / 0.149 / 0.128 at step 50, 3.0 s per step.
+
+Real-robot test of the 174-episode curvature policy at 10,000 steps: good overall, grasp height varies from trial
+to trial (sometimes the fingertip overshoots into the table); the 5,000-step checkpoint is clearly weaker.
+Demonstration grasps from the table are consistent (fingertip z -5 mm median, 8-10 mm standard deviation over
+three days; lowest 10% at -15 to -18 mm), so the margin to the table is about the size of that spread; the third
+recording day reaches farther (0.195 m against 0.10-0.125 m) and moves faster (0.71 against 0.49-0.52 rad/s).
+Normalisation ranges changed by about 6% between the 174- and 228-episode data. Training config changed to
+20,000 steps (11 passes over 206 episodes; 10,000 steps would be 5.5 against 7.3 before) and an exponential moving
+average of the weights, 0.999 (the saved `params` are the averaged weights); representation (joint deltas, no
+state input) unchanged. Started `pi05_ur3_cube_quick_v4_curvature_s48_pp`, exp `ema20k`, on one GPU: loss 0.190 at
+step 0, 0.145 at step 50, 3.1 s per step. The three 228-episode runs of the old config were stopped at about 1,000
+steps and their checkpoints deleted. Open: absolute joint output, state input and a larger grasp-window loss
+weight as one-at-a-time variants; a fingertip-height floor at deployment.

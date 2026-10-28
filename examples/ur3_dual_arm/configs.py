@@ -3,8 +3,9 @@
 pi0.5 from pi05_base with the VLM frozen (SigLIP and Gemma 2B): only the action expert (Gemma 300M) and the
 action and time projections are trained, as in examples/libero_object. action_horizon 10, quantile
 normalisation, joints as deltas from the state and grippers absolute, no state input. Each training sample's
-prompt is drawn from its episode's instructions (meta/episodes.jsonl `tasks`). The dataset is one written by
-vla_tools.build_labels; its control rate is carried by its arc_resample.json.
+prompt is drawn from its episode's instructions (meta/episodes.jsonl `tasks`). 20,000 steps (about 11 passes over
+206 episodes) with an exponential moving average of the weights (0.999): a checkpoint's `params` are the averaged
+weights. The dataset is one written by vla_tools.build_labels; its control rate is carried by its arc_resample.json.
 """
 
 from __future__ import annotations
@@ -24,6 +25,8 @@ from vla_openpi import vlm_filter
 
 ACTION_DIM = 14
 ACTION_HORIZON = 10
+NUM_TRAIN_STEPS = 20_000
+EMA_DECAY = 0.999
 CAMERAS = (
     ("observation/image", "observation.images.cam_high", "base_0_rgb"),
     ("observation/left_wrist_image", "observation.images.cam_left_wrist", "left_wrist_0_rgb"),
@@ -57,15 +60,15 @@ def train_config(name: str, data_root: pathlib.Path, repo_id: str, exp_name: str
         weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
         batch_size=32,
         num_workers=8,
-        num_train_steps=10_000,
+        num_train_steps=NUM_TRAIN_STEPS,
         save_interval=1000,
         log_interval=50,
         keep_period=5000,  # keeps the half-way (5000) checkpoint besides the latest
         wandb_enabled=False,
         lr_schedule=_optimizer.CosineDecaySchedule(
-            warmup_steps=500, peak_lr=2.5e-5, decay_steps=10_000, decay_lr=2.5e-6
+            warmup_steps=500, peak_lr=2.5e-5, decay_steps=NUM_TRAIN_STEPS, decay_lr=2.5e-6
         ),
         optimizer=_optimizer.AdamW(b1=0.9, b2=0.95, eps=1e-8, weight_decay=1e-4, clip_gradient_norm=1.0),
         freeze_filter=vlm_filter(),
-        ema_decay=None,
+        ema_decay=EMA_DECAY,
     )
