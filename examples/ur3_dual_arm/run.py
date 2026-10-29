@@ -37,6 +37,8 @@ def main() -> None:
     parser.add_argument("--checkpoint", type=Path, default=None)
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--resume", action="store_true", help="train: continue from the run's latest checkpoint")
+    parser.add_argument("--absolute-joints", action="store_true", help="joints as absolute positions, not deltas")
+    parser.add_argument("--state-input", action="store_true", help="the state as discrete tokens in the prompt")
     parser.add_argument(
         "--per-point-actions",
         action="store_true",
@@ -59,7 +61,9 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    config = train_config(args.name, args.data_root, args.repo_id, args.exp_name)
+    config = train_config(
+        args.name, args.data_root, args.repo_id, args.exp_name, args.absolute_joints, args.state_input
+    )
     if args.command == "norm-stats":
         print(f"wrote {launch.norm_stats(config, per_point_actions=args.per_point_actions)}")
     elif args.command == "train":

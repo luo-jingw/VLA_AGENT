@@ -532,3 +532,11 @@ weight as one-at-a-time variants; a fingertip-height floor at deployment.
 Held-out fixed at 5 episodes (54, 102, 122, 180, 185 of the 228): training set 223 episodes, 62,410 rows, 10.3 passes
 at 20,000 steps. Run `pi05_ur3_cube_quick_v4h5_curvature_s48_pp`, exp `ema20k`, one GPU: loss 0.178 at step 0,
 0.144 at step 50, 3.1 s per step. The 206-episode run was stopped at about 10 minutes and its checkpoints deleted.
+
+Two one-variable variants of the 223-episode curvature run (same data, labels, 20,000 steps, EMA; `train_config`
+options `absolute_joints` and `state_input`, `run.py --absolute-joints --state-input`): joints as absolute positions
+(no delta transform; actions normalised per chunk point, delta range 0.36 rad becomes an absolute range of 2.6 rad),
+and the normalised state as discrete prompt tokens (left-arm joint ranges in the state statistics floored to 0.05
+rad: their noise range of 1e-4 rad would otherwise be stretched to the full token range). Runs
+`pi05_ur3_cube_quick_v4h5_curvature_s48_{abs,state}_pp`, exp `ema20k`, one L40S each on nnmc60 GPUs 2 and 5, 3.1-3.3 s
+per step; loss at step 100 0.093 (absolute) and 0.079 (state); losses are not comparable across representations.

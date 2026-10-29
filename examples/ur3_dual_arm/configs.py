@@ -34,8 +34,17 @@ CAMERAS = (
 )
 
 
-def train_config(name: str, data_root: pathlib.Path, repo_id: str, exp_name: str) -> _config.TrainConfig:
-    model = pi0_config.Pi0Config(pi05=True, action_horizon=ACTION_HORIZON, discrete_state_input=False)
+def train_config(
+    name: str,
+    data_root: pathlib.Path,
+    repo_id: str,
+    exp_name: str,
+    absolute_joints: bool = False,
+    state_input: bool = False,
+) -> _config.TrainConfig:
+    """`absolute_joints`: the joints are predicted as absolute positions instead of deltas from the state.
+    `state_input`: the normalised state is written into the prompt as 256-bin tokens (pi0.5's discrete state)."""
+    model = pi0_config.Pi0Config(pi05=True, action_horizon=ACTION_HORIZON, discrete_state_input=state_input)
     data = LeRobotArcDataConfig(
         repo_id=repo_id,
         base_config=_config.DataConfig(local_root=data_root, prompt_from_task=False, action_sequence_keys=("action",)),
@@ -48,7 +57,7 @@ def train_config(name: str, data_root: pathlib.Path, repo_id: str, exp_name: str
             action_dim=ACTION_DIM,
             action_horizon=ACTION_HORIZON,
         ),
-        delta_mask=tuple(transforms.make_bool_mask(6, -1, 6, -1)),
+        delta_mask=() if absolute_joints else tuple(transforms.make_bool_mask(6, -1, 6, -1)),
         outputs=RawOutputs(action_dim=ACTION_DIM),
         rotate_prompts=True,
     )
