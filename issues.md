@@ -779,3 +779,46 @@ Two replays with the same rebuilt model (no reset between them, state set direct
 `deterministic_reset`; compare `sim.model` arrays between two resets.
 
 ## Resolution
+
+# ISSUE-019
+
+Status: Open
+
+Area: UR3 simulated pick-and-place data (`data/ur3_sim_pick_and_place_cube`) used for pre-training
+
+## Observation
+
+Three properties of the simulated episodes differ from the real recordings in ways a model trained on them can absorb:
+
+- wrist_2 (joints 4 and 11) of the delta action has a q01–q99 range of 0.001–0.002 rad at the last chunk point in
+  every label family, against 0.21 rad (per-frame labels) for the real right arm; the simulated motions set it
+  almost constant.
+- The wrist camera of the arm that stays still returns bit-identical frames for long stretches (657 flagged runs of
+  5 to 210 frames in 500 episodes, all on the idle arm's camera); real cameras have sensor noise.
+- The 10 held-out episodes (1, 83, 212, 214, 219, 259, 264, 300, 429, 495) hold no long transport (pick-to-place
+  distance above 0.30 m; 85 of the 500 episodes); 4 are short, 6 medium.
+
+## Impact
+
+Simulation-only checkpoints see no wrist_2 motion and no sensor noise; their held-out error says nothing about long
+transports. Normalisation by the simulated range alone would scale real wrist_2 targets by about 200.
+
+## Evidence
+
+`runs/ur3_sim_pick_and_place_cube/audit.json` (frozen_camera findings), `norm_stats_sim_only/*.json` against the
+merged `openpi/assets/pi05_ur3_sim_*_pp/*/norm_stats.json`, `diversity.json`.
+
+## Hypotheses
+
+- The stage-1 policy ignores wrist_2 and relies on the idle wrist view being static; both are corrected by the real
+  data in stage 2 only to the extent the adapters can express them.
+
+## Next Experiment
+
+Open-loop error of the stage-1 and stage-2 checkpoints on wrist_2 of the real held-out episodes; the same with the
+wrist images of the idle arm replaced by noisy copies.
+
+## Resolution
+
+Both stages use the union of the simulated and real q01/q99 (`merge_norm_stats.py`), so real wrist_2 stays inside
+the normalisation range.
