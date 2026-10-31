@@ -7,7 +7,7 @@ with openpi's scripts and this directory on PYTHONPATH:
     uv run python <VLA_AGENT>/examples/ur3_dual_arm/run.py norm-stats --data-root <data> --repo-id <dataset>-train \
         [--per-point-actions]
     uv run python <VLA_AGENT>/examples/ur3_dual_arm/run.py train --data-root <data> --repo-id <dataset>-train --exp-name <run> \
-        [--resume]
+        [--resume] [--init-checkpoint checkpoints/<name>/<run>/<step> [--lora]]
     uv run python <VLA_AGENT>/examples/ur3_dual_arm/run.py serve --data-root <data> --repo-id <dataset>-train \
         --checkpoint checkpoints/<name>/<run>/<step> --port 8000
 
@@ -40,6 +40,17 @@ def main() -> None:
     parser.add_argument("--absolute-joints", action="store_true", help="joints as absolute positions, not deltas")
     parser.add_argument("--state-input", action="store_true", help="the state as discrete tokens in the prompt")
     parser.add_argument(
+        "--init-checkpoint",
+        type=Path,
+        default=None,
+        help="train: start from the params of this saved checkpoint step directory instead of pi05_base",
+    )
+    parser.add_argument(
+        "--lora",
+        action="store_true",
+        help="train: LoRA adapters of the action expert only, on top of --init-checkpoint (10,000 steps, peak 1e-4)",
+    )
+    parser.add_argument(
         "--per-point-actions",
         action="store_true",
         help="norm-stats: action statistics per point of the chunk instead of pooled over its points",
@@ -62,7 +73,14 @@ def main() -> None:
     args = parser.parse_args()
 
     config = train_config(
-        args.name, args.data_root, args.repo_id, args.exp_name, args.absolute_joints, args.state_input
+        args.name,
+        args.data_root,
+        args.repo_id,
+        args.exp_name,
+        args.absolute_joints,
+        args.state_input,
+        args.init_checkpoint,
+        args.lora,
     )
     if args.command == "norm-stats":
         print(f"wrote {launch.norm_stats(config, per_point_actions=args.per_point_actions)}")

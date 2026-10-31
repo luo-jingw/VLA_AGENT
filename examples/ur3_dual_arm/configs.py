@@ -21,12 +21,17 @@ from openpi.training import weight_loaders
 from vla_openpi import ArcInputs
 from vla_openpi import LeRobotArcDataConfig
 from vla_openpi import RawOutputs
+from vla_openpi import ZeroLoraBLoader
+from vla_openpi import non_lora_filter
 from vla_openpi import vlm_filter
 
 ACTION_DIM = 14
 ACTION_HORIZON = 10
 NUM_TRAIN_STEPS = 20_000
 EMA_DECAY = 0.999
+LORA_NUM_TRAIN_STEPS = 10_000
+LORA_PEAK_LR = 1e-4
+DECAY_FRACTION = 0.1  # the cosine schedule ends at this fraction of its peak
 CAMERAS = (
     ("observation/image", "observation.images.cam_high", "base_0_rgb"),
     ("observation/left_wrist_image", "observation.images.cam_left_wrist", "left_wrist_0_rgb"),
@@ -41,10 +46,35 @@ def train_config(
     exp_name: str,
     absolute_joints: bool = False,
     state_input: bool = False,
+    init_checkpoint: pathlib.Path | None = None,
+    lora: bool = False,
 ) -> _config.TrainConfig:
     """`absolute_joints`: the joints are predicted as absolute positions instead of deltas from the state.
-    `state_input`: the normalised state is written into the prompt as 256-bin tokens (pi0.5's discrete state)."""
-    model = pi0_config.Pi0Config(pi05=True, action_horizon=ACTION_HORIZON, discrete_state_input=state_input)
+    `state_input`: the normalised state is written into the prompt as 256-bin tokens (pi0.5's discrete state).
+    `init_checkpoint`: a saved checkpoint step directory of an earlier run; training starts from its `params`
+    instead of pi05_base (its model must have the same structure, so the same `state_input`).
+    `lora`: fine-tune LoRA adapters of the action expert (attention and feed-forward, rank 32) on top of
+    `init_checkpoint` and nothing else: SigLIP, Gemma 2B, the action expert's own weights and the projections stay
+    frozen; the adapters start as a no-op (ZeroLoraBLoader) and train for LORA_NUM_TRAIN_STEPS at LORA_PEAK_LR."""
+    if lora and init_checkpoint is None:
+        raise ValueError("lora fine-tuning adapts a trained model: init_checkpoint is required")
+    model = pi0_config.Pi0Config(
+        pi05=True,
+        action_horizon=ACTION_HORIZON,
+        discrete_state_input=state_input,
+        action_expert_variant="gemma_300m_lora" if lora else "gemma_300m",
+    )
+    num_train_steps = LORA_NUM_TRAIN_STEPS if lora else NUM_TRAIN_STEPS
+    peak_lr = LORA_PEAK_LR if lora else 2.5e-5
+    decay_lr = peak_lr * DECAY_FRACTION
+    if lora:
+        weight_loader: weight_loaders.WeightLoader = ZeroLoraBLoader(str(init_checkpoint / "params"))
+    else:
+        weight_loader = weight_loaders.CheckpointWeightLoader(
+            "gs://openpi-assets/checkpoints/pi05_base/params"
+            if init_checkpoint is None
+            else str(init_checkpoint / "params")
+        )
     data = LeRobotArcDataConfig(
         repo_id=repo_id,
         base_config=_config.DataConfig(local_root=data_root, prompt_from_task=False, action_sequence_keys=("action",)),
@@ -66,18 +96,18 @@ def train_config(
         exp_name=exp_name,
         model=model,
         data=data,
-        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        weight_loader=weight_loader,
         batch_size=32,
         num_workers=8,
-        num_train_steps=NUM_TRAIN_STEPS,
+        num_train_steps=num_train_steps,
         save_interval=1000,
         log_interval=50,
         keep_period=5000,  # keeps the half-way (5000) checkpoint besides the latest
         wandb_enabled=False,
         lr_schedule=_optimizer.CosineDecaySchedule(
-            warmup_steps=500, peak_lr=2.5e-5, decay_steps=NUM_TRAIN_STEPS, decay_lr=2.5e-6
+            warmup_steps=500, peak_lr=peak_lr, decay_steps=num_train_steps, decay_lr=decay_lr
         ),
         optimizer=_optimizer.AdamW(b1=0.9, b2=0.95, eps=1e-8, weight_decay=1e-4, clip_gradient_norm=1.0),
-        freeze_filter=vlm_filter(),
+        freeze_filter=non_lora_filter() if lora else vlm_filter(),
         ema_decay=EMA_DECAY,
     )
