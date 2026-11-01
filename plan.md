@@ -47,8 +47,8 @@ For each label family (per-frame, curvature with `event_density` 0, two-phase), 
   0 and every other point has weight 1;
 - a simulation-only checkpoint (recipe `sim_15k`: 15,000 steps, peak learning rate 5e-5, EMA 0.999, VLM frozen),
   kept at steps 5,000, 10,000 and the latest;
-- a checkpoint that adapts it to the real recordings (recipe `lora_4k`: 4,000 steps, peak learning rate 1e-4, EMA
-  0.999), kept at step 2,000 and the latest, whose saved `params` reproduce the trained weights;
+- a checkpoint that adapts it to the real recordings (recipe `lora_4k_ema999`: 4,000 steps, peak learning rate 1e-4,
+  EMA 0.999), kept at step 2,000 and the latest, whose saved `params` reproduce the trained weights;
 - open-loop errors of the stage-1 and stage-2 checkpoints on the 40 simulated and the 5 real held-out episodes, next
   to the real-only run.
 
@@ -982,7 +982,7 @@ bands short 6, medium 8, long 26, all five light shapes, every 5 cm distance bin
 
 ## Phase 20
 
-Phase Status: active
+Phase Status: completed
 
 Round: 19
 
@@ -1013,19 +1013,27 @@ Phase 19.
 
 Reach medians per family, the fraction of points with weight 0, action ranges of the merged statistics.
 
+### Result
+
+Label datasets (`data/ur3-sim2-*-{train,eval}`: 960 training episodes, 1000 evaluation episodes), reach median 10.0 frames
+(per-frame), 48.0 (curvature) and 20.3 (two-phase); points with weight 0: 0.82 %, 1.12 % and 0.56 %. Sim robot spec with
+`switch_hold_s` 0.30 / 0.50 s measured on this revision. Per-point statistics merged with the real recordings' by union:
+the simulated wrist_2 range at the last chunk point is 0.002 rad and the merged one 0.05 (left) and 0.214-0.391 (right,
+real recordings), so real wrist_2 stays inside the normalisation range.
+
 ## Phase 21
 
-Phase Status: pending
+Phase Status: active
 
 Round: 20
 
 ### Goal
 
-Stage 1 (recipe `sim_15k`) and stage 2 (recipe `lora_4k` with EMA 0.999) for the three families, one GPU each.
+Stage 1 (recipe `sim_15k`) and stage 2 (recipe `lora_4k_ema999`: `lora_4k` with EMA 0.999) for the three families, one GPU each.
 
 ### Files
 
-`examples/ur3_dual_arm/recipes.py` (`SIM_15K`, `LORA_4K` EMA), `runs/ur3_sim2_pick_and_place_cube/train/`,
+`examples/ur3_dual_arm/recipes.py` (`SIM_15K`, `LORA_4K_EMA999`), `runs/ur3_sim2_pick_and_place_cube/train/`,
 `openpi/checkpoints/pi05_ur3_sim2_*_pp/`.
 
 ### Structures
