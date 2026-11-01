@@ -325,3 +325,38 @@ def test_recorded_rows_must_be_within_the_episode() -> None:
     config = ResampleConfig(metric="time", span_frames=H, action_horizon=H, anchor="state")
     with pytest.raises(ValueError, match="recorded"):
         arc_core.chunks(_actions(), SPEC, config, windows=[], recorded=41)
+
+
+def test_points_on_pushed_rows_get_the_perturbation_weight() -> None:
+    """A point at row position f has the weight of row ceil(f): rows 12-14 pushed, span = H puts point k of frame t on row t + k."""
+    actions = _actions()
+    n = len(actions)
+    pushed = np.zeros(n, dtype=bool)
+    pushed[12:15] = True
+    config = ResampleConfig(metric="time", span_frames=H, action_horizon=H, perturbation_weight=0.0)
+    _, chunks = arc_core.chunks(actions, SPEC, config, windows=[], recorded=n, perturbed=pushed)
+    rows = np.clip(np.arange(n)[:, None] + np.arange(H)[None, :], 0, n - 1)
+    assert np.array_equal(chunks.weights == 0.0, pushed[rows])
+    assert chunks.weights[pushed[rows]].size == 3 * H  # three pushed rows, each the target of H frames
+    # no flags, no argument, or the default weight leave the labels as they were
+    _, plain = arc_core.chunks(actions, SPEC, config, windows=[], recorded=n)
+    _, unit = arc_core.chunks(actions, SPEC, ResampleConfig(metric="time", span_frames=H, action_horizon=H), [], n, pushed)
+    assert np.all(plain.weights == 1.0)
+    assert np.all(unit.weights == 1.0)
+    assert np.array_equal(plain.points, chunks.points)
+
+
+def test_a_point_between_rows_takes_the_weight_of_the_later_row() -> None:
+    actions = _actions()
+    n = len(actions)
+    pushed = np.zeros(n, dtype=bool)
+    pushed[14] = True
+    config = ResampleConfig(metric="time", span_frames=12, action_horizon=H, perturbation_weight=0.0)  # 1.5 rows per point
+    _, chunks = arc_core.chunks(actions, SPEC, config, windows=[], recorded=n, perturbed=pushed)
+    between = (chunks.frames > 13.0 + 1e-6) & (chunks.frames < 14.0 - 1e-6)
+    on_row = np.abs(chunks.frames - 14.0) < 1e-6
+    after = (chunks.frames > 14.0 + 1e-6) & (chunks.frames < 15.0 - 1e-6)
+    assert between.any() and on_row.any() and after.any()
+    assert np.all(chunks.weights[between] == 0.0)
+    assert np.all(chunks.weights[on_row] == 0.0)
+    assert np.all(chunks.weights[after] == 1.0)

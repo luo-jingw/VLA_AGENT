@@ -39,6 +39,7 @@ class EpisodeStats:
     pad_fraction: float
     window_fraction: float
     weight_mean: float
+    zero_weight_fraction: float
 
 
 def main() -> None:
@@ -67,7 +68,7 @@ def main() -> None:
     for e in load_episodes(args.dataset, spec, only=sorted(record.episodes)):
         if e.index in excluded:
             continue
-        _, ch = arc_core.chunks(e.actions, spec, config, record.windows(e.index), e.real)
+        _, ch = arc_core.chunks(e.actions, spec, config, record.windows(e.index), e.real, e.perturbed)
         reach = ch.frames[:, -1] - np.arange(len(e.actions)) + 1.0
         unpadded = ~ch.padded.any(axis=1)
         stats[e.index] = EpisodeStats(
@@ -76,6 +77,7 @@ def main() -> None:
             pad_fraction=float(ch.padded.mean()),
             window_fraction=float(ch.in_window.mean()),
             weight_mean=float(ch.weights.mean()),
+            zero_weight_fraction=float((ch.weights == 0.0).mean()),
         )
         add = {
             "action_chunk": dataset_writer.NewColumn(
@@ -100,7 +102,8 @@ def main() -> None:
     values = list(stats.values())
     print(f"wrote {len(plans)} episodes to {args.out}: reach median {np.median([s.reach_median_frames for s in values]):.1f} "
           f"frames, pad {np.mean([s.pad_fraction for s in values]):.1%}, window {np.mean([s.window_fraction for s in values]):.1%}, "
-          f"mean weight {np.mean([s.weight_mean for s in values]):.2f}")  # fmt: skip
+          f"mean weight {np.mean([s.weight_mean for s in values]):.2f}, "
+          f"weight 0 on {np.mean([s.zero_weight_fraction for s in values]):.2%} of the points")  # fmt: skip
 
 
 if __name__ == "__main__":

@@ -12,6 +12,9 @@ Row t of an episode:
                                     the recorded JPEG bytes, not re-encoded
     task_index                      0: one placeholder task (--task) for every episode until
                                     `vla_tools.prompt_annotation` writes each episode's instructions
+    is_perturbation (1) float32     1 where `command/<arm>/source` of either arm is "perturbation" (a step whose
+                                    next state is driven by a push), 0 otherwise and when the recording has no
+                                    `source`; label building gives the points on these steps `perturbation_weight`
 
 Timestamps are rewritten contiguous (frame / 30), so a gap in the recording would no longer be visible after
 conversion: an episode whose largest interval between stored steps (`timestamps/step`) exceeds 1.5 frames is
@@ -53,6 +56,7 @@ JOINTS = ("shoulder_pan", "shoulder_lift", "elbow", "wrist_1", "wrist_2", "wrist
 NAMES = [f"{arm}_{joint}" for arm in ARMS for joint in JOINTS]
 IMAGE_SAMPLES = 20  # frames per episode and camera in meta/episodes_stats.jsonl
 MAX_GAP_FRAMES = 1.5  # largest interval between stored steps of a kept episode, in frames
+PERTURBATION = "perturbation"  # value of command/<arm>/source on a step driven by a push
 
 
 @dataclasses.dataclass(frozen=True)
@@ -72,6 +76,7 @@ class RecordedEpisode:
     state: np.ndarray  # (T, 14) float32
     images: dict[str, list[bytes]]  # LeRobot key -> T JPEG byte strings
     max_step_s: float  # largest interval between consecutive stored steps
+    perturbation: np.ndarray  # (T,) bool, a step driven by a push in either arm
 
     @property
     def action(self) -> np.ndarray:
@@ -90,7 +95,13 @@ def read_episode(path: Path, source: int) -> RecordedEpisode:
             data, lengths = f[f"observations/images/{camera}"][:], f[f"observations/images/{camera}_len"][:]
             images[key] = [data[t, : int(lengths[t])].tobytes() for t in range(len(lengths))]
         steps = np.asarray(f["timestamps/step"], dtype=np.float64)
-    return RecordedEpisode(source=source, state=state, images=images, max_step_s=float(np.diff(steps).max()))
+        perturbation = np.zeros(len(steps), dtype=bool)
+        for arm in ARMS:
+            if f"command/{arm}/source" in f:
+                perturbation |= f[f"command/{arm}/source"].asstr()[:] == PERTURBATION
+    return RecordedEpisode(
+        source=source, state=state, images=images, max_step_s=float(np.diff(steps).max()), perturbation=perturbation
+    )
 
 
 def image_shape(jpeg: bytes) -> list[int]:
@@ -110,6 +121,7 @@ def features(shapes: dict[str, list[int]]) -> tuple[datasets.Features, dict]:
         "episode_index": {"dtype": "int64", "shape": [1], "names": None},
         "index": {"dtype": "int64", "shape": [1], "names": None},
         "task_index": {"dtype": "int64", "shape": [1], "names": None},
+        "is_perturbation": {"dtype": "float32", "shape": [1], "names": ["is_perturbation"]},
     }
     schema = {key: datasets.Image() for key in CAMERAS}
     schema |= {
@@ -120,6 +132,7 @@ def features(shapes: dict[str, list[int]]) -> tuple[datasets.Features, dict]:
         "episode_index": datasets.Value("int64"),
         "index": datasets.Value("int64"),
         "task_index": datasets.Value("int64"),
+        "is_perturbation": datasets.Sequence(datasets.Value("float32"), length=1),
     }
     return datasets.Features(schema), info
 
@@ -164,13 +177,16 @@ def episode_columns(episode: RecordedEpisode, new: int, start: int, task: int) -
         "episode_index": [new] * n,
         "index": list(range(start, start + n)),
         "task_index": [task] * n,
+        "is_perturbation": [[float(flag)] for flag in episode.perturbation],
     }
     return columns
 
 
 def episode_stats(episode: RecordedEpisode, columns: dict[str, list]) -> dict[str, dict]:
     stats = {key: image_stats(episode.images[key]) for key in CAMERAS}
-    for key in ("observation.state", "action", "timestamp", "frame_index", "episode_index", "index", "task_index"):
+    for key in (
+        "observation.state", "action", "timestamp", "frame_index", "episode_index", "index", "task_index", "is_perturbation"
+    ):
         stats[key] = numeric_stats(np.asarray(columns[key]))
     return stats
 

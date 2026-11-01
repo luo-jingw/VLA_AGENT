@@ -23,6 +23,7 @@ class Episode:
     states: np.ndarray  # (T, state_dim)
     actions: np.ndarray  # (T, action_dim)
     padding: np.ndarray  # (T,) True on rows appended by end padding; all False when the column is absent
+    perturbed: np.ndarray | None = None  # (T,) True on pushed steps (column `is_perturbation`); None when absent
 
     @property
     def real(self) -> int:
@@ -46,8 +47,11 @@ def episode_paths(root: Path) -> list[tuple[int, Path]]:
 
 def load_episode(index: int, path: Path, spec: RobotSpec) -> Episode:
     columns = [spec.state_key, spec.action_key]
-    if "is_padding" in pq.read_schema(path).names:
+    names = pq.read_schema(path).names
+    if "is_padding" in names:
         columns.append("is_padding")
+    if "is_perturbation" in names:
+        columns.append("is_perturbation")
     frame = pd.read_parquet(path, columns=columns)
     padding = (
         np.array([float(np.ravel(v)[0]) for v in frame["is_padding"]]) > 0.5
@@ -60,6 +64,11 @@ def load_episode(index: int, path: Path, spec: RobotSpec) -> Episode:
         states=np.stack(frame[spec.state_key].to_numpy()).astype(np.float64),
         actions=np.stack(frame[spec.action_key].to_numpy()).astype(np.float64),
         padding=padding,
+        perturbed=(
+            np.array([float(np.ravel(v)[0]) for v in frame["is_perturbation"]]) > 0.5
+            if "is_perturbation" in frame
+            else None
+        ),
     )
 
 

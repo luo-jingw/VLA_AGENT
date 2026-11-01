@@ -851,7 +851,7 @@ not measure task success.
 
 ## Phase 17
 
-Phase Status: active
+Phase Status: completed
 
 Round: 16
 
@@ -887,9 +887,17 @@ On a synthetic episode: weights of the points on pushed rows, of the rest, and t
 config the labels of an existing dataset episode equal those built before. On the new data: the share of points with
 weight 0 for each label family.
 
+### Result
+
+Four sample episodes of revision 5cd89567 converted: the flagged rows equal the recorded perturbation start and
+length (episode 1 rows 58-71, episode 6 rows 107-114, episode 24 rows 37-50, episode 0 none). With
+`perturbation_weight` 0 the points of weight 0 lie on flagged rows only; in the perturbed episodes 3.6-6.3 % of the
+points of the per-frame labels and 5.1-6.9 % of the curvature labels (span 48). Tests: a point on row r or between
+r - 1 and r takes the weight of row r; no flag, no argument or the default weight leaves weights and points unchanged.
+
 ## Phase 18
 
-Phase Status: pending
+Phase Status: active
 
 Round: 17
 

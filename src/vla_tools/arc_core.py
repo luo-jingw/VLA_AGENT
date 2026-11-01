@@ -144,7 +144,12 @@ def _cumulative(values: np.ndarray) -> np.ndarray:
 
 
 def chunks(
-    actions: np.ndarray, spec: RobotSpec, config: ResampleConfig, windows: list[tuple[int, int]], recorded: int
+    actions: np.ndarray,
+    spec: RobotSpec,
+    config: ResampleConfig,
+    windows: list[tuple[int, int]],
+    recorded: int,
+    perturbed: np.ndarray | None = None,
 ) -> tuple[ProgressCurve, Chunks]:
     curve = progress_curve(actions, spec, config, windows, recorded)
     joints, commands = list(spec.joint_dims), list(spec.command_dims)
@@ -190,5 +195,9 @@ def chunks(
     in_window = curve.window_mask[index] if len(curve.window_mask) else np.zeros_like(padded)
     # Padding wins over emphasis: a padded target is clamped onto the last frame.
     weights = np.where(padded, config.pad_weight, np.where(in_window, config.key_weight, 1.0))
+    if perturbed is not None:
+        # A point at row position f is on the step of row ceil(f); the 1e-9 keeps a point on row r from rounding to r + 1.
+        on_push = np.asarray(perturbed, dtype=bool)[np.clip(np.ceil(frames - 1e-9).astype(int), 0, n - 1)]
+        weights = np.where(on_push, config.perturbation_weight, weights)
     chunk = Chunks(points=points, frames=frames, padded=padded, in_window=in_window, weights=weights, step=step)
     return curve, chunk

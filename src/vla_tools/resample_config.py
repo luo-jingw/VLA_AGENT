@@ -27,6 +27,8 @@ class ResampleConfig:
                     slows down there), below 1 more
     key_weight      loss multiplier on points drawn from keyframe windows; independent of density
     pad_weight      loss multiplier on points past the end of the episode
+    perturbation_weight  loss multiplier on points that lie on a pushed step: a point at row position f of the
+                    action rows lies on one when the `is_perturbation` flag of row ceil(f) is set
     deadzone        metric below this counts as standing still
     anchor          state: a frame's window starts at its current state (action row t-1), and time with
                     span = H is exactly actions[t : t+H]. action: one row later; datasets built before the
@@ -44,6 +46,7 @@ class ResampleConfig:
     event_density: float = 0.0
     key_weight: float = 1.0
     pad_weight: float = 1.0
+    perturbation_weight: float = 1.0
     deadzone: float = 0.0
     anchor: Anchor = "state"
     curvature_length: float | None = None
