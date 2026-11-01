@@ -864,3 +864,35 @@ identity.
 The stage-2 checkpoints of this run are rebuilt from the stage-1 frozen arrays and the stage-2 LoRA arrays
 (`train/repair_stage2_params.py`, `lora4k_fixed/`): training-objective loss on real training batches 0.0293 at step 3999
 (curvature) against 0.2385 for the saved `params`. The training step itself is not changed.
+
+# ISSUE-021
+
+Status: Open
+
+Area: stage 2 (LoRA on real recordings) of the simulated pre-training, real-robot behaviour
+
+## Observation
+
+Real-robot tests with the checkpoints of revision 7fa3c586: the stage-1 curvature policy works; the real-only curvature
+policy works; the stage-2 LoRA policies do not work at full update scale. Scaling the LoRA update by 0.5 works in some
+trials. The open-loop errors of Phase 16 (real held-out, 5 episodes) were lower for stage 2 than for stage 1, so they did
+not predict the failure.
+
+## Evidence
+
+Label configurations of stage 1 and stage 2 are identical (curvature, span 48, `curvature_length` 0.0850). Moving-speed
+percentiles 50 / 90 / 99 of the worst joint, rad/s: simulated training rows 0.63 / 1.26 / 1.90, real training rows
+0.46 / 1.11 / 1.97; 80% of the simulated rows and 99% of the real rows move faster than 0.06 rad/s. The vision-language
+model is frozen in every run, so the images of both domains pass through the same features.
+
+## Hypotheses
+
+1. The LoRA update (peak learning rate 1e-4, 4,000 steps, 62,410 real rows, about 2 passes) moves the action expert to
+   states that are on neither data distribution once the policy closes the loop.
+2. A specific phase (grasp approach, gripper timing) is wrong by an amount the open-loop worst-joint median does not show.
+
+## Next Experiment
+
+Phase 22 to 24: full action-expert training on real rows mixed with simulated rows, simulated fraction decreasing; real-robot
+test of the checkpoints at steps 2,000 to 8,000. A failed rollout's observations replayed through the stage-1, LoRA
+stage-2 and mixed models show where they disagree.

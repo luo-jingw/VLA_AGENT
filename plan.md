@@ -1036,11 +1036,11 @@ Round: 20
 
 ### Goal
 
-Stage 1 (recipe `sim_15k`) and stage 2 (recipe `lora_4k_ema999`: `lora_4k` with EMA 0.999) for the three families, one GPU each.
+Stage 1 (recipe `sim_15k`) for the three families, one GPU each. Stage 2 is Phases 22 to 24.
 
 ### Files
 
-`examples/ur3_dual_arm/recipes.py` (`SIM_15K`, `LORA_4K_EMA999`), `runs/ur3_sim2_pick_and_place_cube/train/`,
+`examples/ur3_dual_arm/recipes.py` (`SIM_15K`), `runs/ur3_sim2_pick_and_place_cube/train/`,
 `openpi/checkpoints/pi05_ur3_sim2_*_pp/`.
 
 ### Structures
@@ -1057,10 +1057,49 @@ Phase 20.
 
 ### Observation
 
-Loss at steps 0, 100 and the end; finite parameters; the training-objective loss of the saved `params` on training
-batches against the logged loss (`eval/loss_probe.py`); `arc_resample.json` in the assets of every checkpoint.
+Loss at steps 0, 100 and the end; finite parameters; `arc_resample.json` in the assets of every checkpoint.
 
 ## Phase 22
+
+Phase Status: active
+
+Round: 20
+
+### Goal
+
+Stage 2 trains the full action expert on real rows mixed with simulated rows. The simulated fraction of every batch
+falls linearly from `mix_start` to `mix_end` over the run; each row of a batch is drawn from the simulated dataset with
+the current fraction and from the real dataset otherwise, and each dataset is traversed in shuffled passes. The
+real-robot tests show that the LoRA stage 2 (Phase 16) fails at full update scale while stage 1 and a real-only model
+work (ISSUE-021); the mixture keeps simulated rows in every batch while the weights move toward the real rows.
+
+### Files
+
+`integrations/openpi/patches/0004-dataset-mixture.patch` (new openpi file `training/mixture.py`; fields `mix_in`,
+`mix_fraction`, `mix_steps`, `mix_skip_steps` of `DataConfig`; `create_torch_data_loader`),
+`integrations/openpi/README.md`, `src/vla_openpi/arc_data_config.py`, `examples/ur3_dual_arm/{configs,recipes,run}.py`,
+`tests/test_openpi_integration.py`.
+
+### Structures
+
+`MixSchedule` (start and end fraction, steps, skipped steps), `MixSampler` (index sequence over the concatenation of
+the real and the simulated dataset), `Recipe` entry `mix_8k` (8,000 steps, peak learning rate 2.5e-5, 300 warm-up
+steps, EMA 0.999, checkpoint every 1,000 steps, multiples of 2,000 kept).
+
+### Affected Modules
+
+openpi data loading; the UR3 example's configuration.
+
+### Dependencies
+
+None.
+
+### Observation
+
+Realized simulated fraction per 1,000-step block of the sampler against the schedule, and the number of distinct rows
+drawn from each dataset; a 30-step training run with finite loss.
+
+## Phase 23
 
 Phase Status: pending
 
@@ -1068,8 +1107,76 @@ Round: 21
 
 ### Goal
 
-Open-loop evaluation of the stage-1 and stage-2 checkpoints on the 40 simulated and the 5 real held-out episodes, and
-of the real-only curvature checkpoint on the same episodes, served with uniform timing at the recording's pace.
+Mixed stage 2 on the previous simulated revision, the same stage-1 checkpoints and real data as the LoRA stage 2 of
+Phase 16: initialised from `pi05_ur3_sim_<family>_pp/sim10k/9999`, simulated rows from `ur3-sim-cube-<r>-train`, real
+rows from `pick-and-place-cube-quick-v4h5-<r>-train`, `mix_start` 0.5, `mix_end` 0.1, recipe `mix_8k`, one GPU per run
+(configuration `pi05_ur3_sim_mix_<family>_pp`).
+
+### Files
+
+`runs/ur3_sim_pick_and_place_cube/train/`, `openpi/checkpoints/pi05_ur3_sim_mix_*_pp/`,
+`openpi/assets/pi05_ur3_sim_mix_*_pp/`.
+
+### Structures
+
+None.
+
+### Affected Modules
+
+None.
+
+### Dependencies
+
+Phase 22.
+
+### Observation
+
+Training loss, finite parameters at the last step, `arc_resample.json` of the real label dataset in every checkpoint's
+assets; the real-robot test of the checkpoints at steps 2,000, 4,000, 6,000 and 8,000.
+
+## Phase 24
+
+Phase Status: pending
+
+Round: 22
+
+### Goal
+
+Mixed stage 2 on the current simulated revision: initialised from the stage-1 checkpoint at step 14,999 of Phase 21,
+simulated rows from `ur3-sim2-<r>-train` (perturbed steps masked), otherwise as Phase 23 (configuration
+`pi05_ur3_sim2_mix_<family>_pp`).
+
+### Files
+
+`runs/ur3_sim2_pick_and_place_cube/train/`, `openpi/checkpoints/pi05_ur3_sim2_mix_*_pp/`,
+`openpi/assets/pi05_ur3_sim2_mix_*_pp/`.
+
+### Structures
+
+None.
+
+### Affected Modules
+
+None.
+
+### Dependencies
+
+Phases 21 and 22.
+
+### Observation
+
+As Phase 23.
+
+## Phase 25
+
+Phase Status: pending
+
+Round: 23
+
+### Goal
+
+Open-loop evaluation of the stage-1 and mixed stage-2 checkpoints on the 40 simulated and the 5 real held-out episodes,
+and of the real-only curvature checkpoint on the same episodes, served with uniform timing at the recording's pace.
 
 ### Files
 
@@ -1085,7 +1192,7 @@ None.
 
 ### Dependencies
 
-Phase 21.
+Phase 24.
 
 ### Observation
 
