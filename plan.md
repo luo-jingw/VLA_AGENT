@@ -1,6 +1,6 @@
 # Plan
 
-Plan Status: completed
+Plan Status: approved
 
 # Problem
 
@@ -22,34 +22,35 @@ Plan Status: completed
   annotation (`sim/task` names the arm, cube, source and target). The motions are faster and smoother than the
   teleoperated ones (peak flange speed per episode: median 0.34 m/s, against 0.13 m/s median over all steps of
   the real recordings).
+- `data/ur3_sim_pick_and_place_cube_5cd8956` (Hub `JingwuLuo/ur3_sim_pick_and_place_cube`, revision 5cd89567): 1000
+  successful scripted episodes, 268,700 steps at 30 Hz, same HDF5 layout. 612 episodes are relays (the picking arm
+  hands the cube over on a spot in the middle of the table, the other arm places it), 388 are single-arm; 252
+  episodes are perturbed in one leg (an arm is pushed 1-5 cm off its path during the approach or the transport,
+  6-15 steps, 2,627 steps in all, tagged `command/<arm>/source` = "perturbation"); 236 close late on air and
+  re-grasp; pick-to-place distances 0.08-0.82 m spread evenly; five overhead light shapes. No language annotation,
+  no held-out split. wrist_2 moves 0.0006 rad per frame (q01-q99), the gripper reaches 90 % of its travel 0.30 s
+  after a close command and 0.50 s after an open command.
 
 ## Problem
 
-The three label families have not been built or trained on a real-robot recording.
-
-Whether pre-training on the simulated episodes and then fine-tuning on the 223 real training episodes gives a
-better policy than the real-only run is not measured; no simulation-trained checkpoint exists.
+The simulation-only and the adapted checkpoints of revision 7fa3c586 were trained on 500 single-arm episodes; the
+dataset now holds relays, perturbed legs and a wider range of distances, so they are replaced. The perturbed steps
+show the arm pushed off its path: their actions must not be learned, while the observations after a push, with the
+actions that recover from it, must be.
 
 ## Goal
 
-Three training datasets of the same 47 episodes (5 held out) that differ only in their labels, their
-per-point normalisation statistics, and one training recipe for all three, ready for review before training:
+For each label family (per-frame, curvature with `event_density` 0, two-phase), on revision 5cd89567:
 
-- per-frame: `time`, span 10, H 10;
-- resampled sparse: the sweep's selection at the largest admissible span;
-- two-phase: `time`, span 48, `event_density` 4.8 (one point per recorded frame inside the windows), windows
-  grasp −12 / +6, lift −3 / +9, release −15 / +9 frames (LIBERO's TP windows scaled from 20 to 30 Hz).
-
-For each label family (per-frame, curvature, two-phase), with the same label parameters in both stages:
-
-- a simulation-only checkpoint trained on the simulated episodes (recipe `sim_10k`: 10,000 steps, peak learning
-  rate 5e-5, EMA 0.999), kept at its half-way and latest steps;
-- a checkpoint that adapts it to the real recordings: LoRA adapters (rank 32) on the action expert's attention and
-  feed-forward layers, trained on the real 223 training episodes with everything else frozen (recipe `lora_4k`:
-  4,000 steps, peak learning rate 1e-4, 200 warm-up steps, EMA 0.998, the first stage's per-point action
-  statistics), a checkpoint every 1,000 steps, kept at step 2,000 and the latest;
-- open-loop errors of all of them on the 5 real held-out episodes and on the 10 simulated held-out episodes, next to
-  the real-only run.
+- three training datasets of 960 episodes and three evaluation datasets of all 1000, differing only in their labels;
+  40 episodes are held out, chosen by stratification; the points of a chunk that lie on a pushed step have loss weight
+  0 and every other point has weight 1;
+- a simulation-only checkpoint (recipe `sim_15k`: 15,000 steps, peak learning rate 5e-5, EMA 0.999, VLM frozen),
+  kept at steps 5,000, 10,000 and the latest;
+- a checkpoint that adapts it to the real recordings (recipe `lora_4k`: 4,000 steps, peak learning rate 1e-4, EMA
+  0.999), kept at step 2,000 and the latest, whose saved `params` reproduce the trained weights;
+- open-loop errors of the stage-1 and stage-2 checkpoints on the 40 simulated and the 5 real held-out episodes, next
+  to the real-only run.
 
 # Structure
 
@@ -847,3 +848,201 @@ Stage 2 lowers the real held-out error of every label against stage 1 and raises
 curvature model is lower than stage 2 on every real column. No command edge is missed by any stage-1 or stage-2 model;
 the real-only model misses 8 of 24 on the simulated held-out. The evaluation reads recorded observations, so it does
 not measure task success.
+
+## Phase 17
+
+Phase Status: active
+
+Round: 16
+
+### Goal
+
+A per-row perturbation flag and a label weight of 0 for the chunk points that lie on a pushed step. A point at row
+position f of the action rows lies on a pushed step when the flag of row ceil(f) is set; the weight is
+`perturbation_weight` (default 1.0, so existing datasets keep their labels). Samples anchored during or after a push
+keep their other points.
+
+### Files
+
+`examples/ur3_dual_arm/convert_hdf5.py` (column `is_perturbation`: 1 where the `source` of either arm is
+"perturbation", 0 otherwise or when absent), `src/vla_tools/episodes.py` (the flag in the loaded episode),
+`src/vla_tools/resample_config.py` (`perturbation_weight`), `src/vla_tools/arc_core.py` (point weights),
+`src/vla_tools/build_labels.py` (passes the flag), `tests/`.
+
+### Structures
+
+`ResampleConfig.perturbation_weight`; `Episode.perturbed` (bool per action row).
+
+### Affected Modules
+
+Intake converter, episode loader, label construction.
+
+### Dependencies
+
+None.
+
+### Observation
+
+On a synthetic episode: weights of the points on pushed rows, of the rest, and the count of both; with the default
+config the labels of an existing dataset episode equal those built before. On the new data: the share of points with
+weight 0 for each label family.
+
+## Phase 18
+
+Phase Status: pending
+
+Round: 17
+
+### Goal
+
+Revision 5cd89567 converted, annotated and audited: `data/ur3-sim2` from the raw episodes, five instructions per
+episode drawn from the episode's task attributes (no arm named), `data/ur3-sim2-prompted`, `audit.json`.
+
+### Files
+
+`runs/ur3_sim2_pick_and_place_cube/` (conversion.json, prompts, audit), `data/ur3-sim2*`.
+
+### Structures
+
+None.
+
+### Affected Modules
+
+None.
+
+### Dependencies
+
+Phase 17.
+
+### Observation
+
+Episodes kept, rows, flagged perturbation rows (2,627 expected), instructions per episode, audit findings by kind.
+
+## Phase 19
+
+Phase Status: pending
+
+Round: 18
+
+### Goal
+
+Keyframes, still-frame trimming with end padding, and a stratified held-out set of 40 episodes. Keyframe detection and
+review must handle relays (a close and an open for each arm) and late closes; the timing plan keeps the threshold 0.002,
+5 frames and 60 padding rows.
+
+### Files
+
+`runs/ur3_sim2_pick_and_place_cube/` (keyframes, timing plan, diversity), `data/ur3-sim2-timed`.
+
+### Structures
+
+None.
+
+### Affected Modules
+
+None.
+
+### Dependencies
+
+Phase 18.
+
+### Observation
+
+Keyframe issues found and accepted, open issues 0; rows dropped and padded; the held-out episodes by relay or single
+arm, arm, perturbation phase, late close, distance bin and light shape.
+
+## Phase 20
+
+Phase Status: pending
+
+Round: 19
+
+### Goal
+
+Label datasets and normalisation statistics for the three families: the sim robot spec with the gripper times measured
+on this revision (`switch_hold_s` 0.30 s after a close, 0.50 s after an open), `perturbation_weight` 0, the three
+label configs of the previous run, per-point statistics merged with the real recordings' by union.
+
+### Files
+
+`runs/ur3_sim2_pick_and_place_cube/` (robot spec, label configs, build script, statistics),
+`openpi/assets/pi05_ur3_sim2_*_pp/`, `data/ur3-sim2-*-{train,eval}`.
+
+### Structures
+
+None.
+
+### Affected Modules
+
+None.
+
+### Dependencies
+
+Phase 19.
+
+### Observation
+
+Reach medians per family, the fraction of points with weight 0, action ranges of the merged statistics.
+
+## Phase 21
+
+Phase Status: pending
+
+Round: 20
+
+### Goal
+
+Stage 1 (recipe `sim_15k`) and stage 2 (recipe `lora_4k` with EMA 0.999) for the three families, one GPU each.
+
+### Files
+
+`examples/ur3_dual_arm/recipes.py` (`SIM_15K`, `LORA_4K` EMA), `runs/ur3_sim2_pick_and_place_cube/train/`,
+`openpi/checkpoints/pi05_ur3_sim2_*_pp/`.
+
+### Structures
+
+`Recipe` entries.
+
+### Affected Modules
+
+Training recipes.
+
+### Dependencies
+
+Phase 20.
+
+### Observation
+
+Loss at steps 0, 100 and the end; finite parameters; the training-objective loss of the saved `params` on training
+batches against the logged loss (`eval/loss_probe.py`); `arc_resample.json` in the assets of every checkpoint.
+
+## Phase 22
+
+Phase Status: pending
+
+Round: 21
+
+### Goal
+
+Open-loop evaluation of the stage-1 and stage-2 checkpoints on the 40 simulated and the 5 real held-out episodes, and
+of the real-only curvature checkpoint on the same episodes, served with uniform timing at the recording's pace.
+
+### Files
+
+`runs/ur3_sim2_pick_and_place_cube/eval/`.
+
+### Structures
+
+None.
+
+### Affected Modules
+
+None.
+
+### Dependencies
+
+Phase 21.
+
+### Observation
+
+Points, head and stitched error, hold error and edge shifts per checkpoint on both sets.
