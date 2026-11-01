@@ -14,12 +14,13 @@ Plan Status: approved
 - On LIBERO (docs/validation.md → LIBERO simulator) three label families were trained with one recipe (pi0.5
   base, VLM frozen, per-point action statistics, 10k steps): per-frame (Fpp), curvature-resampled (S3b) and
   two-phase (TP); TP at cap 8 matched Fpp's success at about twice the demonstration speed.
-- `data/ur3_sim_pick_and_place_cube` (Hub `JingwuLuo/ur3_sim_pick_and_place_cube`, revision 73c6ccd9): 500
-  successful scripted MuJoCo episodes of the same workcell, 85,738 steps at 30 Hz, in the raw recordings' HDF5
-  layout plus a `sim/` ground-truth group. In each episode one arm moves (left 233, right 267) and the other
-  stays at its start pose; 93 episodes close the gripper early on air and re-grasp. No language annotation
-  (`sim/task` names the arm, cube, source and target). The motions are faster and smoother than the
-  teleoperated ones (peak flange speed per episode: median 0.33 m/s, against 0.13 m/s median over all steps of
+- `data/ur3_sim_pick_and_place_cube` (Hub `JingwuLuo/ur3_sim_pick_and_place_cube`, revision 7fa3c586): 500
+  successful scripted MuJoCo episodes of the same workcell, 81,087 steps at 30 Hz, in the raw recordings' HDF5
+  layout plus a `sim/` ground-truth group; both wrist cameras sit on the table side of the grippers, as on the
+  real rig. In each episode one arm moves (left 240, right 260) and the other stays at its start pose; 83
+  episodes close the gripper late on air, reopen and re-grasp (the arm lifts before the close). No language
+  annotation (`sim/task` names the arm, cube, source and target). The motions are faster and smoother than the
+  teleoperated ones (peak flange speed per episode: median 0.34 m/s, against 0.13 m/s median over all steps of
   the real recordings).
 
 ## Problem
@@ -41,10 +42,12 @@ per-point normalisation statistics, and one training recipe for all three, ready
 
 For each label family (per-frame, curvature, two-phase), with the same label parameters in both stages:
 
-- a simulation-only checkpoint trained on the simulated episodes, kept at its latest step;
+- a simulation-only checkpoint trained on the simulated episodes (recipe `sim_10k`: 10,000 steps, peak learning
+  rate 5e-5, EMA 0.999), kept at its half-way and latest steps;
 - a checkpoint that adapts it to the real recordings: LoRA adapters (rank 32) on the action expert's attention and
-  feed-forward layers, trained on the real 223 training episodes with everything else frozen (10,000 steps, EMA
-  0.999, peak learning rate 1e-4, the simulated run's per-point action statistics), a checkpoint every 5,000 steps;
+  feed-forward layers, trained on the real 223 training episodes with everything else frozen (recipe `lora_4k`:
+  4,000 steps, peak learning rate 1e-4, 200 warm-up steps, EMA 0.998, the first stage's per-point action
+  statistics), a checkpoint every 1,000 steps, kept at step 2,000 and the latest;
 - open-loop errors of all of them on the 5 real held-out episodes and on the 10 simulated held-out episodes, next to
   the real-only run.
 
@@ -54,7 +57,8 @@ For each label family (per-frame, curvature, two-phase), with the same label par
 
 - Label tools (unchanged): `vla_tools.keyframe_detect`, `vla_tools.diversity`, `vla_tools.sweep`,
   `vla_tools.build_labels`.
-- openpi integration: `examples/ur3_dual_arm/configs.py` (train config), `examples/ur3_dual_arm/run.py`
+- openpi integration: `examples/ur3_dual_arm/configs.py` (train config), `examples/ur3_dual_arm/recipes.py`
+  (steps, learning rate, warm-up, EMA decay and kept checkpoints per recipe), `examples/ur3_dual_arm/run.py`
   (norm stats with `--per-point-actions`, train, serve).
 - Run configuration outside the repository: `runs/pick_place_cube_quick/`.
 - Simulated data: the same tools on `data/ur3_sim_pick_and_place_cube`, configured in
@@ -85,6 +89,8 @@ the training recipe.
 `run.py norm-stats --per-point-actions` (new option, as in `examples/libero_object/run.py`); otherwise
 unchanged. `run.py train --init-checkpoint <dir>` starts from the saved `params` of an earlier run instead of
 `pi05_base`; with `--lora` it trains only LoRA adapters of the action expert on top of them, starting as a no-op.
+`run.py train --recipe <name>` selects a recipe of `recipes.py` (`full_20k`, `sim_10k`, `lora_10k`, `lora_4k`);
+without it `full_20k` is used, or `lora_10k` with `--lora`.
 
 ## Inputs
 
@@ -99,7 +105,7 @@ unchanged. `run.py train --init-checkpoint <dir>` starts from the saved `params`
 Simulated: `data/ur3-sim-cube-{time-s10,curvature-s48-d0,two-phase-s48}-{train,eval}`; real second-stage
 datasets `data/pick-and-place-cube-quick-v4h5-{time-s10,two-phase-s48}-{train,eval}` (the curvature one exists);
 checkpoints `openpi/checkpoints/pi05_ur3_sim_<label>_pp/` and `pi05_ur3_sim_real_<label>_pp/`; the second stage's
-`norm_stats.json` is a copy of the first stage's.
+`norm_stats.json` is a copy of the first stage's, which covers the simulated and the real recordings.
 
 ## State Changes
 
@@ -613,10 +619,9 @@ None.
 500 episodes and row count from `meta/conversion_report.json`; every episode has five instructions; the audit
 reports non-finite values, timestamp gaps and joint jumps per episode.
 
-500 episodes, 85,738 rows (`meta/conversion_report.json`, largest step interval 33.3 ms); 2,500 instructions, 223
-distinct (`runs/ur3_sim_pick_and_place_cube/make_prompts.py`). Audit: actions equal the next state exactly, no static
-joint over the whole set, commands with 0, 2 or 4 edges per episode (4 in the 93 early-close episodes), 657 frozen
-wrist-camera runs all on the arm that stays still, 81 episodes with short still ends.
+500 episodes, 81,087 rows (`meta/conversion_report.json`); 2,500 instructions, 211 distinct
+(`runs/ur3_sim_pick_and_place_cube/make_prompts.py`). Audit: the only findings are 492 frozen wrist-camera runs,
+all on the arm that stays still, and 87 episodes with short still ends.
 
 ## Phase 12
 
@@ -630,7 +635,7 @@ Static frames, end padding, keyframes and held-out split for the simulated data.
 
 ### Files
 
-`runs/ur3_sim_pick_and_place_cube/{robot_spec.json,timing_plan.json,keyframes_spec*.json,keyframes*.json,diversity.json}`,
+`runs/ur3_sim_pick_and_place_cube/{robot_spec.json,timing_plan.json,keyframes_spec*.json,keyframes*.json,keyframe_overrides*.json,diversity.json}`,
 `data/ur3-sim-cube-timed`.
 
 ### Structures
@@ -647,22 +652,23 @@ Phase 11.
 
 ### Observation
 
-Detected grasp and release frames against `sim/motion` `grasp_step` and `release_step`; row counts before and after
-timing; keyframe counts per type, with 2 grasps in the 93 early-close episodes.
+Detected grasp and release frames against the simulator's recorded gripper commands; row counts before and after
+timing; keyframe counts per type, with 2 grasps in the 83 late-close episodes.
 
-Pass 1 and final keyframes: the number of detected grasps and releases equals the simulator's recorded gripper
-commands in all 500 episodes, and every detected frame is one frame before the recorded event step. The real run's
-`lift` rule (first motion above 0.015 rad per frame after the grasp) found the lift one frame after the grasp
-because the arm is still decelerating at the close command (0.016 rad per frame); a `rest` type (below 0.003 rad per
-frame for 3 frames) before `lift` fixes it (`make_keyframe_specs.py`); `lift` is missing in 6 plain and 2 early-close
-episodes whose transport stays below 0.015 rad per frame. Outlier and order issues (82 in pass 1, 376 after timing) are
-accepted with reasons from the generator parameters (`make_keyframe_overrides.py`). Timing: 85,738 rows in, 6,648 still
-rows dropped, 30,000 padding rows, 109,090 rows out. Held-out split (stratified, 10): 1, 83, 212, 214, 219, 259, 264,
-300, 429, 495.
+The number of detected grasps and releases equals the number of gripper commands the simulator recorded in all 500
+episodes (`make_keyframe_overrides.py`). The real run's `lift` rule (first motion above 0.015 rad per frame after
+the grasp) found the lift one frame after the grasp because the arm is still decelerating at the close command; a
+`rest` type (below 0.003 rad per frame for 3 frames) before `lift` fixes it (`make_keyframe_specs.py`); `lift` is
+missing in 8 episodes whose transport stays below 0.015 rad per frame. In a late-close episode the first grasp
+closes on air while the arm hovers, so no lift follows it and the first lift lies after the first release. Outlier
+and order issues (49 before timing, 352 after) are accepted with reasons from the generator parameters; 82 of the 83
+late-close episodes carry an order issue. Timing: 81,087 rows in, 6,475 still rows dropped, 30,000 padding rows,
+104,612 rows out. Held-out split (stratified, 10): 2, 100, 231, 234, 243, 287, 323, 325, 349, 463 (7 right arm, 3
+left; 5 short, 4 medium, 1 long; 2 late close).
 
 ## Phase 13
 
-Phase Status: completed
+Phase Status: active
 
 Round: 13
 
@@ -673,8 +679,9 @@ Label datasets and per-point statistics: three simulated families, and the two m
 
 ### Files
 
-`runs/ur3_sim_pick_and_place_cube/label_config_*.json`, `data/ur3-sim-cube-*-{train,eval}`,
-`data/pick-and-place-cube-quick-v4h5-{time-s10,two-phase-s48}-{train,eval}`, `openpi/assets/`.
+`runs/ur3_sim_pick_and_place_cube/{label_config_*.json,merge_norm_stats.py,build_sim_labels.sh}`,
+`data/ur3-sim-cube-*-{train,eval}`, `data/pick-and-place-cube-quick-v4h5-{time-s10,two-phase-s48}-{train,eval}`,
+`openpi/assets/`.
 
 ### Structures
 
@@ -692,14 +699,13 @@ Phase 12.
 
 Mean loss weight and point counts printed by `build_labels`; the per-point statistics' ranges per family.
 
-Label datasets (490 train episodes, 106,873 rows each): reach median 10.0 / 48.0 / 20.3 frames, padding 2.2 / 41.4 /
-12.4 %, window 22.2 / 17.7 / 44.2 % (per-frame, curvature, two-phase). Real second-stage datasets
-`pick-and-place-cube-quick-v4h5-{time-s10,two-phase-s48}-{train,eval}` built with the held-out 54, 102, 122, 180, 185.
-Per-point statistics: a first run of the curvature statistics died with CUDA out of memory on the shared GPU 0 (data
-loader workers initialise JAX); rerun with `JAX_PLATFORMS=cpu`. The simulated wrist_2 range (0.001 to 0.002 rad) is 100
-to 200 times below the real right arm's (0.21 rad), so both stages use the union of the simulated and real q01 and q99
-(real: v4h5 curvature, v4 per-frame and two-phase); the simulation-only statistics are kept in
-`norm_stats_sim_only/`.
+Label datasets (490 train episodes, 102,500 rows each): reach median 10.0 / 48.0 / 19.5 frames, padding 2.2 / 42.5 /
+12.8 %, window 22.7 / 17.1 / 44.3 % (per-frame, curvature, two-phase). Real second-stage datasets
+`pick-and-place-cube-quick-v4h5-{time-s10,two-phase-s48}-{train,eval}` are built with the held-out 54, 102, 122,
+180, 185. The simulated wrist_2 range of the delta action (about 0.001 rad) is 100 to 200 times below the real
+right arm's (0.21 rad), so both stages use the union of the simulated and real q01 and q99 (real: v4h5 curvature, v4
+per-frame and two-phase), written by `merge_norm_stats.py`; the simulation-only statistics are kept in
+`norm_stats_sim_only/`. Data-loader workers initialise JAX, so the statistics run with `JAX_PLATFORMS=cpu`.
 
 ## Phase 14
 
@@ -709,18 +715,20 @@ Round: 11
 
 ### Goal
 
-`train_config` and `run.py train` start from the saved parameters of an earlier run, and can train LoRA adapters
-of the action expert only.
+`train_config` and `run.py train` start from the saved parameters of an earlier run, can train LoRA adapters of
+the action expert only, and take their optimisation numbers from a named recipe.
 
 ### Files
 
-`examples/ur3_dual_arm/configs.py`, `examples/ur3_dual_arm/run.py`, `src/vla_openpi/lora_freeze.py`,
+`examples/ur3_dual_arm/{configs.py,recipes.py,run.py}`, `src/vla_openpi/lora_freeze.py`,
 `src/vla_openpi/lora_weight_loader.py`, `src/vla_openpi/__init__.py`.
 
 ### Structures
 
 Optional `init_checkpoint` and `lora` arguments of `train_config`; `non_lora_filter`; `ZeroLoraBLoader` (the
-`lora_b` factors start at zero, the model's own initialisation draws both factors from a normal distribution).
+`lora_b` factors start at zero, the model's own initialisation draws both factors from a normal distribution);
+`Recipe` (steps, peak learning rate, warm-up steps, EMA decay, kept-checkpoint period) with `full_20k`, `sim_10k`,
+`lora_10k` and `lora_4k`.
 
 ### Affected Modules
 
@@ -732,22 +740,25 @@ None.
 
 ### Observation
 
-Loss at step 0 of a LoRA run started from the real-only 223-episode checkpoint, against that run's final loss and
-the loss at step 0 from `pi05_base`; the number of trainable parameters.
+Loss at step 0 of a LoRA run started from a saved checkpoint, against that run's final loss and the loss at step 0
+from `pi05_base`; the number of trainable parameters; the schedule numbers `train_config` builds for each recipe.
 
-LoRA probe on one GPU: the real-only 223-episode curvature checkpoint (19,999) as the initial weights, adapters
-only, 10 trainable arrays (22.1 M parameters; the full recipe trains about 430 M): loss 0.0128 at step 0 and 0.0103
-at step 50, against 0.0093 at the end of that checkpoint's own run and 0.178 from `pi05_base`; 3.2 s per step.
+LoRA probe on one GPU: a real-only 223-episode curvature checkpoint (19,999) as the initial weights, adapters only,
+10 trainable arrays (22.1 M parameters; the full recipe trains about 430 M): loss 0.0128 at step 0 and 0.0103 at
+step 50, against 0.0093 at the end of that checkpoint's own run and 0.178 from `pi05_base`; 3.2 s per step.
+Schedules: `full_20k` 20,000 steps, peak 2.5e-5; `sim_10k` 10,000 steps, peak 5e-5, warm-up 500, EMA 0.999;
+`lora_10k` 10,000 steps, peak 1e-4; `lora_4k` 4,000 steps, peak 1e-4, warm-up 200, EMA 0.998; every recipe decays to
+a tenth of its peak with batch 32.
 
 ## Phase 15
 
-Phase Status: active
+Phase Status: pending
 
 Round: 14
 
 ### Goal
 
-Stage 1: three simulation-only runs, one GPU each, latest checkpoints kept.
+Stage 1: three simulation-only runs with recipe `sim_10k`, one GPU each, half-way and latest checkpoints kept.
 
 ### Files
 
@@ -777,8 +788,7 @@ Round: 15
 
 ### Goal
 
-Stage 2: three LoRA runs on the real 223 episodes initialised from the stage-1 checkpoints, and the open-loop
-table.
+Stage 2: three LoRA runs with recipe `lora_4k` on the real 223 episodes, initialised from the stage-1 checkpoints.
 
 ### Files
 
@@ -798,4 +808,5 @@ Phase 15.
 
 ### Observation
 
-As Phase 15; open-loop error on the 5 real held-out episodes for stage-1, stage-2 and real-only checkpoints.
+As Phase 15; the training-loss curves of the three runs; open-loop error on the 5 real held-out and the 10 simulated
+held-out episodes for stage-1, stage-2 and real-only checkpoints.
