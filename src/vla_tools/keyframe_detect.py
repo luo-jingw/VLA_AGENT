@@ -2,9 +2,9 @@
 
 Checks, all per keyframe type:
   count      occurrences per episode against `expected`
-  order      first occurrences follow the spec's `order`
+  order      first occurrences follow the spec's `order` (each group of it on its own, e.g. one group per arm)
   phase      position in the episode (frame / length); robust z beyond --outlier-z is flagged
-  interval   frames between consecutive types in `order`; same outlier rule
+  interval   frames between consecutive types of an `order` group; same outlier rule
   clipped    a window that runs past either end of the episode
 
 Detection is never final on its own: confirm the semantics by eye with keyframe_review, record every
@@ -155,12 +155,13 @@ def main() -> None:
                 issue("count", f"{ktype.name}: {len(frames)} found, {ktype.expected} expected")
             if frames:
                 phases[ktype.name][e.index] = frames[0] / max(n - 1, 1)
-        firsts = [found[name][0] for name in kspec.order if found.get(name)]
-        if firsts != sorted(firsts):
-            issue("order", " < ".join(f"{name}@{found[name][0]}" for name in kspec.order if found.get(name)))
-        for a, b in zip(kspec.order[:-1], kspec.order[1:], strict=True):
-            if found.get(a) and found.get(b):
-                intervals.setdefault(f"{a}->{b}", {})[e.index] = float(found[b][0] - found[a][0])
+        for group in kspec.order:
+            firsts = [found[name][0] for name in group if found.get(name)]
+            if firsts != sorted(firsts):
+                issue("order", " < ".join(f"{name}@{found[name][0]}" for name in group if found.get(name)))
+            for a, b in zip(group[:-1], group[1:], strict=True):
+                if found.get(a) and found.get(b):
+                    intervals.setdefault(f"{a}->{b}", {})[e.index] = float(found[b][0] - found[a][0])
         for k in keyframes:
             if k.window[0] < 0 or k.window[1] > n - 1:
                 issue("clipped", f"{k.type}@{k.frame} window {list(k.window)} in {n} frames")

@@ -7,7 +7,7 @@ keyframes_spec.json:
     {
       "task": "pick the red cube, place it on the plate",
       "effector": "parallel gripper, binary close command, no feedback",
-      "order": ["grasp", "lift", "release"],
+      "order": ["grasp", "lift", "release"],   (or a list of such lists: one order per arm, checked separately)
       "types": [
         {"name": "grasp", "description": "close command issued",
          "detector": {"type": "command_edge", "signal": {"source": "action", "dim": 6}, "direction": "rise"},
@@ -97,7 +97,7 @@ class KeyframeSpec:
     task: str
     effector: str
     types: tuple[KeyframeType, ...]
-    order: tuple[str, ...]
+    order: tuple[tuple[str, ...], ...]  # groups of type names; the first occurrences of each group follow its order
 
     def columns(self) -> list[str]:
         """Dataset columns, beyond state and action, that some detector reads."""
@@ -117,7 +117,7 @@ class KeyframeSpec:
             if t.detector.reference is not None and t.detector.reference not in known:
                 raise ValueError(f"{t.name} refers to {t.detector.reference!r}, which must be listed before it")
             known.add(t.name)
-        if any(name not in names for name in self.order):
+        if any(name not in names for group in self.order for name in group):
             raise ValueError("order names an unknown type")
 
     @staticmethod
@@ -141,5 +141,16 @@ class KeyframeSpec:
             task=raw.get("task", ""),
             effector=raw.get("effector", ""),
             types=tuple(types),
-            order=tuple(raw.get("order", [])),
+            order=_order_groups(raw.get("order", [])),
         )
+
+
+def _order_groups(raw: list) -> tuple[tuple[str, ...], ...]:
+    """`order` as written: a list of type names (one group) or a list of such lists (one group each)."""
+    if not raw:
+        return ()
+    if all(isinstance(item, str) for item in raw):
+        return (tuple(raw),)
+    if all(isinstance(item, list) and all(isinstance(name, str) for name in item) for item in raw):
+        return tuple(tuple(group) for group in raw)
+    raise ValueError("order is a list of type names or a list of lists of type names")

@@ -95,7 +95,7 @@ def test_detect_episode_runs_types_in_order() -> None:
                 1,
             ),
         ),
-        order=("grasp", "lift"),
+        order=(("grasp", "lift"),),
     )
     assert detect_episode(kspec, actions, states, SPEC, columns) == {"grasp": [20], "lift": [26]}
 
@@ -108,3 +108,16 @@ def test_spec_rejects_unknown_or_later_references() -> None:
     orphan = KeyframeType("lift", "", Detector("motion_onset", threshold=0.01, reference="seal"), WINDOW, 1)
     with pytest.raises(ValueError, match="unknown type"):
         KeyframeSpec(task="", effector="", types=(grasp, orphan), order=())
+
+
+def test_order_is_a_list_of_names_or_one_list_per_group() -> None:
+    from vla_tools.keyframe_spec import _order_groups
+
+    assert _order_groups([]) == ()
+    assert _order_groups(["grasp", "lift"]) == (("grasp", "lift"),)
+    assert _order_groups([["grasp_left", "lift_left"], ["grasp_right", "lift_right"]]) == (
+        ("grasp_left", "lift_left"),
+        ("grasp_right", "lift_right"),
+    )
+    with pytest.raises(ValueError):
+        _order_groups(["grasp", ["lift"]])

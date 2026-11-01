@@ -936,7 +936,7 @@ and 145 episodes with idle ends; no episode excluded.
 
 ## Phase 19
 
-Phase Status: active
+Phase Status: completed
 
 Round: 18
 
@@ -967,9 +967,22 @@ Phase 18.
 Keyframe issues found and accepted, open issues 0; rows dropped and padded; the held-out episodes by relay or single
 arm, arm, perturbation phase, late close, distance bin and light shape.
 
+### Result
+
+The keyframe specs group the order and interval checks by arm (`order` accepts a list of lists, one group per arm;
+a flat list is one group), because a relay may start with either arm. First pass on the base spec (grasp and release
+per arm): 36 issues, 35 accepted with reasons after checking that the detected grasps and releases equal the
+simulator's recorded gripper commands in all 1000 episodes. Timing (threshold 0.002, 5 frames, 60 padding rows):
+still frames dropped 13,776 (leading 425, trailing 12,325, pauses outside keyframe windows 1,026); 41,750 still frames
+inside keyframe windows are kept; 314,924 rows with 60,000 padding rows, 2,564 of the 2,627 flagged rows kept. Keyframes
+on the timed data with the label specs: 710 issues in each, all accepted with reasons (0 open), 225 of the 231 episodes
+with issues are late-close episodes. Held-out: 40 episodes by `vla_tools.diversity` (stratified over two combined
+clusters, seed 0): relay 27 and single arm 13, arm left 15 and right 25, perturbed 11 (approach 4, carry 7), late close 8,
+bands short 6, medium 8, long 26, all five light shapes, every 5 cm distance bin.
+
 ## Phase 20
 
-Phase Status: pending
+Phase Status: active
 
 Round: 19
 
