@@ -831,6 +831,13 @@ about 0.3 in relative norm at EMA decay 0.998; training-objective loss of the sa
 0.0265 logged). `train/repair_stage2_params.py` rebuilds them from the stage-1 frozen arrays and the stage-2 LoRA
 arrays (`lora4k_fixed/{2000,3999}`); the loss probe on the rebuilt curvature checkpoint at step 3999 is 0.0293.
 
+Publication: the rebuilt step-3999 checkpoints are in the HF model repository under `sim_real/<policy>/3999`
+(params, norm statistics, `arc_resample.json` with the keyframes path shortened); every file's SHA-256 equals the local
+file's, and the curvature checkpoint downloaded from the repository served on CPU with `--lora --init-checkpoint <any
+path>` and answered identically to the local copy. Served without `--lora`, the same checkpoint starts without an error
+and answers differently (no adapters), with no log message. The repository README documents both stages, the
+open-loop table above and the serving flags.
+
 Open loop (`runs/ur3_sim_pick_and_place_cube/eval`, served with `--uniform --cap 1`, execute 8, worst joint, median
 over rows in rad; 10 simulated and 5 real held-out episodes): points, head and stitched error
 
