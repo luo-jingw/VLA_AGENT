@@ -32,7 +32,8 @@ FULL_20K = Recipe("full_20k", num_train_steps=20_000, peak_lr=2.5e-5, warmup_ste
 SIM_10K = Recipe("sim_10k", num_train_steps=10_000, peak_lr=5e-5, warmup_steps=500, ema_decay=0.999, keep_period=5000)
 # LoRA adapters of the action expert on top of a trained model.
 LORA_10K = Recipe("lora_10k", num_train_steps=10_000, peak_lr=1e-4, warmup_steps=500, ema_decay=0.999, keep_period=5000)
-# LoRA calibration on a few real recordings, the second stage of a two-stage recipe.
+# LoRA calibration on a few real recordings, the second stage of a two-stage recipe. EMA decay 0.998 is not
+# representable in bfloat16, so the averaged frozen arrays of the saved `params` drift (ISSUE-020); 0.999 does not.
 LORA_4K = Recipe("lora_4k", num_train_steps=4_000, peak_lr=1e-4, warmup_steps=200, ema_decay=0.998, keep_period=2000)
 
 RECIPES: dict[str, Recipe] = {r.name: r for r in (FULL_20K, SIM_10K, LORA_10K, LORA_4K)}

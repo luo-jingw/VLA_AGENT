@@ -784,7 +784,7 @@ Two replays with the same rebuilt model (no reset between them, state set direct
 
 Status: Open
 
-Area: UR3 simulated pick-and-place data (`data/ur3_sim_pick_and_place_cube`) used for pre-training
+Area: UR3 simulated pick-and-place data (`data/ur3_sim_pick_and_place_cube`, revision 7fa3c586) used for pre-training
 
 ## Observation
 
@@ -793,10 +793,9 @@ Three properties of the simulated episodes differ from the real recordings in wa
 - wrist_2 (joints 4 and 11) of the delta action has a q01–q99 range of 0.001–0.002 rad at the last chunk point in
   every label family, against 0.21 rad (per-frame labels) for the real right arm; the simulated motions set it
   almost constant.
-- The wrist camera of the arm that stays still returns bit-identical frames for long stretches (657 flagged runs of
-  5 to 210 frames in 500 episodes, all on the idle arm's camera); real cameras have sensor noise.
-- The 10 held-out episodes (1, 83, 212, 214, 219, 259, 264, 300, 429, 495) hold no long transport (pick-to-place
-  distance above 0.30 m; 85 of the 500 episodes); 4 are short, 6 medium.
+- The wrist camera of the arm that stays still returns bit-identical frames for long stretches (492 flagged runs in 500 episodes, all on the idle arm's camera); real cameras have sensor noise.
+- The 10 held-out episodes (2, 100, 231, 234, 243, 287, 323, 325, 349, 463) hold one long transport (88 of the 500
+  episodes are long); 5 are short, 4 medium.
 
 ## Impact
 
@@ -856,8 +855,12 @@ None open: the cause is reproduced by the averaging test at the observed magnitu
 
 ## Next Experiment
 
-Serve the repaired checkpoints (`lora4k_fixed`: stage-1 frozen arrays, stage-2 LoRA arrays) and repeat the loss probe and
-the open-loop evaluation. For new LoRA runs, average the frozen arrays in float32 or leave them out of the average, as a
-patch under `integrations/openpi/patches/`.
+For new LoRA runs, average the frozen arrays in float32 or leave them out of the average, as a patch under
+`integrations/openpi/patches/`; until then a LoRA run needs EMA decay 0.999, for which the bfloat16 averaging is the
+identity.
 
 ## Resolution
+
+The stage-2 checkpoints of this run are rebuilt from the stage-1 frozen arrays and the stage-2 LoRA arrays
+(`train/repair_stage2_params.py`, `lora4k_fixed/`): training-objective loss on real training batches 0.0293 at step 3999
+(curvature) against 0.2385 for the saved `params`. The training step itself is not changed.

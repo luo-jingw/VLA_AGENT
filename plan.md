@@ -1,6 +1,6 @@
 # Plan
 
-Plan Status: approved
+Plan Status: completed
 
 # Problem
 
@@ -789,7 +789,7 @@ dataset in their assets and are published in the HF model repository.
 
 ## Phase 16
 
-Phase Status: active
+Phase Status: completed
 
 Round: 15
 
@@ -818,10 +818,32 @@ Phase 15.
 As Phase 15; the training-loss curves of the three runs; open-loop error on the 5 real held-out and the 10 simulated
 held-out episodes for stage-1, stage-2 and real-only checkpoints.
 
-### Result so far
+### Result
 
-Training done: three runs, 4,000 steps, 1.3 s/step, no non-finite parameters at step 3999; the checkpoints at 2000 and
-3999 carry the real label dataset's `arc_resample.json`. Loss (mean of logged values within 100 steps of step
-100 / 1000 / 3900: per-frame 0.064 / 0.0275 / 0.0226; two-phase 0.0665 / 0.0257 / 0.0205; curvature 0.0899 / 0.032 /
-0.0262. The real-only curvature run (20,000-step schedule, full action expert) has 0.108 / 0.0377 / 0.0256 at the same
-steps; its learning rate is still near the peak at step 3900. Open-loop evaluation is not done yet.
+Training: three runs, 4,000 steps, 1.3 s/step, finite parameters at step 3999. Loss (mean of logged values within 100
+steps of step 100 / 1000 / 3900): per-frame 0.064 / 0.0275 / 0.0226; two-phase 0.0665 / 0.0257 / 0.0205; curvature
+0.0899 / 0.032 / 0.0262. The real-only curvature run (20,000-step schedule, full action expert) has 0.108 / 0.0377 /
+0.0256 at the same steps; its learning rate is still near the peak at step 3900.
+
+Saved weights: the averaged `params` of the stage-2 runs are degraded (ISSUE-020: every frozen bfloat16 array drifted by
+about 0.3 in relative norm at EMA decay 0.998; training-objective loss of the saved curvature `params` 0.2385 against
+0.0265 logged). `train/repair_stage2_params.py` rebuilds them from the stage-1 frozen arrays and the stage-2 LoRA
+arrays (`lora4k_fixed/{2000,3999}`); the loss probe on the rebuilt curvature checkpoint at step 3999 is 0.0293.
+
+Open loop (`runs/ur3_sim_pick_and_place_cube/eval`, served with `--uniform --cap 1`, execute 8, worst joint, median
+over rows in rad; 10 simulated and 5 real held-out episodes): points, head and stitched error
+
+| label | model | sim points / head / stitched | real points / head / stitched |
+|---|---|---|---|
+| per-frame | stage 1 | 0.138 / 0.112 / 0.045 | 0.157 / 0.130 / 0.066 |
+| per-frame | stage 2 | 0.174 / 0.140 / 0.066 | 0.132 / 0.108 / 0.055 |
+| two-phase | stage 1 | 0.236 / 0.106 / 0.046 | 0.296 / 0.119 / 0.063 |
+| two-phase | stage 2 | 0.276 / 0.122 / 0.054 | 0.229 / 0.107 / 0.055 |
+| curvature | stage 1 | 0.472 / 0.110 / 0.053 | 0.418 / 0.116 / 0.061 |
+| curvature | stage 2 | 0.499 / 0.135 / 0.067 | 0.382 / 0.107 / 0.058 |
+| curvature | real only | 0.522 / 0.154 / 0.078 | 0.288 / 0.087 / 0.052 |
+
+Stage 2 lowers the real held-out error of every label against stage 1 and raises the simulated one; the real-only
+curvature model is lower than stage 2 on every real column. No command edge is missed by any stage-1 or stage-2 model;
+the real-only model misses 8 of 24 on the simulated held-out. The evaluation reads recorded observations, so it does
+not measure task success.
