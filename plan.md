@@ -897,7 +897,7 @@ r - 1 and r takes the weight of row r; no flag, no argument or the default weigh
 
 ## Phase 18
 
-Phase Status: active
+Phase Status: completed
 
 Round: 17
 
@@ -926,9 +926,17 @@ Phase 17.
 
 Episodes kept, rows, flagged perturbation rows (2,627 expected), instructions per episode, audit findings by kind.
 
+### Result
+
+1000 episodes, 268,700 rows (`data/ur3-sim2`), 2,627 rows flagged `is_perturbation` in 252 episodes, 5,000
+instructions (231 distinct; the arm and the relay are not mentioned). Audit: no non-finite values, largest timestamp
+gap 1.00 frames, no static joint, idle frames 21.5 % of the rows (0.21 % of the path); findings 1,699 frozen wrist
+camera runs (1,690 entirely while the camera's arm is idle, 9 overlapping the start or end of the arm's leg by 3-20 %)
+and 145 episodes with idle ends; no episode excluded.
+
 ## Phase 19
 
-Phase Status: pending
+Phase Status: active
 
 Round: 18
 
