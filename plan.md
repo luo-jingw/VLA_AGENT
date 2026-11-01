@@ -752,7 +752,7 @@ a tenth of its peak with batch 32.
 
 ## Phase 15
 
-Phase Status: active
+Phase Status: completed
 
 Round: 14
 
@@ -780,9 +780,16 @@ Phases 13 and 14.
 
 Loss at steps 0, 100 and the end; parameters finite; `arc_resample.json` in the checkpoint's assets.
 
+### Result
+
+Three runs on one H100 NVL each, 10,000 steps, 1.3–1.5 s/step, no non-finite parameters at steps 5000 and 9999.
+Loss at step 0 / 5000 / mean of logged steps 9500–9950: per-frame 0.165 / 0.0195 / 0.0138; two-phase 0.170 / 0.0177 /
+0.0126; curvature 0.182 / 0.0198 / 0.0125. Checkpoints 5000 and 9999 carry `arc_resample.json` of the stage-1 label
+dataset in their assets and are published in the HF model repository.
+
 ## Phase 16
 
-Phase Status: pending
+Phase Status: active
 
 Round: 15
 
@@ -810,3 +817,11 @@ Phase 15.
 
 As Phase 15; the training-loss curves of the three runs; open-loop error on the 5 real held-out and the 10 simulated
 held-out episodes for stage-1, stage-2 and real-only checkpoints.
+
+### Result so far
+
+Training done: three runs, 4,000 steps, 1.3 s/step, no non-finite parameters at step 3999; the checkpoints at 2000 and
+3999 carry the real label dataset's `arc_resample.json`. Loss (mean of logged values within 100 steps of step
+100 / 1000 / 3900: per-frame 0.064 / 0.0275 / 0.0226; two-phase 0.0665 / 0.0257 / 0.0205; curvature 0.0899 / 0.032 /
+0.0262. The real-only curvature run (20,000-step schedule, full action expert) has 0.108 / 0.0377 / 0.0256 at the same
+steps; its learning rate is still near the peak at step 3900. Open-loop evaluation is not done yet.
