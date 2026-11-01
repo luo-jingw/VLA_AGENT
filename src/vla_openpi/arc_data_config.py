@@ -13,6 +13,12 @@ dataset root) applied to openpi.
                          (EpisodePrompt) instead of its `task_index`; needs prompt_from_task=False and
                          local_root in the base config
 
+    mix_repo_id          a second dataset of the same robot and label whose rows are mixed into every batch (patch
+                         0004): its fraction moves linearly from mix_fraction[0] at the first step to
+                         mix_fraction[1] at step mix_steps - 1; mix_skip_steps are the steps already trained when
+                         resuming. Its normalization statistics are read from assets/<mix_repo_id>/ beside the
+                         primary's, and must equal the primary's.
+
 `action_sequence_keys` in the base config must still name a per-frame action column that exists in
 the dataset (e.g. ("action",)): the loader builds `delta_timestamps` from it. That slice is not used
 as the label.
@@ -39,6 +45,10 @@ class LeRobotArcDataConfig(_config.DataConfigFactory):
     delta_mask: tuple[bool, ...] = ()
     outputs: _transforms.DataTransformFn | None = None
     rotate_prompts: bool = False
+    mix_repo_id: str | None = None
+    mix_fraction: tuple[float, float] = (0.0, 0.0)
+    mix_steps: int = 0
+    mix_skip_steps: int = 0
 
     @override
     def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> _config.DataConfig:
@@ -65,9 +75,19 @@ class LeRobotArcDataConfig(_config.DataConfigFactory):
                 inputs=[_transforms.DeltaActions(self.delta_mask)],
                 outputs=[_transforms.AbsoluteActions(self.delta_mask)],
             )
-        return dataclasses.replace(
+        primary = dataclasses.replace(
             base,
             repack_transforms=_transforms.Group(inputs=[_transforms.RepackTransform(structure), *repack]),
             data_transforms=data_transforms,
             model_transforms=_config.ModelTransformFactory()(model_config),
+        )
+        if self.mix_repo_id is None:
+            return primary
+        secondary = dataclasses.replace(self, repo_id=self.mix_repo_id, mix_repo_id=None).create(assets_dirs, model_config)
+        return dataclasses.replace(
+            primary,
+            mix_in=secondary,
+            mix_fraction=self.mix_fraction,
+            mix_steps=self.mix_steps,
+            mix_skip_steps=self.mix_skip_steps,
         )

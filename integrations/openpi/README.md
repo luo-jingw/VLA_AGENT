@@ -11,11 +11,13 @@ Against upstream openpi (checked to apply in order on commit `15a9616`):
 | `0001-per-step-loss-weight.patch` | training with `key_weight` / `pad_weight` | `Observation.action_loss_weight`; `Pi0.compute_loss` multiplies the per-step loss by it. JAX only: the PyTorch training path does not take weights |
 | `0002-local-dataset-root.patch` | datasets outside the Hugging Face cache | `DataConfig.local_root`; the loader reads `local_root / repo_id` |
 | `0003-pyav-video-backend.patch` | optional | forces LeRobot's PyAV video backend where torchcodec imports but cannot load FFmpeg |
+| `0004-dataset-mixture.patch` | training on two datasets (simulated and real rows) | `training/mixture.py` (`MixSchedule`, `MixSampler`); `DataConfig.mix_in`, `mix_fraction`, `mix_steps`, `mix_skip_steps`; `create_torch_data_loader` draws each batch's rows from `mix_in` with a fraction that moves linearly over the run. JAX, one process |
 
 ```bash
 cd <openpi>
 git apply <VLA_AGENT>/integrations/openpi/patches/0001-per-step-loss-weight.patch
 git apply <VLA_AGENT>/integrations/openpi/patches/0002-local-dataset-root.patch
+git apply <VLA_AGENT>/integrations/openpi/patches/0004-dataset-mixture.patch
 ```
 
 ## Transforms and data config

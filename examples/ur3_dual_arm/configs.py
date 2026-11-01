@@ -45,6 +45,9 @@ def train_config(
     state_input: bool = False,
     init_checkpoint: pathlib.Path | None = None,
     lora: bool = False,
+    mix_repo_id: str | None = None,
+    mix_fraction: tuple[float, float] = (0.0, 0.0),
+    mix_skip_steps: int = 0,
     *,
     recipe: Recipe,
 ) -> _config.TrainConfig:
@@ -55,6 +58,9 @@ def train_config(
     `lora`: fine-tune LoRA adapters of the action expert (attention and feed-forward, rank 32) on top of
     `init_checkpoint` and nothing else: SigLIP, Gemma 2B, the action expert's own weights and the projections stay
     frozen; the adapters start as a no-op (ZeroLoraBLoader).
+    `mix_repo_id`, `mix_fraction`, `mix_skip_steps`: rows of a second dataset (`repo_id` is the primary one) are mixed
+    into every batch with a fraction moving linearly from mix_fraction[0] to mix_fraction[1] over the recipe's steps
+    (patch 0004); mix_skip_steps are the steps already trained when resuming.
     `recipe`: steps, learning rate, warm-up, EMA decay and kept checkpoints (recipes.py)."""
     if lora and init_checkpoint is None:
         raise ValueError("lora fine-tuning adapts a trained model: init_checkpoint is required")
@@ -87,6 +93,10 @@ def train_config(
         delta_mask=() if absolute_joints else tuple(transforms.make_bool_mask(6, -1, 6, -1)),
         outputs=RawOutputs(action_dim=ACTION_DIM),
         rotate_prompts=True,
+        mix_repo_id=mix_repo_id,
+        mix_fraction=mix_fraction,
+        mix_steps=recipe.num_train_steps if mix_repo_id is not None else 0,
+        mix_skip_steps=mix_skip_steps,
     )
     return _config.TrainConfig(
         name=name,

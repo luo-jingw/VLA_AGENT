@@ -40,4 +40,9 @@ LORA_4K = Recipe("lora_4k", num_train_steps=4_000, peak_lr=1e-4, warmup_steps=20
 # The same with decay 0.999, which leaves the frozen bfloat16 arrays of the saved `params` unchanged.
 LORA_4K_EMA999 = Recipe("lora_4k_ema999", num_train_steps=4_000, peak_lr=1e-4, warmup_steps=200, ema_decay=0.999, keep_period=2000)
 
-RECIPES: dict[str, Recipe] = {r.name: r for r in (FULL_20K, SIM_10K, SIM_15K, LORA_10K, LORA_4K, LORA_4K_EMA999)}
+# Full action expert from a simulation-trained checkpoint on real rows mixed with simulated rows (--mix-repo-id).
+MIX_8K = Recipe("mix_8k", num_train_steps=8_000, peak_lr=2.5e-5, warmup_steps=300, ema_decay=0.999, keep_period=2000)
+
+RECIPES: dict[str, Recipe] = {
+    r.name: r for r in (FULL_20K, SIM_10K, SIM_15K, LORA_10K, LORA_4K, LORA_4K_EMA999, MIX_8K)
+}

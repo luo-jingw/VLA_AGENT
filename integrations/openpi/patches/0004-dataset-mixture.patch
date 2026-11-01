@@ -1,0 +1,142 @@
+diff -urN a/src/openpi/training/config.py b/src/openpi/training/config.py
+--- a/src/openpi/training/config.py	2026-11-01 14:49:11.168793613 -0800
++++ b/src/openpi/training/config.py	2026-11-01 14:49:11.170793607 -0800
+@@ -109,6 +109,15 @@
+     # List of datasets to sample from: name, version, weight, and optionally filter_dict_path
+     datasets: Sequence[droid_rlds_dataset.RLDSDataset] = ()
+ 
++    # Mixture with a second LeRobot dataset (see training/mixture.py). When `mix_in` is set, each batch draws rows from
++    # `mix_in` with a fraction moving linearly from mix_fraction[0] at the first step to mix_fraction[1] at step
++    # mix_steps - 1, and from repo_id otherwise; mix_skip_steps are the steps already trained when resuming. `mix_in`
++    # carries its own repo_id, repack transforms and normalization stats. None trains on repo_id only.
++    mix_in: "DataConfig | None" = None
++    mix_fraction: tuple[float, float] = (0.0, 0.0)
++    mix_steps: int = 0
++    mix_skip_steps: int = 0
++
+ 
+ class GroupFactory(Protocol):
+     def __call__(self, model_config: _model.BaseModelConfig) -> _transforms.Group:
+diff -urN a/src/openpi/training/data_loader.py b/src/openpi/training/data_loader.py
+--- a/src/openpi/training/data_loader.py	2026-11-01 14:49:11.168793613 -0800
++++ b/src/openpi/training/data_loader.py	2026-11-01 14:49:11.170793607 -0800
+@@ -13,6 +13,7 @@
+ 
+ import openpi.models.model as _model
+ import openpi.training.config as _config
++import openpi.training.mixture as _mixture
+ from openpi.training.droid_rlds_dataset import DroidRldsDataset
+ import openpi.transforms as _transforms
+ 
+@@ -310,6 +311,20 @@
+     dataset = create_torch_dataset(data_config, action_horizon, model_config)
+     dataset = transform_dataset(dataset, data_config, skip_norm_stats=skip_norm_stats)
+ 
++    mix_sampler = None
++    if data_config.mix_in is not None:
++        secondary = transform_dataset(
++            create_torch_dataset(data_config.mix_in, action_horizon, model_config),
++            data_config.mix_in,
++            skip_norm_stats=skip_norm_stats,
++        )
++        schedule = _mixture.MixSchedule(
++            *data_config.mix_fraction, steps=data_config.mix_steps, skip_steps=data_config.mix_skip_steps
++        )
++        mix_sampler = _mixture.MixSampler(len(dataset), len(secondary), batch_size, schedule, seed)
++        logging.info(f"mixture: {len(dataset)} + {len(secondary)} rows, secondary fraction {data_config.mix_fraction}")
++        dataset = torch.utils.data.ConcatDataset([dataset, secondary])
++
+     # Use TorchDataLoader for both frameworks
+     # For PyTorch DDP, create DistributedSampler and divide batch size by world size
+     # For JAX, divide by process count
+@@ -328,6 +343,10 @@
+             local_batch_size = batch_size
+     else:
+         local_batch_size = batch_size // jax.process_count()
++    if mix_sampler is not None:
++        if framework != "jax" or jax.process_count() > 1:
++            raise NotImplementedError("A dataset mixture is supported for single-process JAX training only.")
++        sampler = mix_sampler
+ 
+     logging.info(f"local_batch_size: {local_batch_size}")
+     data_loader = TorchDataLoader(
+diff -urN a/src/openpi/training/mixture.py b/src/openpi/training/mixture.py
+--- a/src/openpi/training/mixture.py	1969-12-31 16:00:00.000000000 -0800
++++ b/src/openpi/training/mixture.py	2026-11-01 14:49:11.170793607 -0800
+@@ -0,0 +1,76 @@
++"""Index sequence for training on two datasets whose proportions change during the run.
++
++`MixSampler` draws the rows of every batch from the concatenation [primary rows, secondary rows]: each row comes from
++the secondary dataset with the fraction `MixSchedule.fraction(step)` of its step and from the primary dataset
++otherwise. Each dataset is traversed in shuffled passes, so no row repeats before the dataset has been used up.
++"""
++
++import dataclasses
++
++import numpy as np
++
++
++@dataclasses.dataclass(frozen=True)
++class MixSchedule:
++    """Fraction of secondary rows per batch: `start` at the first step, `end` at step `steps - 1`, linear between."""
++
++    start: float
++    end: float
++    steps: int
++    # Steps already trained when a run resumes: the sampler yields the continuation of the sequence of a fresh run.
++    skip_steps: int = 0
++
++    def __post_init__(self) -> None:
++        if not (0.0 <= self.start <= 1.0 and 0.0 <= self.end <= 1.0):
++            raise ValueError(f"fractions must lie in [0, 1], got {self.start} and {self.end}")
++        if not 0 <= self.skip_steps < self.steps:
++            raise ValueError(f"skip_steps {self.skip_steps} must lie in [0, steps {self.steps})")
++
++    def fraction(self, step: int) -> float:
++        if self.steps == 1:
++            return self.start
++        return self.start + (self.end - self.start) * min(step, self.steps - 1) / (self.steps - 1)
++
++
++class _ShuffledPasses:
++    """Row indices of one dataset: a fresh random permutation per pass."""
++
++    def __init__(self, size: int, offset: int, rng: np.random.Generator):
++        self._size, self._offset, self._rng = size, offset, rng
++        self._order = rng.permutation(size)
++        self._next = 0
++
++    def take(self, count: int) -> list[int]:
++        taken = []
++        for _ in range(count):
++            if self._next == self._size:
++                self._order = self._rng.permutation(self._size)
++                self._next = 0
++            taken.append(self._offset + int(self._order[self._next]))
++            self._next += 1
++        return taken
++
++
++class MixSampler:
++    """Sampler over a torch ConcatDataset([primary, secondary]): `batch_size` indices per step, in step order."""
++
++    def __init__(self, n_primary: int, n_secondary: int, batch_size: int, schedule: MixSchedule, seed: int):
++        if n_primary < 1 or n_secondary < 1:
++            raise ValueError("both datasets need at least one row")
++        self._sizes = (n_primary, n_secondary)
++        self._batch_size = batch_size
++        self._schedule = schedule
++        self._seed = seed
++
++    def __len__(self) -> int:
++        return (self._schedule.steps - self._schedule.skip_steps) * self._batch_size
++
++    def __iter__(self):
++        rng = np.random.default_rng(self._seed)
++        primary = _ShuffledPasses(self._sizes[0], 0, rng)
++        secondary = _ShuffledPasses(self._sizes[1], self._sizes[0], rng)
++        for step in range(self._schedule.steps):
++            n_secondary = int(np.sum(rng.random(self._batch_size) < self._schedule.fraction(step)))
++            batch = primary.take(self._batch_size - n_secondary) + secondary.take(n_secondary)
++            if step >= self._schedule.skip_steps:
++                yield from batch

@@ -7,7 +7,8 @@ with openpi's scripts and this directory on PYTHONPATH:
     uv run python <VLA_AGENT>/examples/ur3_dual_arm/run.py norm-stats --data-root <data> --repo-id <dataset>-train \
         [--per-point-actions]
     uv run python <VLA_AGENT>/examples/ur3_dual_arm/run.py train --data-root <data> --repo-id <dataset>-train --exp-name <run> \
-        [--resume] [--recipe <recipe>] [--init-checkpoint checkpoints/<name>/<run>/<step> [--lora]]
+        [--resume] [--recipe <recipe>] [--init-checkpoint checkpoints/<name>/<run>/<step> [--lora]] \
+        [--mix-repo-id <dataset>-train --mix-fraction <first step> <last step> [--mix-skip-steps <steps trained>]]
     uv run python <VLA_AGENT>/examples/ur3_dual_arm/run.py serve --data-root <data> --repo-id <dataset>-train \
         --checkpoint checkpoints/<name>/<run>/<step> --port 8000
 
@@ -52,6 +53,22 @@ def main() -> None:
         help="train: LoRA adapters of the action expert only, on top of --init-checkpoint",
     )
     parser.add_argument(
+        "--mix-repo-id",
+        default=None,
+        help="train: a second dataset whose rows are mixed into every batch (--repo-id is the primary dataset)",
+    )
+    parser.add_argument(
+        "--mix-fraction",
+        type=float,
+        nargs=2,
+        metavar=("FIRST", "LAST"),
+        default=(0.0, 0.0),
+        help="train: fraction of --mix-repo-id rows per batch at the first and at the last step, linear between",
+    )
+    parser.add_argument(
+        "--mix-skip-steps", type=int, default=0, help="train: with --resume and --mix-repo-id, the steps already trained"
+    )
+    parser.add_argument(
         "--recipe",
         choices=sorted(RECIPES),
         default=None,
@@ -88,6 +105,9 @@ def main() -> None:
         args.state_input,
         args.init_checkpoint,
         args.lora,
+        args.mix_repo_id,
+        tuple(args.mix_fraction),
+        args.mix_skip_steps,
         recipe=RECIPES[args.recipe or ("lora_10k" if args.lora else "full_20k")],
     )
     if args.command == "norm-stats":

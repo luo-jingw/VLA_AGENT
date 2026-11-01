@@ -177,3 +177,41 @@ def test_rotate_prompts_config_reads_no_file_when_built(tmp_path) -> None:
     assert "prompt" not in repack[0].structure
     with pytest.raises(ValueError, match="prompt_from_task"):
         factory(prompt_from_task=True).create(tmp_path / "assets", model)
+
+
+def _mix_batches(sampler: object, batch_size: int) -> np.ndarray:
+    return np.asarray(list(sampler)).reshape(-1, batch_size)  # type: ignore[call-overload]
+
+
+def test_mix_sampler_follows_schedule_and_covers_both_datasets() -> None:
+    from openpi.training.mixture import MixSampler
+    from openpi.training.mixture import MixSchedule
+
+    n_primary, n_secondary, batch, steps = 200, 700, 32, 4000
+    schedule = MixSchedule(0.5, 0.1, steps)
+    rows = _mix_batches(MixSampler(n_primary, n_secondary, batch, schedule, seed=0), batch)
+    assert rows.shape == (steps, batch)
+    assert rows.min() >= 0 and rows.max() < n_primary + n_secondary
+    from_secondary = (rows >= n_primary).mean(axis=1)
+    for block in range(4):
+        part = from_secondary[block * 1000 : (block + 1) * 1000]
+        expected = np.mean([schedule.fraction(s) for s in range(block * 1000, (block + 1) * 1000)])
+        print(f"steps {block * 1000}-{(block + 1) * 1000}: secondary fraction {part.mean():.3f}, schedule {expected:.3f}")
+        assert abs(part.mean() - expected) < 0.02
+    primary_rows = rows[rows < n_primary]
+    secondary_rows = rows[rows >= n_primary]
+    print(f"distinct rows drawn: primary {len(np.unique(primary_rows))}/{n_primary}, secondary {len(np.unique(secondary_rows))}/{n_secondary}")
+    assert len(np.unique(primary_rows)) == n_primary and len(np.unique(secondary_rows)) == n_secondary
+    first_pass = primary_rows[:n_primary]
+    assert len(np.unique(first_pass)) == n_primary  # no repeat inside the first pass over the primary dataset
+
+
+def test_mix_sampler_resume_continues_the_sequence() -> None:
+    from openpi.training.mixture import MixSampler
+    from openpi.training.mixture import MixSchedule
+
+    batch, steps, skip = 8, 50, 20
+    full = _mix_batches(MixSampler(30, 90, batch, MixSchedule(0.5, 0.1, steps), seed=3), batch)
+    resumed = _mix_batches(MixSampler(30, 90, batch, MixSchedule(0.5, 0.1, steps, skip_steps=skip), seed=3), batch)
+    assert resumed.shape == (steps - skip, batch)
+    assert (resumed == full[skip:]).all()

@@ -1061,7 +1061,7 @@ Loss at steps 0, 100 and the end; finite parameters; `arc_resample.json` in the 
 
 ## Phase 22
 
-Phase Status: active
+Phase Status: completed
 
 Round: 20
 
@@ -1099,9 +1099,19 @@ None.
 Realized simulated fraction per 1,000-step block of the sampler against the schedule, and the number of distinct rows
 drawn from each dataset; a 30-step training run with finite loss.
 
+### Result
+
+Sampler test (200 + 700 rows, 4,000 steps, schedule 0.5 to 0.1): realized secondary fraction per 1,000-step block
+0.450 / 0.350 / 0.249 / 0.152 against 0.450 / 0.350 / 0.250 / 0.150; all 200 and 700 rows are drawn; no row repeats within
+the first pass over the primary dataset; a resumed sampler yields the continuation of a fresh one's sequence. 175 tests
+pass. A run on real and simulated rows of the previous revision starts with step-0 loss 0.052 (per-frame), 0.063
+(two-phase), 0.077 (curvature, schedule 0.5 to 0.0); the dataset sizes in the log are 62,410 real and 102,500
+simulated rows.
+
+
 ## Phase 23
 
-Phase Status: pending
+Phase Status: active
 
 Round: 21
 
@@ -1133,6 +1143,15 @@ Phase 22.
 
 Training loss, finite parameters at the last step, `arc_resample.json` of the real label dataset in every checkpoint's
 assets; the real-robot test of the checkpoints at steps 2,000, 4,000, 6,000 and 8,000.
+
+### Launch
+
+Four runs, one L40S each, 3.1 to 3.5 s/step (about 7 hours): per-frame, two-phase and curvature with the simulated
+fraction falling from 0.5 to 0.1 (experiment `mix_s50e10`), and curvature with the fraction falling from 0.5 to 0.0
+(experiment `mix_s50e00`). `train/launch_mix_one.sh` starts a run, `train/prepare_mix_assets.sh` places the normalization
+statistics (the simulated and the real statistics files are identical), `train/watch_mix.sh` copies the real label
+dataset's `arc_resample.json` into each checkpoint as it is saved.
+
 
 ## Phase 24
 
