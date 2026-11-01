@@ -668,7 +668,7 @@ left; 5 short, 4 medium, 1 long; 2 late close).
 
 ## Phase 13
 
-Phase Status: active
+Phase Status: completed
 
 Round: 13
 
@@ -752,7 +752,7 @@ a tenth of its peak with batch 32.
 
 ## Phase 15
 
-Phase Status: pending
+Phase Status: active
 
 Round: 14
 
