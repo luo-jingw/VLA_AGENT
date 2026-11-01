@@ -822,3 +822,42 @@ wrist images of the idle arm replaced by noisy copies.
 
 Both stages use the union of the simulated and real q01/q99 (`merge_norm_stats.py`), so real wrist_2 stays inside
 the normalisation range.
+
+# ISSUE-020
+
+Status: Open
+
+Area: openpi training step, exponential moving average of frozen bfloat16 parameters in LoRA runs
+
+## Observation
+
+The `params` saved by a LoRA run with EMA decay 0.998 (`lora_4k`) do not reproduce the trained model. Every frozen array of
+the saved `params` differs from its stage-1 value by about 0.3 in relative norm (all 51 non-LoRA arrays changed; the
+LoRA arrays are float32 and fine). The averaging step `decay * old + (1 - decay) * new` runs in the dtype of the array;
+for bfloat16 arrays the decay 0.998 rounds to 0.99609375, so averaging an unchanged array is not the identity. A
+bfloat16 test array of 200,000 normal values changes by 0.298 in relative norm after 4,000 updates at decay 0.998 and by 0
+at decay 0.999. Full fine-tuning runs keep their trained weights in float32 and use decay 0.999, and are not affected.
+
+## Impact
+
+Stage-2 checkpoints served from `params`: training-objective loss on real training batches 0.2385 (step 3999) and 0.2420
+(step 2000) for the curvature run, against a logged training loss of 0.0265 and 0.029 at the same steps; the real-only
+curvature run gives 0.0118 by the same probe. Open loop on three real training episodes, curvature, worst joint, median
+frames of motion of one point / stitched / hold: stage 2 44 / 7.0 / 4.7, real only 9.9 / 3.0 / 0.23.
+
+## Evidence
+
+`runs/ur3_sim_pick_and_place_cube/eval/loss_probe.py` (`*_probe.log`), `check_train_episodes.sh` (`*_trainchk.log`), the
+bfloat16 averaging test above, `train/repair_stage2_params.py`.
+
+## Hypotheses
+
+None open: the cause is reproduced by the averaging test at the observed magnitude.
+
+## Next Experiment
+
+Serve the repaired checkpoints (`lora4k_fixed`: stage-1 frozen arrays, stage-2 LoRA arrays) and repeat the loss probe and
+the open-loop evaluation. For new LoRA runs, average the frozen arrays in float32 or leave them out of the average, as a
+patch under `integrations/openpi/patches/`.
+
+## Resolution
