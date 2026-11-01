@@ -3,9 +3,9 @@
 pi0.5 from pi05_base with the VLM frozen (SigLIP and Gemma 2B): only the action expert (Gemma 300M) and the
 action and time projections are trained, as in examples/libero_object. action_horizon 10, quantile
 normalisation, joints as deltas from the state and grippers absolute, no state input. Each training sample's
-prompt is drawn from its episode's instructions (meta/episodes.jsonl `tasks`). 20,000 steps (about 11 passes over
-206 episodes) with an exponential moving average of the weights (0.999): a checkpoint's `params` are the averaged
-weights. The dataset is one written by vla_tools.build_labels; its control rate is carried by its arc_resample.json.
+prompt is drawn from its episode's instructions (meta/episodes.jsonl `tasks`). The full recipe: 20,000 steps (about 11 passes over
+206 episodes) with an exponential moving average of the weights: a checkpoint's `params` are the averaged
+weights. Steps, learning rate, warm-up and the EMA decay come from a recipe (recipes.py). The dataset is one written by vla_tools.build_labels; its control rate is carried by its arc_resample.json.
 """
 
 from __future__ import annotations
@@ -25,13 +25,10 @@ from vla_openpi import ZeroLoraBLoader
 from vla_openpi import non_lora_filter
 from vla_openpi import vlm_filter
 
+from recipes import Recipe
+
 ACTION_DIM = 14
 ACTION_HORIZON = 10
-NUM_TRAIN_STEPS = 20_000
-EMA_DECAY = 0.999
-LORA_NUM_TRAIN_STEPS = 10_000
-LORA_PEAK_LR = 1e-4
-DECAY_FRACTION = 0.1  # the cosine schedule ends at this fraction of its peak
 CAMERAS = (
     ("observation/image", "observation.images.cam_high", "base_0_rgb"),
     ("observation/left_wrist_image", "observation.images.cam_left_wrist", "left_wrist_0_rgb"),
@@ -48,6 +45,8 @@ def train_config(
     state_input: bool = False,
     init_checkpoint: pathlib.Path | None = None,
     lora: bool = False,
+    *,
+    recipe: Recipe,
 ) -> _config.TrainConfig:
     """`absolute_joints`: the joints are predicted as absolute positions instead of deltas from the state.
     `state_input`: the normalised state is written into the prompt as 256-bin tokens (pi0.5's discrete state).
@@ -55,7 +54,8 @@ def train_config(
     instead of pi05_base (its model must have the same structure, so the same `state_input`).
     `lora`: fine-tune LoRA adapters of the action expert (attention and feed-forward, rank 32) on top of
     `init_checkpoint` and nothing else: SigLIP, Gemma 2B, the action expert's own weights and the projections stay
-    frozen; the adapters start as a no-op (ZeroLoraBLoader) and train for LORA_NUM_TRAIN_STEPS at LORA_PEAK_LR."""
+    frozen; the adapters start as a no-op (ZeroLoraBLoader).
+    `recipe`: steps, learning rate, warm-up, EMA decay and kept checkpoints (recipes.py)."""
     if lora and init_checkpoint is None:
         raise ValueError("lora fine-tuning adapts a trained model: init_checkpoint is required")
     model = pi0_config.Pi0Config(
@@ -64,9 +64,6 @@ def train_config(
         discrete_state_input=state_input,
         action_expert_variant="gemma_300m_lora" if lora else "gemma_300m",
     )
-    num_train_steps = LORA_NUM_TRAIN_STEPS if lora else NUM_TRAIN_STEPS
-    peak_lr = LORA_PEAK_LR if lora else 2.5e-5
-    decay_lr = peak_lr * DECAY_FRACTION
     if lora:
         weight_loader: weight_loaders.WeightLoader = ZeroLoraBLoader(str(init_checkpoint / "params"))
     else:
@@ -99,15 +96,18 @@ def train_config(
         weight_loader=weight_loader,
         batch_size=32,
         num_workers=8,
-        num_train_steps=num_train_steps,
+        num_train_steps=recipe.num_train_steps,
         save_interval=1000,
         log_interval=50,
-        keep_period=5000,  # keeps the half-way (5000) checkpoint besides the latest
+        keep_period=recipe.keep_period,
         wandb_enabled=False,
         lr_schedule=_optimizer.CosineDecaySchedule(
-            warmup_steps=500, peak_lr=peak_lr, decay_steps=num_train_steps, decay_lr=decay_lr
+            warmup_steps=recipe.warmup_steps,
+            peak_lr=recipe.peak_lr,
+            decay_steps=recipe.num_train_steps,
+            decay_lr=recipe.decay_lr,
         ),
         optimizer=_optimizer.AdamW(b1=0.9, b2=0.95, eps=1e-8, weight_decay=1e-4, clip_gradient_norm=1.0),
         freeze_filter=non_lora_filter() if lora else vlm_filter(),
-        ema_decay=EMA_DECAY,
+        ema_decay=recipe.ema_decay,
     )

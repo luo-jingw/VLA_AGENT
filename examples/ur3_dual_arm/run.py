@@ -7,7 +7,7 @@ with openpi's scripts and this directory on PYTHONPATH:
     uv run python <VLA_AGENT>/examples/ur3_dual_arm/run.py norm-stats --data-root <data> --repo-id <dataset>-train \
         [--per-point-actions]
     uv run python <VLA_AGENT>/examples/ur3_dual_arm/run.py train --data-root <data> --repo-id <dataset>-train --exp-name <run> \
-        [--resume] [--init-checkpoint checkpoints/<name>/<run>/<step> [--lora]]
+        [--resume] [--recipe <recipe>] [--init-checkpoint checkpoints/<name>/<run>/<step> [--lora]]
     uv run python <VLA_AGENT>/examples/ur3_dual_arm/run.py serve --data-root <data> --repo-id <dataset>-train \
         --checkpoint checkpoints/<name>/<run>/<step> --port 8000
 
@@ -21,6 +21,7 @@ import dataclasses
 from pathlib import Path
 
 from configs import train_config
+from recipes import RECIPES
 
 from vla_openpi import launch
 from vla_tools.arc_interp import DEPLOY_CAP
@@ -48,7 +49,13 @@ def main() -> None:
     parser.add_argument(
         "--lora",
         action="store_true",
-        help="train: LoRA adapters of the action expert only, on top of --init-checkpoint (10,000 steps, peak 1e-4)",
+        help="train: LoRA adapters of the action expert only, on top of --init-checkpoint",
+    )
+    parser.add_argument(
+        "--recipe",
+        choices=sorted(RECIPES),
+        default=None,
+        help="train: steps, learning rate, warm-up and EMA decay (recipes.py); default full_20k, or lora_10k with --lora",
     )
     parser.add_argument(
         "--per-point-actions",
@@ -81,6 +88,7 @@ def main() -> None:
         args.state_input,
         args.init_checkpoint,
         args.lora,
+        recipe=RECIPES[args.recipe or ("lora_10k" if args.lora else "full_20k")],
     )
     if args.command == "norm-stats":
         print(f"wrote {launch.norm_stats(config, per_point_actions=args.per_point_actions)}")
