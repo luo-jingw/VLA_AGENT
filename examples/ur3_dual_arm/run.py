@@ -8,7 +8,8 @@ with openpi's scripts and this directory on PYTHONPATH:
         [--per-point-actions]
     uv run python <VLA_AGENT>/examples/ur3_dual_arm/run.py train --data-root <data> --repo-id <dataset>-train --exp-name <run> \
         [--resume] [--recipe <recipe>] [--init-checkpoint checkpoints/<name>/<run>/<step> [--lora]] \
-        [--mix-repo-id <dataset>-train --mix-fraction <first step> <last step> [--mix-skip-steps <steps trained>]]
+        [--mix-repo-id <dataset>-train --mix-fraction <first step> <last step> [--mix-skip-steps <steps trained>]] \
+        [--state-input --state-gate <open probability first step> <at the ramp's end> --state-gate-ramp-steps <steps>]
     uv run python <VLA_AGENT>/examples/ur3_dual_arm/run.py serve --data-root <data> --repo-id <dataset>-train \
         --checkpoint checkpoints/<name>/<run>/<step> --port 8000
 
@@ -69,6 +70,17 @@ def main() -> None:
         "--mix-skip-steps", type=int, default=0, help="train: with --resume and --mix-repo-id, the steps already trained"
     )
     parser.add_argument(
+        "--state-gate",
+        type=float,
+        nargs=2,
+        metavar=("FIRST", "LAST"),
+        default=None,
+        help="train: with --state-input and --mix-repo-id, probability that a sample's state tokens are present at the "
+        "first step and after --state-gate-ramp-steps, linear between (a sample without them has the prompt of a model "
+        "trained without state input); resumes at --mix-skip-steps",
+    )
+    parser.add_argument("--state-gate-ramp-steps", type=int, default=0, help="train: length of the --state-gate ramp")
+    parser.add_argument(
         "--recipe",
         choices=sorted(RECIPES),
         default=None,
@@ -108,6 +120,8 @@ def main() -> None:
         args.mix_repo_id,
         tuple(args.mix_fraction),
         args.mix_skip_steps,
+        None if args.state_gate is None else tuple(args.state_gate),
+        args.state_gate_ramp_steps,
         recipe=RECIPES[args.recipe or ("lora_10k" if args.lora else "full_20k")],
     )
     if args.command == "norm-stats":

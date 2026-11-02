@@ -12,6 +12,7 @@ Against upstream openpi (checked to apply in order on commit `15a9616`):
 | `0002-local-dataset-root.patch` | datasets outside the Hugging Face cache | `DataConfig.local_root`; the loader reads `local_root / repo_id` |
 | `0003-pyav-video-backend.patch` | optional | forces LeRobot's PyAV video backend where torchcodec imports but cannot load FFmpeg |
 | `0004-dataset-mixture.patch` | training on two datasets (simulated and real rows) | `training/mixture.py` (`MixSchedule`, `MixSampler`); `DataConfig.mix_in`, `mix_fraction`, `mix_steps`, `mix_skip_steps`; `create_torch_data_loader` draws each batch's rows from `mix_in` with a fraction that moves linearly over the run. JAX, one process |
+| `0005-state-gate.patch` | a per-sample gate on pi0.5's discrete state tokens, opened during the run | `training/state_gate.py` (`GateSchedule`, `GatedSampler`, `GatedDataset`, the token key names); `DataConfig.state_gate`, `state_gate_ramp_steps`; `create_torch_data_loader` wraps the mixture sampler and the dataset. Needs 0004 and model transforms that emit both tokenizations (`vla_openpi.TokenizePromptWithGate`). JAX, one process |
 
 ```bash
 cd <openpi>

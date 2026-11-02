@@ -1,0 +1,126 @@
+--- a/src/openpi/training/config.py
++++ b/src/openpi/training/config.py
+@@ -117,6 +117,12 @@
+     mix_fraction: tuple[float, float] = (0.0, 0.0)
+     mix_steps: int = 0
+     mix_skip_steps: int = 0
++    # Gate on the state tokens of the discrete state input (see training/state_gate.py), used with a mixture: each
++    # sample's gate is open with a probability that moves linearly from state_gate[0] at the first step to
++    # state_gate[1] at step state_gate_ramp_steps and stays there. The model transforms must emit both tokenizations.
++    # Resumes at mix_skip_steps. None applies no gate.
++    state_gate: tuple[float, float] | None = None
++    state_gate_ramp_steps: int = 0
+ 
+ 
+ class GroupFactory(Protocol):
+--- a/src/openpi/training/data_loader.py
++++ b/src/openpi/training/data_loader.py
+@@ -14,6 +14,7 @@
+ import openpi.models.model as _model
+ import openpi.training.config as _config
+ import openpi.training.mixture as _mixture
++import openpi.training.state_gate as _state_gate
+ from openpi.training.droid_rlds_dataset import DroidRldsDataset
+ import openpi.transforms as _transforms
+ 
+@@ -324,6 +325,13 @@
+         mix_sampler = _mixture.MixSampler(len(dataset), len(secondary), batch_size, schedule, seed)
+         logging.info(f"mixture: {len(dataset)} + {len(secondary)} rows, secondary fraction {data_config.mix_fraction}")
+         dataset = torch.utils.data.ConcatDataset([dataset, secondary])
++        if data_config.state_gate is not None:
++            gate = _state_gate.GateSchedule(*data_config.state_gate, ramp_steps=data_config.state_gate_ramp_steps)
++            mix_sampler = _state_gate.GatedSampler(mix_sampler, batch_size, gate, data_config.mix_skip_steps, seed + 1)
++            dataset = _state_gate.GatedDataset(dataset)
++            logging.info(f"state gate: open probability {data_config.state_gate} over {data_config.state_gate_ramp_steps} steps")
++    elif data_config.state_gate is not None:
++        raise ValueError("A state gate needs a dataset mixture (mix_in).")
+ 
+     # Use TorchDataLoader for both frameworks
+     # For PyTorch DDP, create DistributedSampler and divide batch size by world size
+--- a/src/openpi/training/state_gate.py
++++ b/src/openpi/training/state_gate.py
+@@ -0,0 +1,84 @@
++"""Per-sample gate on the state tokens of pi0.5's discrete state input, opened during the run.
++
++A sample with an open gate is tokenized with the state in the prompt, a sample with a closed gate without it (the prompt
++of a model trained without state input). The model transform emits both tokenizations for every sample under the keys
++below; `GatedDataset` keeps the one the gate selects. `GatedSampler` draws the gates: it wraps a sampler that yields
++`batch_size` indices per step in step order (`MixSampler`) and yields `(index, open)` pairs.
++"""
++
++import dataclasses
++
++import numpy as np
++import torch
++
++TOKENS_WITHOUT_STATE = "tokenized_prompt_without_state"
++MASK_WITHOUT_STATE = "tokenized_prompt_mask_without_state"
++
++
++@dataclasses.dataclass(frozen=True)
++class GateSchedule:
++    """Probability that a sample's gate is open: `start` at step 0, `end` at step `ramp_steps`, linear between, `end` after."""
++
++    start: float
++    end: float
++    ramp_steps: int
++
++    def __post_init__(self) -> None:
++        if not (0.0 <= self.start <= 1.0 and 0.0 <= self.end <= 1.0):
++            raise ValueError(f"open probabilities must lie in [0, 1], got {self.start} and {self.end}")
++        if self.ramp_steps < 1:
++            raise ValueError(f"ramp_steps must be at least 1, got {self.ramp_steps}")
++
++    def open_probability(self, step: int) -> float:
++        return self.start + (self.end - self.start) * min(step, self.ramp_steps) / self.ramp_steps
++
++
++class GatedSampler:
++    """Adds the gate of each sample to the indices of `inner`: `(index, open)`, one gate draw per sample."""
++
++    def __init__(self, inner, batch_size: int, schedule: GateSchedule, skip_steps: int, seed: int):
++        self._inner, self._batch_size, self._schedule, self._skip_steps, self._seed = (
++            inner,
++            batch_size,
++            schedule,
++            skip_steps,
++            seed,
++        )
++
++    def __len__(self) -> int:
++        return len(self._inner)
++
++    def __iter__(self):
++        rng = np.random.default_rng(self._seed)
++        # A resumed run continues the draws of a fresh run: the draws of the steps already trained are consumed.
++        for _ in range(self._skip_steps):
++            rng.random(self._batch_size)
++        step = self._skip_steps
++        draws: np.ndarray | None = None
++        for position, index in enumerate(self._inner):
++            slot = position % self._batch_size
++            if slot == 0:
++                draws = rng.random(self._batch_size)
++                probability = self._schedule.open_probability(step)
++                step += 1
++            yield index, bool(draws[slot] < probability)
++
++
++class GatedDataset(torch.utils.data.Dataset):
++    """Dataset whose items are addressed by `(index, open)`: the sample of `index` with the tokenization the gate selects."""
++
++    def __init__(self, dataset):
++        self._dataset = dataset
++
++    def __len__(self) -> int:
++        return len(self._dataset)
++
++    def __getitem__(self, key: tuple[int, bool]) -> dict:
++        index, gate_open = key
++        sample = dict(self._dataset[index])
++        without_state = sample.pop(TOKENS_WITHOUT_STATE)
++        mask_without_state = sample.pop(MASK_WITHOUT_STATE)
++        if not gate_open:
++            sample["tokenized_prompt"] = without_state
++            sample["tokenized_prompt_mask"] = mask_without_state
++        return sample

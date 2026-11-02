@@ -215,3 +215,96 @@ def test_mix_sampler_resume_continues_the_sequence() -> None:
     resumed = _mix_batches(MixSampler(30, 90, batch, MixSchedule(0.5, 0.1, steps, skip_steps=skip), seed=3), batch)
     assert resumed.shape == (steps - skip, batch)
     assert (resumed == full[skip:]).all()
+
+
+def _gated_batches(sampler: object, batch_size: int) -> list[list[tuple[int, bool]]]:
+    pairs = list(sampler)  # type: ignore[call-overload]
+    return [pairs[i : i + batch_size] for i in range(0, len(pairs), batch_size)]
+
+
+def test_state_gate_sampler_follows_schedule() -> None:
+    from openpi.training.mixture import MixSampler
+    from openpi.training.mixture import MixSchedule
+    from openpi.training.state_gate import GatedSampler
+    from openpi.training.state_gate import GateSchedule
+
+    batch, steps, ramp = 32, 8000, 6000
+    schedule = GateSchedule(0.0, 1.0, ramp)
+    inner = MixSampler(200, 700, batch, MixSchedule(0.5, 0.1, steps), seed=0)
+    batches = _gated_batches(GatedSampler(inner, batch, schedule, skip_steps=0, seed=1), batch)
+    assert len(batches) == steps
+    opened = np.array([[o for _, o in b] for b in batches])
+    for first in range(0, steps, 1000):
+        expected = np.mean([schedule.open_probability(s) for s in range(first, first + 1000)])
+        print(f"steps {first}-{first + 1000}: open fraction {opened[first : first + 1000].mean():.3f}, schedule {expected:.3f}")
+        assert abs(opened[first : first + 1000].mean() - expected) < 0.02
+    assert opened[ramp:].all() and not opened[:1].any()
+
+
+def test_state_gate_sampler_resume_continues_the_sequence() -> None:
+    from openpi.training.mixture import MixSampler
+    from openpi.training.mixture import MixSchedule
+    from openpi.training.state_gate import GatedSampler
+    from openpi.training.state_gate import GateSchedule
+
+    batch, steps, skip = 8, 50, 20
+    gate = GateSchedule(0.0, 1.0, 40)
+    full = _gated_batches(GatedSampler(MixSampler(30, 90, batch, MixSchedule(0.5, 0.1, steps), 3), batch, gate, 0, 4), batch)
+    resumed_inner = MixSampler(30, 90, batch, MixSchedule(0.5, 0.1, steps, skip_steps=skip), 3)
+    resumed = _gated_batches(GatedSampler(resumed_inner, batch, gate, skip, 4), batch)
+    assert resumed == full[skip:]
+
+
+def test_gated_dataset_selects_the_tokenization_of_the_gate() -> None:
+    from openpi.training.state_gate import MASK_WITHOUT_STATE
+    from openpi.training.state_gate import TOKENS_WITHOUT_STATE
+    from openpi.training.state_gate import GatedDataset
+
+    rows = [
+        {
+            "tokenized_prompt": np.full(4, i),
+            "tokenized_prompt_mask": np.ones(4, bool),
+            TOKENS_WITHOUT_STATE: np.full(4, -i),
+            MASK_WITHOUT_STATE: np.array([True, True, False, False]),
+            "state": np.zeros(2),
+        }
+        for i in range(3)
+    ]
+    dataset = GatedDataset(rows)
+    opened = dataset[(2, True)]
+    closed = dataset[(2, False)]
+    assert (opened["tokenized_prompt"] == 2).all() and opened["tokenized_prompt_mask"].all()
+    assert (closed["tokenized_prompt"] == -2).all() and closed["tokenized_prompt_mask"].tolist() == [True, True, False, False]
+    assert TOKENS_WITHOUT_STATE not in opened and MASK_WITHOUT_STATE not in closed
+    assert len(dataset) == 3 and TOKENS_WITHOUT_STATE in rows[2]  # the wrapped row is not modified
+
+
+def test_gated_tokenization_equals_openpi_tokenization_with_and_without_state() -> None:
+    from openpi import transforms as openpi_transforms
+    from openpi.models import pi0_config
+    from openpi.models import tokenizer as openpi_tokenizer
+    from openpi.training import config as openpi_config
+    from openpi.training.state_gate import MASK_WITHOUT_STATE
+    from openpi.training.state_gate import TOKENS_WITHOUT_STATE
+
+    from vla_openpi import TokenizePromptWithGate
+    from vla_openpi import gate_model_transforms
+
+    model = pi0_config.Pi0Config(pi05=True, action_horizon=2, discrete_state_input=True)
+    group = openpi_config.ModelTransformFactory()(model)
+    gated_group = gate_model_transforms(group)
+    assert [type(t).__name__ for t in gated_group.inputs].count("TokenizePromptWithGate") == 1
+    tokenizer = openpi_tokenizer.PaligemmaTokenizer(model.max_token_len)
+    state = np.linspace(-1, 1, 14).astype(np.float32)
+    sample = {"prompt": "Put the pink cube on the white box.", "state": state}
+    both = TokenizePromptWithGate(tokenizer)(dict(sample))
+    with_state = openpi_transforms.TokenizePrompt(tokenizer, discrete_state_input=True)(dict(sample))
+    without_state = openpi_transforms.TokenizePrompt(tokenizer, discrete_state_input=False)(dict(sample))
+    assert (both["tokenized_prompt"] == with_state["tokenized_prompt"]).all()
+    assert (both["tokenized_prompt_mask"] == with_state["tokenized_prompt_mask"]).all()
+    assert (both[TOKENS_WITHOUT_STATE] == without_state["tokenized_prompt"]).all()
+    assert (both[MASK_WITHOUT_STATE] == without_state["tokenized_prompt_mask"]).all()
+    print("tokens with state", int(both["tokenized_prompt_mask"].sum()), "without", int(both[MASK_WITHOUT_STATE].sum()), "of", model.max_token_len)
+    plain = openpi_config.ModelTransformFactory()(pi0_config.Pi0Config(pi05=True, action_horizon=2, discrete_state_input=False))
+    with pytest.raises(ValueError, match="discrete_state_input"):
+        gate_model_transforms(plain)

@@ -1030,7 +1030,7 @@ real recordings), so real wrist_2 stays inside the normalisation range.
 
 ## Phase 21
 
-Phase Status: active
+Phase Status: completed
 
 Round: 20
 
@@ -1058,6 +1058,13 @@ Phase 20.
 ### Observation
 
 Loss at steps 0, 100 and the end; finite parameters; `arc_resample.json` in the assets of every checkpoint.
+
+### Result
+
+All three runs trained from step 0 to step 14,999 without interruption; the 51 arrays of each final checkpoint are
+finite. Batch loss at step 0 / mean of steps 14,500-14,950: per-frame 0.171 / 0.0173, two-phase 0.170 / 0.0167,
+curvature 0.184 / 0.0187. The final checkpoints are on the Hub model repo under `sim2/<policy>/14999`; file hashes
+equal the local files except `arc_resample.json`, whose `keyframes` path is shortened to the file name.
 
 ## Phase 22
 
@@ -1111,7 +1118,7 @@ simulated rows.
 
 ## Phase 23
 
-Phase Status: pending
+Phase Status: active
 
 Round: 22
 
@@ -1160,8 +1167,108 @@ Round: 23
 
 ### Goal
 
-Open-loop evaluation of the stage-1 and mixed stage-2 checkpoints on the 40 simulated and the 5 real held-out episodes,
-and of the real-only curvature checkpoint on the same episodes, served with uniform timing at the recording's pace.
+Mixed stage 2 with a gated state input for the curvature family: Phase 23's configuration (initial weights
+`pi05_ur3_sim2_curvature_s48_pp/sim15k/14999`, the same simulated and real datasets, simulated fraction 0.5 to 0.1,
+recipe `mix_8k`) with pi0.5's discrete state input (`--state-input`: the normalised 14-dimensional state is written into
+the prompt as 256-bin tokens), applied to each training sample with an open probability that rises linearly from 0 at
+the first step to 1 at step 6,000 and stays 1 for the last 2,000 steps (`--state-gate 0 1 --state-gate-ramp-steps
+6000`). A sample whose gate is closed has the prompt of stage 1 (the instruction without state tokens), so the run
+starts on the input format of its initial weights and ends on the format used when serving with `--state-input`. Stage 1
+was trained without state tokens; the flag changes the tokenized prompt only, not the parameter structure. The merged
+state statistics give left wrist-2 a range of 0.0012 rad, which would stretch encoder noise over the token range; dims 0
+to 5 of the state statistics are floored to a range of 0.05 rad (`vla_tools.norm_floor`) and the file is used for both
+datasets. Configuration `pi05_ur3_sim2_mix_curvature_s48_state_pp`, experiment `mix_s50e10`, one GPU, started on the GPU
+of Phase 23's curvature run once that run has finished.
+
+### Structure
+
+The gate is drawn per sample by a sampler that wraps the mixture sampler (`GatedSampler`, step order known from the
+position in the stream) and is applied by a dataset wrapper (`GatedDataset`) that chooses between two tokenizations the
+model transform emits for every sample: with state tokens (the format of `TokenizePrompt` with `discrete_state_input`)
+and without (stage 1's format). The schedule (`GateSchedule`) is owned by the data configuration; serving builds the
+same configuration without a gate and tokenizes with state.
+
+### Interface
+
+openpi patch 0005: `training/state_gate.py` (`GateSchedule(start, end, ramp_steps).open_probability(step)`,
+`GatedSampler(inner, batch_size, schedule, skip_steps, seed)` yielding `(index, open)`, `GatedDataset(dataset)` taking
+`(index, open)`, the two token key names); `DataConfig.state_gate`, `state_gate_ramp_steps`; `create_torch_data_loader`
+wraps the mixture sampler and the dataset when `state_gate` is set (requires a mixture; resumes at `mix_skip_steps`).
+`vla_openpi.TokenizePromptWithGate` (both tokenizations), `LeRobotArcDataConfig.state_gate`, `state_gate_ramp_steps`,
+`train_config(state_gate, state_gate_ramp_steps)`, `run.py --state-gate FIRST LAST --state-gate-ramp-steps N`.
+
+### Files
+
+`integrations/openpi/patches/0005-state-gate.patch` and its README row, `src/vla_openpi/state_gate_tokenize.py`,
+`src/vla_openpi/arc_data_config.py`, `src/vla_openpi/__init__.py`, `examples/ur3_dual_arm/configs.py`,
+`examples/ur3_dual_arm/run.py`, `tests/test_openpi_integration.py`; `runs/ur3_sim2_pick_and_place_cube/train/`
+(`mix_common.sh` gains the optional `variant` suffix, `prepare_mix_state_assets.sh`, `chain_mix_to_state.sh`),
+`openpi/checkpoints/pi05_ur3_sim2_mix_curvature_s48_state_pp/`, `openpi/assets/pi05_ur3_sim2_mix_curvature_s48_state_pp/`.
+
+### Structures
+
+`GateSchedule`, `GatedSampler`, `GatedDataset`, `TokenizePromptWithGate`.
+
+### Affected Modules
+
+openpi data loading (patched), `vla_openpi`, the UR3 example configuration.
+
+### Dependencies
+
+Phase 22 (the mixture), Phase 23 (initial weights are the same; the run starts when Phase 23's curvature run ends).
+
+### Observation
+
+Sampled open fraction per block of steps against the schedule; resume continuing the sequence; for a gate of 1 the batch
+tokens equal `TokenizePrompt` with state and for 0 the tokens without state; training loss at steps 0, 100 and the end;
+finite parameters at the last step; state statistics equal Phase 23's except for the floored range of dim 4; two serve
+requests that differ only in the state return different actions; `arc_resample.json` of the real label dataset in
+every checkpoint's assets.
+
+## Phase 25
+
+Phase Status: pending
+
+Round: 24
+
+### Goal
+
+Mixed stage-2 checkpoints on the Hub model repo: step 7,999 of the three Phase 23 policies and of the Phase 24 policy
+under `sim2_mix/<policy>/7999`, with the README's serving table extended (no `--lora`; `--state-input` for the state
+policy).
+
+### Files
+
+Hub model repo `README.md` and `sim2_mix/`.
+
+### Structures
+
+None.
+
+### Affected Modules
+
+None.
+
+### Dependencies
+
+Phases 23 and 24.
+
+### Observation
+
+File list of each folder on the Hub; SHA-256 of every weight file against the local file; no internal path or machine
+name in any uploaded file.
+
+## Phase 26
+
+Phase Status: pending
+
+Round: 24
+
+### Goal
+
+Open-loop evaluation of the stage-1 and mixed stage-2 checkpoints (with and without state input) on the 40 simulated and
+the 5 real held-out episodes, and of the real-only curvature checkpoint on the same episodes, served with uniform timing
+at the recording's pace.
 
 ### Files
 
@@ -1177,7 +1284,7 @@ None.
 
 ### Dependencies
 
-Phase 23.
+Phase 24.
 
 ### Observation
 

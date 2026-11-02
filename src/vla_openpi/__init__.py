@@ -8,6 +8,8 @@ from vla_openpi.episode_prompt import EpisodePrompt
 from vla_openpi.episode_prompt import load_episode_prompts
 from vla_openpi.lora_freeze import non_lora_filter
 from vla_openpi.lora_weight_loader import ZeroLoraBLoader
+from vla_openpi.state_gate_tokenize import TokenizePromptWithGate
+from vla_openpi.state_gate_tokenize import gate_model_transforms
 from vla_openpi.vlm_freeze import vlm_filter
 
 __all__ = [
@@ -16,7 +18,9 @@ __all__ = [
     "EpisodePrompt",
     "LeRobotArcDataConfig",
     "RawOutputs",
+    "TokenizePromptWithGate",
     "ZeroLoraBLoader",
+    "gate_model_transforms",
     "load_episode_prompts",
     "non_lora_filter",
     "vlm_filter",

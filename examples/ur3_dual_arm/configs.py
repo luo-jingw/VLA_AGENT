@@ -48,6 +48,8 @@ def train_config(
     mix_repo_id: str | None = None,
     mix_fraction: tuple[float, float] = (0.0, 0.0),
     mix_skip_steps: int = 0,
+    state_gate: tuple[float, float] | None = None,
+    state_gate_ramp_steps: int = 0,
     *,
     recipe: Recipe,
 ) -> _config.TrainConfig:
@@ -61,9 +63,14 @@ def train_config(
     `mix_repo_id`, `mix_fraction`, `mix_skip_steps`: rows of a second dataset (`repo_id` is the primary one) are mixed
     into every batch with a fraction moving linearly from mix_fraction[0] to mix_fraction[1] over the recipe's steps
     (patch 0004); mix_skip_steps are the steps already trained when resuming.
+    `state_gate`, `state_gate_ramp_steps`: with `state_input` and a mixture, each sample's state tokens are present with a
+    probability moving linearly from state_gate[0] at the first step to state_gate[1] at step state_gate_ramp_steps and
+    staying there; a sample without them has the prompt of a model trained without state input (patch 0005).
     `recipe`: steps, learning rate, warm-up, EMA decay and kept checkpoints (recipes.py)."""
     if lora and init_checkpoint is None:
         raise ValueError("lora fine-tuning adapts a trained model: init_checkpoint is required")
+    if state_gate is not None and not (state_input and mix_repo_id is not None):
+        raise ValueError("state_gate needs state_input and mix_repo_id")
     model = pi0_config.Pi0Config(
         pi05=True,
         action_horizon=ACTION_HORIZON,
@@ -97,6 +104,8 @@ def train_config(
         mix_fraction=mix_fraction,
         mix_steps=recipe.num_train_steps if mix_repo_id is not None else 0,
         mix_skip_steps=mix_skip_steps,
+        state_gate=state_gate,
+        state_gate_ramp_steps=state_gate_ramp_steps,
     )
     return _config.TrainConfig(
         name=name,
