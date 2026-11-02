@@ -1170,7 +1170,7 @@ Hub model repo under `sim2_mix/<policy>/7999`; file hashes equal the local files
 
 ## Phase 24
 
-Phase Status: active
+Phase Status: completed
 
 Round: 23
 
@@ -1234,9 +1234,18 @@ finite parameters at the last step; state statistics equal Phase 23's except for
 requests that differ only in the state return different actions; `arc_resample.json` of the real label dataset in
 every checkpoint's assets.
 
+### Result
+
+The run trained from step 0 to step 7,999 without interruption; the 51 arrays of the final checkpoint are finite and its
+assets hold `arc_resample.json`. Batch loss at step 0 / mean of steps 7,500-7,950: 0.075 / 0.0176 (the curvature run
+without state: 0.074 / 0.0180). Checkpoints at steps 2,000, 4,000, 6,000 and 7,999 are kept. Served on the CPU with
+`--state-input` (random images, state at the centre of the statistics' range): two requests with the same state differ by
+at most 0.024 (sampling noise) in the spline points; with the 12 joint entries shifted by 5 % of the statistics' range they
+differ by at most 0.998, and the action sequence has 58 rows against 12.
+
 ## Phase 25
 
-Phase Status: pending
+Phase Status: completed
 
 Round: 24
 
@@ -1266,6 +1275,13 @@ Phases 23 and 24.
 
 File list of each folder on the Hub; SHA-256 of every weight file against the local file; no internal path or machine
 name in any uploaded file.
+
+### Result
+
+Step 7,999 of the four policies is under `sim2_mix/<policy>/7999` on the Hub model repo; each folder holds the same files
+as its local checkpoint without the optimiser state (17 files, 18 for the state policy). SHA-256 of every file equals the
+local file except `arc_resample.json`, whose `keyframes` path is shortened to the file name. The README describes the
+`sim2_mix/` group (data mixture, losses, gated state input) and the serving flags.
 
 ## Phase 26
 
