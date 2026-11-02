@@ -1036,7 +1036,7 @@ Round: 20
 
 ### Goal
 
-Stage 1 (recipe `sim_15k`) for the three families, one GPU each. Stage 2 is Phases 22 to 24.
+Stage 1 (recipe `sim_15k`) for the three families, one GPU each. Stage 2 is Phases 22 and 23.
 
 ### Files
 
@@ -1111,59 +1111,17 @@ simulated rows.
 
 ## Phase 23
 
-Phase Status: active
-
-Round: 21
-
-### Goal
-
-Mixed stage 2 on the previous simulated revision, the same stage-1 checkpoints and real data as the LoRA stage 2 of
-Phase 16: initialised from `pi05_ur3_sim_<family>_pp/sim10k/9999`, simulated rows from `ur3-sim-cube-<r>-train`, real
-rows from `pick-and-place-cube-quick-v4h5-<r>-train`, `mix_start` 0.5, `mix_end` 0.1, recipe `mix_8k`, one GPU per run
-(configuration `pi05_ur3_sim_mix_<family>_pp`).
-
-### Files
-
-`runs/ur3_sim_pick_and_place_cube/train/`, `openpi/checkpoints/pi05_ur3_sim_mix_*_pp/`,
-`openpi/assets/pi05_ur3_sim_mix_*_pp/`.
-
-### Structures
-
-None.
-
-### Affected Modules
-
-None.
-
-### Dependencies
-
-Phase 22.
-
-### Observation
-
-Training loss, finite parameters at the last step, `arc_resample.json` of the real label dataset in every checkpoint's
-assets; the real-robot test of the checkpoints at steps 2,000, 4,000, 6,000 and 8,000.
-
-### Launch
-
-Four runs, one L40S each, 3.1 to 3.5 s/step (about 7 hours): per-frame, two-phase and curvature with the simulated
-fraction falling from 0.5 to 0.1 (experiment `mix_s50e10`), and curvature with the fraction falling from 0.5 to 0.0
-(experiment `mix_s50e00`). `train/launch_mix_one.sh` starts a run, `train/prepare_mix_assets.sh` places the normalization
-statistics (the simulated and the real statistics files are identical), `train/watch_mix.sh` copies the real label
-dataset's `arc_resample.json` into each checkpoint as it is saved.
-
-
-## Phase 24
-
 Phase Status: pending
 
 Round: 22
 
 ### Goal
 
-Mixed stage 2 on the current simulated revision: initialised from the stage-1 checkpoint at step 14,999 of Phase 21,
-simulated rows from `ur3-sim2-<r>-train` (perturbed steps masked), otherwise as Phase 23 (configuration
-`pi05_ur3_sim2_mix_<family>_pp`).
+Mixed stage 2 on the current simulated revision: initialised from the stage-1 checkpoint at step 14,999 of Phase 21
+(`pi05_ur3_sim2_<family>_pp/sim15k/14999`), simulated rows from `ur3-sim2-<r>-train` (perturbed steps masked), real rows
+from `pick-and-place-cube-quick-v4h5-<r>-train`, `mix_start` 0.5, `mix_end` 0.1, recipe `mix_8k`, one GPU per run
+(configuration `pi05_ur3_sim2_mix_<family>_pp`, experiment `mix_s50e10`), for the per-frame, two-phase and curvature
+families.
 
 ### Files
 
@@ -1184,9 +1142,17 @@ Phases 21 and 22.
 
 ### Observation
 
-As Phase 23.
+Training loss, finite parameters at the last step, `arc_resample.json` of the real label dataset in every checkpoint's
+assets; the real-robot test of the checkpoints at steps 2,000, 4,000, 6,000 and 8,000.
 
-## Phase 25
+### Launch
+
+`train/chain_stage1_to_mix.sh` waits for a family's stage 1, checks its final checkpoint for non-finite values and
+starts the mixed run on the same GPU. `train/launch_mix_one.sh` starts a run, `train/prepare_mix_assets.sh` places the
+normalization statistics (the simulated and the real statistics files are identical), `train/watch_mix.sh` copies the
+real label dataset's `arc_resample.json` into each checkpoint as it is saved.
+
+## Phase 24
 
 Phase Status: pending
 
@@ -1211,7 +1177,7 @@ None.
 
 ### Dependencies
 
-Phase 24.
+Phase 23.
 
 ### Observation
 
