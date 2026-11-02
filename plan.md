@@ -831,7 +831,7 @@ about 0.3 in relative norm at EMA decay 0.998; training-objective loss of the sa
 0.0265 logged). `train/repair_stage2_params.py` rebuilds them from the stage-1 frozen arrays and the stage-2 LoRA
 arrays (`lora4k_fixed/{2000,3999}`); the loss probe on the rebuilt curvature checkpoint at step 3999 is 0.0293.
 
-Publication: the rebuilt step-3999 checkpoints are in the HF model repository under `sim_real/<policy>/3999`
+Publication: the rebuilt step-3999 checkpoints are in the HF model repository under `stage2_lora_real/<policy>/3999`
 (params, norm statistics, `arc_resample.json` with the keyframes path shortened); every file's SHA-256 equals the local
 file's, and the curvature checkpoint downloaded from the repository served on CPU with `--lora --init-checkpoint <any
 path>` and answered identically to the local copy. Served without `--lora`, the same checkpoint starts without an error
@@ -1063,7 +1063,7 @@ Loss at steps 0, 100 and the end; finite parameters; `arc_resample.json` in the 
 
 All three runs trained from step 0 to step 14,999 without interruption; the 51 arrays of each final checkpoint are
 finite. Batch loss at step 0 / mean of steps 14,500-14,950: per-frame 0.171 / 0.0173, two-phase 0.170 / 0.0167,
-curvature 0.184 / 0.0187. The final checkpoints are on the Hub model repo under `sim2/<policy>/14999`; file hashes
+curvature 0.184 / 0.0187. The final checkpoints are on the Hub model repo under `stage1_sim1000/<policy>/14999`; file hashes
 equal the local files except `arc_resample.json`, whose `keyframes` path is shortened to the file name.
 
 ## Phase 22
@@ -1165,7 +1165,7 @@ real label dataset's `arc_resample.json` into each checkpoint as it is saved and
 All three runs trained from step 0 to step 7,999 without interruption; the 51 arrays of each final checkpoint are
 finite. Batch loss at step 0 / mean of steps 7,500-7,950: per-frame 0.043 / 0.0183, two-phase 0.055 / 0.0156,
 curvature 0.074 / 0.0180. Checkpoints at steps 2,000, 4,000, 6,000 and 7,999 are kept. The final checkpoints are on the
-Hub model repo under `sim2_mix/<policy>/7999`; file hashes equal the local files except `arc_resample.json`, whose
+Hub model repo under `stage2_mix_sim1000_real/<policy>/7999`; file hashes equal the local files except `arc_resample.json`, whose
 `keyframes` path is shortened to the file name.
 
 ## Phase 24
@@ -1252,12 +1252,12 @@ Round: 24
 ### Goal
 
 Mixed stage-2 checkpoints on the Hub model repo: step 7,999 of the three Phase 23 policies and of the Phase 24 policy
-under `sim2_mix/<policy>/7999`, with the README's serving table extended (no `--lora`; `--state-input` for the state
+under `stage2_mix_sim1000_real/<policy>/7999`, with the README's serving table extended (no `--lora`; `--state-input` for the state
 policy).
 
 ### Files
 
-Hub model repo `README.md` and `sim2_mix/`.
+Hub model repo `README.md` and `stage2_mix_sim1000_real/`.
 
 ### Structures
 
@@ -1278,10 +1278,12 @@ name in any uploaded file.
 
 ### Result
 
-Step 7,999 of the four policies is under `sim2_mix/<policy>/7999` on the Hub model repo; each folder holds the same files
+The Hub model repo is laid out as `stage1_sim500/`, `stage1_sim1000/`, `stage2_lora_real/` and `stage2_mix_sim1000_real/`, each with the policy
+folders `per_frame/`, `two_phase/` and `curvature/` (and `curvature_state/` in the last) and the step folders below them.
+Step 7,999 of the four policies is under `stage2_mix_sim1000_real/<policy>/7999`; each folder holds the same files
 as its local checkpoint without the optimiser state (17 files, 18 for the state policy). SHA-256 of every file equals the
 local file except `arc_resample.json`, whose `keyframes` path is shortened to the file name. The README describes the
-`sim2_mix/` group (data mixture, losses, gated state input) and the serving flags.
+`stage2_mix_sim1000_real/` group (data mixture, losses, gated state input) and the serving flags.
 
 ## Phase 26
 
