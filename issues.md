@@ -893,6 +893,48 @@ model is frozen in every run, so the images of both domains pass through the sam
 
 ## Next Experiment
 
-Phase 22 to 24: full action-expert training on real rows mixed with simulated rows, simulated fraction decreasing; real-robot
+Phases 22 to 26: full action-expert training on real rows mixed with simulated rows, simulated fraction decreasing; real-robot
 test of the checkpoints at steps 2,000 to 8,000. A failed rollout's observations replayed through the stage-1, LoRA
 stage-2 and mixed models show where they disagree.
+
+# ISSUE-022
+
+Status: Open
+
+Area: stage-1 policies (no state input) in closed-loop simulation, gripper height after a missed grasp
+
+## Observation
+
+Closed-loop simulation of the revision 5cd89567 curvature stage-1 policy (30 completed trials and 5 probe trials; 34 of
+50 planned trials done, 2 succeeded, 18 lifted the cube at some point). Targets below the table height are commanded
+after a missed grasp: of the steps whose target-to-joint error exceeds 20 mrad (9 % of all steps, maximum 0.43 rad), 87 %
+have a grasp point below 0.765 m, down to 0.64 m, while the lowest grasp point in the recordings is 0.774 m; in 74 % of
+those steps the measured position is more than 1 cm above the target (the fingers rest on the table or the object).
+Spline interpolation of the model's points is not the cause: in 52 responses the spline is below the lowest point by a
+median of 0 mm (maximum 21 mm) and deviates horizontally by at most 2 mm; the first descent is at the right height
+(table cube centre 0.774 m against a point at 0.772 m, stacked cube 0.822 m against 0.828 m); free-motion tracking error
+has a median of 0.1 mrad. In 18 probe requests made with the hand already low (grasp point below 0.78 m) the lowest
+point is 4.3 cm (median) and 13.4 cm (maximum) below the current height, 14 of them below the table. In 6 of 30 trials
+the arm that should stay parked moves by more than 0.2 rad. The previous revision's curvature policy has 16 % of steps
+above 20 mrad. Real-robot trials of the 500-episode stage-1 curvature policy (revision 7fa3c586) succeed often; its
+closed-loop simulation success is low.
+
+## Impact
+
+Low closed-loop simulation success of the simulated pre-training; knocked and dropped cubes.
+
+## Hypotheses
+
+- The model receives no state and predicts joint deltas from images only. After a missed grasp the image looks like the
+  approach phase, so it outputs a descent of about 10 cm (the scripted approach height) from a pose that is already at
+  the table.
+- The difference between real-robot and simulation success of the 500-episode policy has a cause that this record does
+  not identify; the simulation analysis above was made on the 1000-episode policy.
+
+## Next Experiment
+
+Mixed stage 2 with a gated state input (Phase 24) in simulation and on the real robot against the same stage 2 without
+state; the same analysis on the 500-episode stage-1 policy; recovery demonstrations (missed grasp, lift, grasp again);
+a lower bound on the grasp height at deployment.
+
+## Resolution
