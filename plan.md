@@ -1118,7 +1118,7 @@ simulated rows.
 
 ## Phase 23
 
-Phase Status: active
+Phase Status: completed
 
 Round: 22
 
@@ -1157,11 +1157,20 @@ assets; the real-robot test of the checkpoints at steps 2,000, 4,000, 6,000 and 
 `train/chain_stage1_to_mix.sh` waits for a family's stage 1, checks its final checkpoint for non-finite values and
 starts the mixed run on the same GPU. `train/launch_mix_one.sh` starts a run, `train/prepare_mix_assets.sh` places the
 normalization statistics (the simulated and the real statistics files are identical), `train/watch_mix.sh` copies the
-real label dataset's `arc_resample.json` into each checkpoint as it is saved.
+real label dataset's `arc_resample.json` into each checkpoint as it is saved and once more after the run has ended
+(the final checkpoint is written after the last pass of the copy loop).
+
+### Result
+
+All three runs trained from step 0 to step 7,999 without interruption; the 51 arrays of each final checkpoint are
+finite. Batch loss at step 0 / mean of steps 7,500-7,950: per-frame 0.043 / 0.0183, two-phase 0.055 / 0.0156,
+curvature 0.074 / 0.0180. Checkpoints at steps 2,000, 4,000, 6,000 and 7,999 are kept. The final checkpoints are on the
+Hub model repo under `sim2_mix/<policy>/7999`; file hashes equal the local files except `arc_resample.json`, whose
+`keyframes` path is shortened to the file name.
 
 ## Phase 24
 
-Phase Status: pending
+Phase Status: active
 
 Round: 23
 
