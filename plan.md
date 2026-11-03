@@ -1469,16 +1469,15 @@ passes over 17,605 rows). `runs/pick_place_quick_new/train/norm_stats.sh` comput
 
 ## Phase 30
 
-Phase Status: pending
+Phase Status: completed
 
 Round: 25
 
 ### Goal
 
-Simulated recordings of the moved workcell (about 300 episodes, being recorded): conversion to LeRobot v2.1, instructions,
-audit, timing, keyframes checked against the simulator's privileged grasp and release steps, stratified held-out
-episodes (about four per cent), as for revision 5cd89567 (Phases 17-19). Starts when the recording of the revision is
-finished and its Hub repository name is known; no step of this phase runs on partial data.
+Simulated recordings of the moved workcell (`JingwuLuo/ur3_sim_pick_and_place_cube` revision 98ee80d7: 300 right-arm episodes,
+the rig's setting of 2026-11-02): conversion to LeRobot v2.1, instructions, audit, timing, keyframes checked against the
+simulator's recorded gripper commands, stratified held-out episodes (four per cent), as for revision 5cd89567 (Phases 17-19).
 
 ### Files
 
@@ -1494,27 +1493,42 @@ None.
 
 ### Dependencies
 
-The end of the simulated recording (outside this plan).
+None.
 
 ### Observation
 
-Episode counts after exclusion, audit findings, keyframe agreement with the privileged steps, held-out list.
+Episode counts after exclusion, audit findings, keyframe agreement with the recorded gripper commands, held-out list.
+
+### Result
+
+300 episodes, 43,487 rows (`data/ur3-sim3`), 1,500 instructions (180 distinct, no arm named). Audit: no non-finite values, largest
+timestamp gap 1.00 frames, static joints 0-5 (the left arm), idle frames 22.7 % of the rows (0.22 % of the path); findings 379
+frozen wrist-camera runs of the idle arm's camera and 23 episodes with idle ends; no episode excluded. Keyframes: the detected
+grasps and releases equal the recorded closes and opens in all 300 episodes (250 episodes with one grasp, 50 late-close episodes
+with two); 8 outlier issues on the converted data and 180 and 188 on the timed data (label specs) were accepted with reasons
+(`make_keyframe_overrides.py`; a window clipped by up to 5 frames at the start of an episode is accepted when the close
+command falls within the first 11 rows), 0 open. Timing (threshold 0.002, 5 frames, 60 padding rows): 3,644 still frames dropped,
+18,000 padding rows, 57,843 rows in `data/ur3-sim3-timed`. Held-out: 12 episodes (34, 59, 113, 114, 122, 147, 169, 206, 232, 249,
+278, 286) by `vla_tools.diversity`, stratified over two combined clusters, distance to the nearest training episode 0.86-1.4
+times the median nearest-neighbour distance.
 
 ## Phase 31
 
-Phase Status: pending
+Phase Status: completed
 
 Round: 28
 
 ### Goal
 
-Simulated label datasets for the three families and per-point statistics, state included, merged with Phase 28's real statistics by union
-(state entries floored as in Phase 28),
-as in Phase 20 (sim robot spec with the gripper times measured on the new revision, `perturbation_weight` as in Phase 20).
+Simulated label datasets for the three families and per-point statistics, state included, merged with Phase 28's real
+statistics by union, as in Phase 20: sim robot spec with the gripper times measured on the revision (`switch_hold_s` 0.30 s
+after a close and 0.30 s after an open), `perturbation_weight` 0 (pushed steps carry no label), the label configs of Phase 28
+otherwise unchanged.
 
 ### Files
 
-`runs/ur3_sim3_pick_and_place_cube/`, `openpi/assets/pi05_ur3_sim3_*_pp/`, `data/ur3-sim3-*-{train,eval}`.
+`runs/ur3_sim3_pick_and_place_cube/` (robot spec, build and statistics scripts), `openpi/assets/pi05_ur3_sim3_*_state_pp/`,
+`openpi/assets/pi05_ur3_joint_*_state_pp/`, `data/ur3-sim3-*-{train,eval}`.
 
 ### Structures
 
@@ -1532,22 +1546,43 @@ Phases 28 and 30.
 
 Reach medians per family, share of points with weight 0, action ranges of the merged statistics.
 
+### Result
+
+Label datasets built (`data/ur3-sim3-*-{train,eval}`: 288 training episodes with 55,359 rows, 300 evaluation episodes with 57,843
+rows). Reach median 10.0 frames (per-frame), 48.0 (curvature) and 17.7 (two-phase), against 10.0, 48.0 and 32.9 on the real
+recordings; points padded beyond the episode end 46.6 % (curvature) against 31.4 % on the real recordings; points with weight 0:
+1.14 %, 1.26 % and 0.74 %. The simulated episodes last 134 rows at the median (4.4 s) against 295 rows of the real ones, so a
+span of 48 frames covers about twice the motion. Gripper times measured on the revision: 350 closes 0.30 s, 350 opens 0.30 s
+(sim2: 0.30 s and 0.50 s).
+
+Per-point statistics of the three families (state included) merged with the real ones by union (`merge_stats_joint.sh`): the real
+right shoulder_pan and wrist_3 ranges at the last chunk point widen (curvature: 1.577 to 2.448 rad and 2.266 to 3.236 rad), the
+other joints keep the real range; the same file is stored at the asset paths of the real and of the simulated dataset.
+
 ## Phase 32
 
-Phase Status: pending
+Phase Status: active
 
 Round: 29
 
 ### Goal
 
-Stage 1 with the state input on about 300 simulated episodes. The earlier recipes made 2.0 passes (`sim_10k`, 500 episodes) and 1.6 passes
-(`sim_15k`, 960 episodes) over the training rows; the recipe for this revision makes 2.0 passes: steps = 2 x rows / 32
-rounded to a multiple of 500 (about 6,000 for 300 episodes of about 315 rows), learning rate 5e-5, warm-up 500, decay
-0.999, checkpoints kept every 2,000 steps.
+One-stage training of the three families with the state input: the full action expert from `pi05_base` on the real rows
+(primary dataset) mixed with the simulated rows (openpi patch 0004), without a simulation-only stage and without a second
+stage. The fraction of simulated rows per batch moves linearly from 0.6 at the first step to 0.15 at the last. The numbers of
+passes of the single-source recipes are kept: 10 over the real training rows (`full_5500`, 17,605 rows) and 2 over the simulated
+training rows (`sim_10k`, 55,359 rows), 286,768 samples of batch 32, 8,962 steps rounded to 9,000; the fractions 0.6 to 0.15
+give a mean of 0.375, that is 10.2 passes of the real rows and 1.95 of the simulated rows. Learning rate 2.5e-5 (the real-only
+value), warm-up 300 steps, cosine decay to 10 %, decay 0.999 (a lower decay corrupts the frozen bfloat16 arrays of the saved
+`params`, ISSUE-020). Checkpoints (15 GB each) are saved every 1,000 steps and kept every 3,000. The normalisation statistics are
+the union of the real and the simulated per-point statistics (the simulated wrist_2 hardly moves, so the simulated statistics
+alone would put real wrist_2 targets far outside the range). A checkpoint's `arc_resample.json` is the real dataset's: the
+server needs the real gripper's hold time after a switch.
 
 ### Files
 
-`examples/ur3_dual_arm/recipes.py`, `runs/ur3_sim3_pick_and_place_cube/train/`, `openpi/checkpoints/pi05_ur3_sim3_*_pp/`.
+`examples/ur3_dual_arm/recipes.py` (`joint_9k`), `runs/ur3_sim3_pick_and_place_cube/train/` (`merge_stats_joint.sh`,
+`launch_joint_one.sh`, `watch_joint_one.sh`), `openpi/checkpoints/pi05_ur3_joint_*_state_pp/`.
 
 ### Structures
 
@@ -1563,7 +1598,16 @@ Phase 31.
 
 ### Observation
 
-Loss at steps 0, 100 and the end, finite parameters, `arc_resample.json` in the assets of every checkpoint.
+Loss at steps 0, 100 and the end, finite parameters at the last step, `arc_resample.json` in every checkpoint's assets, the
+logged row counts of the mixture, two serve requests that differ only in the state return different actions.
+
+### Launch
+
+Recipe `joint_9k` (9,000 steps, learning rate 2.5e-5, warm-up 300, decay 0.999, checkpoints every 1,000 steps, kept every 3,000),
+`--mix-fraction 0.6 0.15`, experiment `joint9k`, config names `pi05_ur3_joint_<family>_state_pp`, one GPU per family on one
+node. The logged mixture is 17,605 real + 55,359 simulated rows. `merge_stats_joint.sh` builds the statistics,
+`launch_joint_one.sh` starts one run, `watch_joint_one.sh` copies the real dataset's `arc_resample.json` into each checkpoint and
+checks the final one for non-finite values.
 
 ## Phase 33
 
@@ -1573,46 +1617,9 @@ Round: 30
 
 ### Goal
 
-Stage 2 on a mixture of the new real rows and the new simulated rows (Phase 23's method: full action expert, simulated
-fraction 0.5 to 0.1) for the three families, with the state input from the first step (stage 1 already takes it, so the
-gate of Phase 24 is not used).
-Steps keep the earlier number of passes over the real rows (2.9 at `mix_8k`: 8,000 steps, mean real fraction 0.7, 62,410 rows)
-and over the simulated rows (0.25): steps = 2.9 x real rows / (32 x 0.7), rounded to a multiple of 500 (about 3,000 for
-19,000 real rows); warm-up 4 per cent of the steps, learning rate 2.5e-5, decay 0.999 (a lower decay corrupts the frozen
-bfloat16 arrays of the saved `params`, ISSUE-020), checkpoints kept every 1,000 steps.
-
-### Files
-
-`examples/ur3_dual_arm/recipes.py`, `runs/ur3_sim3_pick_and_place_cube/train/`, `openpi/checkpoints/pi05_ur3_sim3_mix_*_pp/`.
-
-### Structures
-
-`Recipe` entry.
-
-### Affected Modules
-
-Training recipes.
-
-### Dependencies
-
-Phases 28, 32.
-
-### Observation
-
-Loss at steps 0, 100 and the end, finite parameters, `arc_resample.json` in every checkpoint's assets, two serve requests
-that differ only in the state return different actions.
-
-## Phase 34
-
-Phase Status: pending
-
-Round: 31
-
-### Goal
-
-Open-loop evaluation of the real-only, stage-1 and stage-2 checkpoints on the new real held-out episodes (and on the
-simulated held-out episodes for the simulation-trained ones), served with uniform timing at the recording's pace; delivery
-of checkpoints to the Hub after the owner has chosen the repository and folder layout.
+Open-loop evaluation of the real-only and joint checkpoints on the real held-out episodes, and of the joint checkpoints on the
+simulated held-out episodes, served with uniform timing at the recording's pace; delivery of checkpoints to the Hub once the
+repository and its folder layout are fixed (checkpoints stay local until then).
 
 ### Files
 
@@ -1628,7 +1635,7 @@ None.
 
 ### Dependencies
 
-Phases 29 and 33.
+Phases 29 and 32.
 
 ### Observation
 

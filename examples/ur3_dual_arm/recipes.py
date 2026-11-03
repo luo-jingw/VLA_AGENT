@@ -46,6 +46,13 @@ LORA_4K_EMA999 = Recipe("lora_4k_ema999", num_train_steps=4_000, peak_lr=1e-4, w
 # Full action expert from a simulation-trained checkpoint on real rows mixed with simulated rows (--mix-repo-id).
 MIX_8K = Recipe("mix_8k", num_train_steps=8_000, peak_lr=2.5e-5, warmup_steps=300, ema_decay=0.999, keep_period=2000)
 
+# Full action expert from pi05_base on the real recordings pick_and_place_quick_new (62 training episodes, 17,605 rows) mixed
+# with the simulated recordings of revision 98ee80d7 (288 training episodes, 55,359 rows), one stage. The passes of the
+# single-source recipes are kept: 10 over the real rows (full_5500) and 2 over the simulated rows (sim_10k), 286,768 samples
+# of batch 32, 8,962 steps rounded to 9,000; the simulated fraction runs from 0.6 to 0.15 (mean 0.375, 1.95 passes of the
+# simulated rows, 10.2 of the real rows). Checkpoints of 15 GB are kept every 3,000 steps.
+JOINT_9K = Recipe("joint_9k", num_train_steps=9_000, peak_lr=2.5e-5, warmup_steps=300, ema_decay=0.999, keep_period=3000)
+
 RECIPES: dict[str, Recipe] = {
-    r.name: r for r in (FULL_20K, FULL_5500, SIM_10K, SIM_15K, LORA_10K, LORA_4K, LORA_4K_EMA999, MIX_8K)
+    r.name: r for r in (FULL_20K, FULL_5500, SIM_10K, SIM_15K, LORA_10K, LORA_4K, LORA_4K_EMA999, MIX_8K, JOINT_9K)
 }
