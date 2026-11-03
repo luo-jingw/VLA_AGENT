@@ -1425,7 +1425,7 @@ every joint are above 0.02 rad, so no entry is floored.
 
 ## Phase 29
 
-Phase Status: active
+Phase Status: completed
 
 Round: 27
 
@@ -1466,6 +1466,13 @@ Recipe `full_5500` (5,500 steps, learning rate 2.5e-5, warm-up 150, decay 0.999,
 passes over 17,605 rows). `runs/pick_place_quick_new/train/norm_stats.sh` computes the statistics,
 `train/launch_one.sh` starts one run on one GPU (experiment `full5500`), `train/watch_one.sh` copies the label dataset's
 `arc_resample.json` into each checkpoint and checks the final one for non-finite values.
+
+### Result
+
+The three runs finished 5,500 steps (about 5 h each, 3.2 s per step, three runs on one node). Batch loss at step 5,450: 0.0159
+(per-frame), 0.0158 (two-phase) and 0.0145 (curvature), from 0.035-0.040 at step 950. The final checkpoints
+(`full5500/5499`) have 51 arrays and 0 with non-finite values, and `arc_resample.json` is in the assets of every kept
+checkpoint (1000, 2000, 3000, 4000, 5000, 5499). Serve with `--state-input`.
 
 ## Phase 30
 
