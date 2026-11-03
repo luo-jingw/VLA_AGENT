@@ -1319,7 +1319,7 @@ Points, head and stitched error, hold error and edge shifts per checkpoint on bo
 
 ## Phase 27
 
-Phase Status: active
+Phase Status: completed
 
 Round: 25
 
@@ -1358,9 +1358,20 @@ None.
 Episode and frame counts against the raw files, step gaps per episode, instructions per episode with the key frames they
 were written from, list and reasons of excluded episodes.
 
+### Result
+
+All 71 raw episodes have steps no more than 35.3 ms apart. Four episodes are excluded because they end with a cube on
+the table instead of on a target: 44 (orange cube from the white box to the table, the reset between episodes 43 and 45),
+54 (blue cube from the plate to the table at the left edge), 56 (blue cube from the white box to the table beside the
+plate) and 66 (orange cube to the table at the left edge, half idle). The dataset `data/pick-and-place-quick-new` has 67
+episodes and 19,776 rows; `data/pick-and-place-quick-new-prompted` carries five instructions per episode that name the
+cube moved (blue 27, pink 20, orange 20 episodes) and the target (white box, plate, or another cube); the arm is not named
+(episodes 51 and 52 use the left arm). Audit (`runs/pick_place_quick_new/audit.json`): no static dimension, still frames at
+an end of 66 of 67 episodes (24 % of all rows), 11 isolated joint steps of 8.0 to 9.3 times the median step in 10 episodes.
+
 ## Phase 28
 
-Phase Status: pending
+Phase Status: active
 
 Round: 26
 
