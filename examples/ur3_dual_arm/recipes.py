@@ -28,6 +28,9 @@ class Recipe:
 
 # Full action expert from pi05_base on real recordings.
 FULL_20K = Recipe("full_20k", num_train_steps=20_000, peak_lr=2.5e-5, warmup_steps=500, ema_decay=0.999, keep_period=5000)
+# Full action expert from pi05_base on the real recordings pick_and_place_quick_new (62 training episodes, 17,605 rows): the
+# 10.3 passes over the training rows of full_20k, 5,500 steps of batch 32 (10.0 passes).
+FULL_5500 = Recipe("full_5500", num_train_steps=5_500, peak_lr=2.5e-5, warmup_steps=150, ema_decay=0.999, keep_period=1000)
 # Full action expert from pi05_base on simulated recordings, the first stage of a two-stage recipe.
 SIM_10K = Recipe("sim_10k", num_train_steps=10_000, peak_lr=5e-5, warmup_steps=500, ema_decay=0.999, keep_period=5000)
 # Full action expert from pi05_base on the simulated recordings of revision 5cd89567 (1000 episodes), first stage.
@@ -44,5 +47,5 @@ LORA_4K_EMA999 = Recipe("lora_4k_ema999", num_train_steps=4_000, peak_lr=1e-4, w
 MIX_8K = Recipe("mix_8k", num_train_steps=8_000, peak_lr=2.5e-5, warmup_steps=300, ema_decay=0.999, keep_period=2000)
 
 RECIPES: dict[str, Recipe] = {
-    r.name: r for r in (FULL_20K, SIM_10K, SIM_15K, LORA_10K, LORA_4K, LORA_4K_EMA999, MIX_8K)
+    r.name: r for r in (FULL_20K, FULL_5500, SIM_10K, SIM_15K, LORA_10K, LORA_4K, LORA_4K_EMA999, MIX_8K)
 }

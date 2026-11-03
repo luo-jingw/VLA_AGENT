@@ -1371,7 +1371,7 @@ an end of 66 of 67 episodes (24 % of all rows), 11 isolated joint steps of 8.0 t
 
 ## Phase 28
 
-Phase Status: active
+Phase Status: completed
 
 Round: 26
 
@@ -1407,9 +1407,25 @@ Phase 27.
 Audit findings with the decision per finding, keyframe counts per class with the corrections, reach medians per family,
 share of points with weight 0, state and action ranges per dimension of the statistics, entries floored.
 
+### Result
+
+Audit decisions: the 11 large joint steps are `jump_continuing` findings (the motion continues from the new value, no
+spike or discontinuity) and stay; the still frames at the ends and pauses are handled by the timing plan of the earlier real
+recordings (no leading, pause or trailing still frames kept, 60 rows of end padding). Keyframes: grasp and release per
+arm (79 moves of the right arm in 65 episodes, one move of the left arm in each of 2 episodes), and the lift for the
+two-phase family detected in every move. Eight phase findings are accepted: episodes 0 and 1 close the gripper late after a
+slow approach, and episodes 6, 26, 31, 45, 47 and 61 begin with a failed grasp (the wrist images show the cube left on
+the table) that is repeated; these recoveries stay in the data. Held-out: episodes 10, 11, 19, 31 and 55 (stratified over
+the 3 combined clusters, 0.83 to 1.36 times the median nearest-neighbour distance to the training episodes); the two
+left-arm episodes (50, 51) are in the training set. Label datasets `data/pick-and-place-quick-new-<label>-train` have 62
+episodes and 17,605 rows, the eval datasets all 67; reach median 10.0 frames (per-frame), 48.0 (curvature) and 32.9
+(two-phase); padding rows 1.6 %, 31.4 % and 9.4 %; weight 0 on 0.00 % of the points. Statistics: the q01-q99 range of every
+state entry is above 0.05 rad (left joints 0.11 to 0.40, right joints 0.57 to 3.0) and the per-point action ranges of
+every joint are above 0.02 rad, so no entry is floored.
+
 ## Phase 29
 
-Phase Status: pending
+Phase Status: active
 
 Round: 27
 
@@ -1443,6 +1459,13 @@ Phase 28.
 
 Loss at steps 0, 100 and the end, finite parameters at the last step, `arc_resample.json` in every checkpoint's assets,
 batch loss against the real-only models of the previous recordings at the same pass count, two serve requests that differ only in the state return different actions.
+
+### Launch
+
+Recipe `full_5500` (5,500 steps, learning rate 2.5e-5, warm-up 150, decay 0.999, checkpoint every 1,000 steps: 10.0
+passes over 17,605 rows). `runs/pick_place_quick_new/train/norm_stats.sh` computes the statistics,
+`train/launch_one.sh` starts one run on one GPU (experiment `full5500`), `train/watch_one.sh` copies the label dataset's
+`arc_resample.json` into each checkpoint and checks the final one for non-finite values.
 
 ## Phase 30
 
