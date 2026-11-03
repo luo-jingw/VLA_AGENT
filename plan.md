@@ -1316,3 +1316,282 @@ Phase 24.
 ### Observation
 
 Points, head and stitched error, hold error and edge shifts per checkpoint on both sets.
+
+## Phase 27
+
+Phase Status: active
+
+Round: 25
+
+### Goal
+
+Revision `pick_and_place_quick_new` of the real recordings (Hub dataset `JingwuLuo/pick_and_place_quick_new`, raw HDF5,
+71 episodes, 20,800 steps at 30 Hz, recorded after the workcell was moved) as a LeRobot v2.1 dataset
+`data/pick-and-place-quick-new`: converted by `examples/ur3_dual_arm/convert_hdf5.py` with the converter configuration
+of `runs/pick_place_cube_quick_v4/`, frame gaps checked on the raw timestamps before conversion, one to five instructions
+per episode that name the cube, the target and the arm after the key frames of the episode have been looked at
+(`language_instruction` is `pick and place` in every raw file), episodes that cannot be trained on excluded with the
+reason recorded. Known properties of the revision: the left arm is used in two episodes (0051, 0052), the idle left
+gripper is closed for the whole of episodes 0003-0009 and open in all others, episode 0044 has no return-to-home segment,
+episodes 0028 and 0066 are about half idle. Models of the previous real recordings are not reused: the scene and the robot
+placement differ.
+
+### Files
+
+`runs/pick_place_quick_new/` (conversion record, instructions, exclusion list), `data/pick_and_place_quick_new/` (raw,
+read-only), `data/pick-and-place-quick-new/`.
+
+### Structures
+
+None.
+
+### Affected Modules
+
+None.
+
+### Dependencies
+
+None.
+
+### Observation
+
+Episode and frame counts against the raw files, step gaps per episode, instructions per episode with the key frames they
+were written from, list and reasons of excluded episodes.
+
+## Phase 28
+
+Phase Status: pending
+
+Round: 26
+
+### Goal
+
+Training-ready real datasets for the three label families (per-frame, two-phase, curvature): audit and cleaning, still
+frame and end padding decisions, keyframes checked against the images class by class, stratified held-out episodes
+(five, chosen by `vla_tools` diversity measures; the two left-arm episodes are kept in the training set unless the
+measures place one of them among the stratified picks), `data/pick-and-place-quick-new-<label>-{train,eval}` with the
+label configurations of `runs/pick_place_cube_quick_v4/` and per-point normalisation statistics under
+`openpi/assets/pi05_ur3_quick_new_<label>_pp/`.
+
+### Files
+
+`runs/pick_place_quick_new/`, `data/pick-and-place-quick-new-*`, `openpi/assets/pi05_ur3_quick_new_*_pp/`.
+
+### Structures
+
+None.
+
+### Affected Modules
+
+None.
+
+### Dependencies
+
+Phase 27.
+
+### Observation
+
+Audit findings with the decision per finding, keyframe counts per class with the corrections, reach medians per family,
+share of points with weight 0, state and action ranges per dimension of the statistics.
+
+## Phase 29
+
+Phase Status: pending
+
+Round: 27
+
+### Goal
+
+Real-only models: the full action expert from `pi05_base` on `data/pick-and-place-quick-new-<label>-train` for the three
+families. The number of steps keeps the number of passes over the training rows of the earlier real-only recipe
+(`full_20k`: 20,000 steps of batch 32 over 62,410 rows, 10.3 passes), so the step count is passes x rows / 32 rounded to a
+multiple of 500 once Phase 28 has fixed the row count; learning rate, warm-up fraction and weight averaging (decay 0.999)
+are unchanged. New recipe entry in `examples/ur3_dual_arm/recipes.py`, configurations in
+`examples/ur3_dual_arm/configs.py` with the `quick_new` datasets, one GPU per family.
+
+### Files
+
+`examples/ur3_dual_arm/recipes.py`, `examples/ur3_dual_arm/configs.py`, `runs/pick_place_quick_new/train/`,
+`openpi/checkpoints/pi05_ur3_quick_new_*_pp/`.
+
+### Structures
+
+`Recipe` entry.
+
+### Affected Modules
+
+Training recipes, UR3 example configuration.
+
+### Dependencies
+
+Phase 28.
+
+### Observation
+
+Loss at steps 0, 100 and the end, finite parameters at the last step, `arc_resample.json` in every checkpoint's assets,
+batch loss against the real-only models of the previous recordings at the same pass count.
+
+## Phase 30
+
+Phase Status: pending
+
+Round: 25
+
+### Goal
+
+Simulated recordings of the moved workcell (about 300 episodes, being recorded): conversion to LeRobot v2.1, instructions,
+audit, timing, keyframes checked against the simulator's privileged grasp and release steps, stratified held-out
+episodes (about four per cent), as for revision 5cd89567 (Phases 17-19). Starts when the recording of the revision is
+finished and its Hub repository name is known; no step of this phase runs on partial data.
+
+### Files
+
+`runs/ur3_sim3_pick_and_place_cube/`, `data/ur3-sim3*`.
+
+### Structures
+
+None.
+
+### Affected Modules
+
+None.
+
+### Dependencies
+
+The end of the simulated recording (outside this plan).
+
+### Observation
+
+Episode counts after exclusion, audit findings, keyframe agreement with the privileged steps, held-out list.
+
+## Phase 31
+
+Phase Status: pending
+
+Round: 28
+
+### Goal
+
+Simulated label datasets for the three families and per-point statistics merged with Phase 28's real statistics by union,
+as in Phase 20 (sim robot spec with the gripper times measured on the new revision, `perturbation_weight` as in Phase 20).
+
+### Files
+
+`runs/ur3_sim3_pick_and_place_cube/`, `openpi/assets/pi05_ur3_sim3_*_pp/`, `data/ur3-sim3-*-{train,eval}`.
+
+### Structures
+
+None.
+
+### Affected Modules
+
+None.
+
+### Dependencies
+
+Phases 28 and 30.
+
+### Observation
+
+Reach medians per family, share of points with weight 0, action ranges of the merged statistics.
+
+## Phase 32
+
+Phase Status: pending
+
+Round: 29
+
+### Goal
+
+Stage 1 on about 300 simulated episodes. The earlier recipes made 2.0 passes (`sim_10k`, 500 episodes) and 1.6 passes
+(`sim_15k`, 960 episodes) over the training rows; the recipe for this revision makes 2.0 passes: steps = 2 x rows / 32
+rounded to a multiple of 500 (about 6,000 for 300 episodes of about 315 rows), learning rate 5e-5, warm-up 500, decay
+0.999, checkpoints kept every 2,000 steps.
+
+### Files
+
+`examples/ur3_dual_arm/recipes.py`, `runs/ur3_sim3_pick_and_place_cube/train/`, `openpi/checkpoints/pi05_ur3_sim3_*_pp/`.
+
+### Structures
+
+`Recipe` entry.
+
+### Affected Modules
+
+Training recipes.
+
+### Dependencies
+
+Phase 31.
+
+### Observation
+
+Loss at steps 0, 100 and the end, finite parameters, `arc_resample.json` in the assets of every checkpoint.
+
+## Phase 33
+
+Phase Status: pending
+
+Round: 30
+
+### Goal
+
+Stage 2 on a mixture of the new real rows and the new simulated rows (Phase 23's method: full action expert, simulated
+fraction 0.5 to 0.1) for the three families, and the curvature family with the gated state input (Phase 24's method).
+Steps keep the earlier number of passes over the real rows (2.9 at `mix_8k`: 8,000 steps, mean real fraction 0.7, 62,410 rows)
+and over the simulated rows (0.25): steps = 2.9 x real rows / (32 x 0.7), rounded to a multiple of 500 (about 3,000 for
+19,000 real rows); warm-up 4 per cent of the steps, learning rate 2.5e-5, decay 0.999 (a lower decay corrupts the frozen
+bfloat16 arrays of the saved `params`, ISSUE-020), checkpoints kept every 1,000 steps.
+
+### Files
+
+`examples/ur3_dual_arm/recipes.py`, `runs/ur3_sim3_pick_and_place_cube/train/`, `openpi/checkpoints/pi05_ur3_sim3_mix_*_pp/`.
+
+### Structures
+
+`Recipe` entry.
+
+### Affected Modules
+
+Training recipes.
+
+### Dependencies
+
+Phases 28, 32.
+
+### Observation
+
+Loss at steps 0, 100 and the end, finite parameters, `arc_resample.json` in every checkpoint's assets, two serve requests
+that differ only in the state return different actions (state policy).
+
+## Phase 34
+
+Phase Status: pending
+
+Round: 31
+
+### Goal
+
+Open-loop evaluation of the real-only, stage-1 and stage-2 checkpoints on the new real held-out episodes (and on the
+simulated held-out episodes for the simulation-trained ones), served with uniform timing at the recording's pace; delivery
+of checkpoints to the Hub after the owner has chosen the repository and folder layout.
+
+### Files
+
+`runs/pick_place_quick_new/eval/`, `runs/ur3_sim3_pick_and_place_cube/eval/`.
+
+### Structures
+
+None.
+
+### Affected Modules
+
+None.
+
+### Dependencies
+
+Phases 29 and 33.
+
+### Observation
+
+Points, head and stitched error, hold error and edge shifts per checkpoint and set.
