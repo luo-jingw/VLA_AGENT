@@ -1574,7 +1574,7 @@ other joints keep the real range; the same file is stored at the asset paths of 
 
 ## Phase 32
 
-Phase Status: active
+Phase Status: completed
 
 Round: 29
 
@@ -1622,6 +1622,26 @@ node. The logged mixture is 17,605 real + 55,359 simulated rows. `merge_stats_jo
 `launch_joint_one.sh` starts one run, `watch_joint_one.sh` copies the real dataset's `arc_resample.json` into each checkpoint and
 checks the final one for non-finite values.
 
+### Results
+
+Nine thousand steps of the three families took about 8 h 10 min (3.2 s per step, one GPU each). Final checkpoints
+`openpi/checkpoints/pi05_ur3_joint_<family>_state_pp/joint9k/8999` hold 51 arrays each and none is non-finite. The loss
+stays finite without spikes beyond a short rise near step 7,800 in the per-frame family (gradient norm 0.24 against 0.15
+elsewhere).
+
+| family | loss at step 0 | at step 100 | mean of the last 10 logged, joint | same, real-only `full_5500` |
+|---|---|---|---|---|
+| per-frame | 0.334 | 0.069 | 0.0133 | 0.0156 |
+| two-phase | 0.525 | 0.104 | 0.0136 | 0.0158 |
+| curvature | 0.376 | 0.104 | 0.0133 | 0.0145 |
+
+The joint loss averages real and simulated samples, so it is not comparable with the real-only loss. The change of the
+parameter norm since step 0 is 0.18 to 0.20 for the joint runs and 0.10 to 0.12 for the real-only runs. The curves are drawn by
+`runs/ur3_sim3_pick_and_place_cube/train/plot_training_curves.py` (`training_curves.png`: loss, gradient norm, parameter norm,
+learning rate and simulated share). The serve check that two requests differing only in the state return different actions
+has been run for the real-only checkpoints (`runs/pick_place_quick_new/logs/state_check_result_<family>.log`), not yet for
+the joint ones.
+
 ## Phase 33
 
 Phase Status: pending
@@ -1657,3 +1677,9 @@ Phases 29 and 32.
 ### Observation
 
 Points, head and stitched error, hold error and edge shifts per checkpoint and set.
+
+### Results
+
+Hub delivery is complete: the six checkpoints and `README_v6.md` are in `JingwuLuo/ur3_sim_pick_and_place_cube` under the paths
+above (one commit per checkpoint, 106 files, all SHA-256 digests equal to the local files, no internal path or machine name in
+any scanned file). Each checkpoint carries its `norm_stats.json` and `arc_resample.json`. The open-loop evaluation is open.
