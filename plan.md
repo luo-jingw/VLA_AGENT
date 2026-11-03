@@ -1474,6 +1474,12 @@ The three runs finished 5,500 steps (about 5 h each, 3.2 s per step, three runs 
 (`full5500/5499`) have 51 arrays and 0 with non-finite values, and `arc_resample.json` is in the assets of every kept
 checkpoint (1000, 2000, 3000, 4000, 5000, 5499). Serve with `--state-input`.
 
+Serve check on a GPU of each final checkpoint with `--state-input` (random images; a request with the joint state entries shifted
+by 5 % of their range against the same request twice): finite actions and spline points in all three; maximum difference of the 10
+spline points, same state / shifted state: per-frame 0.076 / 0.181, two-phase 0.457 / 0.677, curvature 0.471 / 0.493 (the
+sampling noise on random images is of the order of the state effect, so the check shows that the state is used for per-frame and
+two-phase and is inconclusive for curvature).
+
 ## Phase 30
 
 Phase Status: completed
@@ -1625,12 +1631,16 @@ Round: 30
 ### Goal
 
 Open-loop evaluation of the real-only and joint checkpoints on the real held-out episodes, and of the joint checkpoints on the
-simulated held-out episodes, served with uniform timing at the recording's pace; delivery of checkpoints to the Hub once the
-repository and its folder layout are fixed (checkpoints stay local until then).
+simulated held-out episodes, served with uniform timing at the recording's pace. Delivery of the six final checkpoints
+(`full5500/5499` and `joint9k/8999` of the three families) to the Hub model repository `JingwuLuo/ur3_sim_pick_and_place_cube`
+as `real_quick_new/<per_frame|two_phase|curvature>/5499` and `joint_sim300_real_quick_new/<per_frame|two_phase|curvature>/8999`,
+with the model card extended by both groups (`runs/ur3_sim3_pick_and_place_cube/publish/`: `make_readme_v6.py`,
+`upload_quick_new.py`, `verify_upload_quick_new.py`, `publish_when_done.sh`). The upload starts when the joint runs have finished
+and passed the finite check; the checkpoints' files are scanned for internal paths before upload and compared by SHA-256 afterwards.
 
 ### Files
 
-`runs/pick_place_quick_new/eval/`, `runs/ur3_sim3_pick_and_place_cube/eval/`.
+`runs/pick_place_quick_new/eval/`, `runs/ur3_sim3_pick_and_place_cube/eval/`, `runs/ur3_sim3_pick_and_place_cube/publish/`.
 
 ### Structures
 
