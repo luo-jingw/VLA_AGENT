@@ -1371,11 +1371,13 @@ frame and end padding decisions, keyframes checked against the images class by c
 (five, chosen by `vla_tools` diversity measures; the two left-arm episodes are kept in the training set unless the
 measures place one of them among the stratified picks), `data/pick-and-place-quick-new-<label>-{train,eval}` with the
 label configurations of `runs/pick_place_cube_quick_v4/` and per-point normalisation statistics under
-`openpi/assets/pi05_ur3_quick_new_<label>_pp/`.
+`openpi/assets/pi05_ur3_quick_new_<label>_state_pp/`. Every policy of this plan takes the robot state as input, so the
+statistics hold the state as well; a joint entry of the state whose q01-q99 range is below 0.05 rad is floored to 0.05 rad
+(`vla_tools.norm_floor`), because its encoder noise would otherwise fill the whole token range.
 
 ### Files
 
-`runs/pick_place_quick_new/`, `data/pick-and-place-quick-new-*`, `openpi/assets/pi05_ur3_quick_new_*_pp/`.
+`runs/pick_place_quick_new/`, `data/pick-and-place-quick-new-*`, `openpi/assets/pi05_ur3_quick_new_*_state_pp/`.
 
 ### Structures
 
@@ -1392,7 +1394,7 @@ Phase 27.
 ### Observation
 
 Audit findings with the decision per finding, keyframe counts per class with the corrections, reach medians per family,
-share of points with weight 0, state and action ranges per dimension of the statistics.
+share of points with weight 0, state and action ranges per dimension of the statistics, entries floored.
 
 ## Phase 29
 
@@ -1402,17 +1404,17 @@ Round: 27
 
 ### Goal
 
-Real-only models: the full action expert from `pi05_base` on `data/pick-and-place-quick-new-<label>-train` for the three
+Real-only models with the state input (`--state-input`): the full action expert from `pi05_base` on `data/pick-and-place-quick-new-<label>-train` for the three
 families. The number of steps keeps the number of passes over the training rows of the earlier real-only recipe
 (`full_20k`: 20,000 steps of batch 32 over 62,410 rows, 10.3 passes), so the step count is passes x rows / 32 rounded to a
 multiple of 500 once Phase 28 has fixed the row count; learning rate, warm-up fraction and weight averaging (decay 0.999)
 are unchanged. New recipe entry in `examples/ur3_dual_arm/recipes.py`, configurations in
-`examples/ur3_dual_arm/configs.py` with the `quick_new` datasets, one GPU per family.
+`examples/ur3_dual_arm/configs.py` with the `quick_new` datasets and `state_input`, one GPU per family.
 
 ### Files
 
 `examples/ur3_dual_arm/recipes.py`, `examples/ur3_dual_arm/configs.py`, `runs/pick_place_quick_new/train/`,
-`openpi/checkpoints/pi05_ur3_quick_new_*_pp/`.
+`openpi/checkpoints/pi05_ur3_quick_new_*_state_pp/`.
 
 ### Structures
 
@@ -1429,7 +1431,7 @@ Phase 28.
 ### Observation
 
 Loss at steps 0, 100 and the end, finite parameters at the last step, `arc_resample.json` in every checkpoint's assets,
-batch loss against the real-only models of the previous recordings at the same pass count.
+batch loss against the real-only models of the previous recordings at the same pass count, two serve requests that differ only in the state return different actions.
 
 ## Phase 30
 
@@ -1472,7 +1474,8 @@ Round: 28
 
 ### Goal
 
-Simulated label datasets for the three families and per-point statistics merged with Phase 28's real statistics by union,
+Simulated label datasets for the three families and per-point statistics, state included, merged with Phase 28's real statistics by union
+(state entries floored as in Phase 28),
 as in Phase 20 (sim robot spec with the gripper times measured on the new revision, `perturbation_weight` as in Phase 20).
 
 ### Files
@@ -1503,7 +1506,7 @@ Round: 29
 
 ### Goal
 
-Stage 1 on about 300 simulated episodes. The earlier recipes made 2.0 passes (`sim_10k`, 500 episodes) and 1.6 passes
+Stage 1 with the state input on about 300 simulated episodes. The earlier recipes made 2.0 passes (`sim_10k`, 500 episodes) and 1.6 passes
 (`sim_15k`, 960 episodes) over the training rows; the recipe for this revision makes 2.0 passes: steps = 2 x rows / 32
 rounded to a multiple of 500 (about 6,000 for 300 episodes of about 315 rows), learning rate 5e-5, warm-up 500, decay
 0.999, checkpoints kept every 2,000 steps.
@@ -1537,7 +1540,8 @@ Round: 30
 ### Goal
 
 Stage 2 on a mixture of the new real rows and the new simulated rows (Phase 23's method: full action expert, simulated
-fraction 0.5 to 0.1) for the three families, and the curvature family with the gated state input (Phase 24's method).
+fraction 0.5 to 0.1) for the three families, with the state input from the first step (stage 1 already takes it, so the
+gate of Phase 24 is not used).
 Steps keep the earlier number of passes over the real rows (2.9 at `mix_8k`: 8,000 steps, mean real fraction 0.7, 62,410 rows)
 and over the simulated rows (0.25): steps = 2.9 x real rows / (32 x 0.7), rounded to a multiple of 500 (about 3,000 for
 19,000 real rows); warm-up 4 per cent of the steps, learning rate 2.5e-5, decay 0.999 (a lower decay corrupts the frozen
@@ -1562,7 +1566,7 @@ Phases 28, 32.
 ### Observation
 
 Loss at steps 0, 100 and the end, finite parameters, `arc_resample.json` in every checkpoint's assets, two serve requests
-that differ only in the state return different actions (state policy).
+that differ only in the state return different actions.
 
 ## Phase 34
 
