@@ -1781,7 +1781,7 @@ equal to the detected keyframes. After timing the dataset has 300 episodes and 5
 
 ## Phase 36
 
-Phase Status: active
+Phase Status: completed
 
 Round: 33
 
@@ -1827,5 +1827,29 @@ the parked left arm (state and action dimensions 0 to 5, quantile range 1e-4 rad
 use (`merge_stats_joint.sh`); the joint statistics are the union of those and the simulated ones, stored under both dataset
 names. The logged mixture is 20,610 real + 58,408 simulated rows. A GPU that reports "requires reset" shows no memory in use
 and fails at the first step (JAX OOM or no progress); `launch_when_free.sh` skips such GPUs and starts both runs when two healthy
-GPUs have at least 36,000 MiB free (a run uses 33.4 GB, JAX caps itself at 33.3 GiB on an L40S). Both runs share one node;
-the real-only run steps at 3.2 s, the joint run at about 6 s because its GPU is shared with another job.
+GPUs have at least 36,000 MiB free (a run uses 33.4 GB, JAX caps itself at 33.3 GiB on an L40S). Both runs started on one node;
+the real-only run stepped at 3.2 s, the joint run at about 6 s because its GPU was shared with another job. The joint run was
+stopped after its checkpoint at step 5000 and resumed on an unshared GPU of another node (`--resume --mix-skip-steps 5000`,
+3.1 to 3.2 s per step); the steps from 5000 to about 5500 of the first process were recomputed, and the joint log is the
+first process's log up to step 4999 followed by the resumed process's log. A checkpoint save blocks training for 4 to 20 minutes
+on the shared file system, so a log that stays silent for that long at a multiple of 1,000 steps is a save, not a stall.
+
+### Results
+
+| run | steps | loss at step 0 | loss at step 100 | mean of the last 10 logged losses | gradient norm (same window) | parameter-norm change |
+|---|---|---|---|---|---|---|
+| real only (`full6450`) | 6,450 | 0.1391 | 0.0602 | 0.0088 | 0.123 | 0.130 |
+| joint (`joint10100`) | 10,100 | 0.1675 | 0.0641 | 0.0088 | 0.120 | 0.203 |
+
+The two losses are not comparable: the joint batch mixes real and simulated rows, with the simulated share falling from 0.6
+to 0.15. Every array of the last checkpoint of each run is finite (51 arrays, 0 non-finite values). The checkpoints are
+`openpi/checkpoints/pi05_ur3_quick_new2_curvature_s48_state_pp/full6450/6449` and
+`openpi/checkpoints/pi05_ur3_joint2_curvature_s48_state_pp/joint10100/10099`; the joint run keeps steps 2000, 4000, 6000, 8000,
+10000 and 10099. `assets/` of every checkpoint carries the real dataset's `arc_resample.json` (real gripper holds 0.50 s after
+a close and 0.52 s after an open) and the per-point normalisation statistics. The curves are in
+`runs/ur3_sim4_pick_and_place_cube/train/training_curves.png`.
+
+The real-only checkpoint is published as `real_quick_new2/curvature/6449` of `JingwuLuo/ur3_sim_pick_and_place_cube` together
+with the model card of `runs/pick_place_quick_new2/publish/README_v7.md`; the upload was verified file by file (LFS SHA-256 and
+git blob ids). The joint checkpoint is not published. The state sensitivity of the served policies (two requests that differ
+only in the state) has not been measured for either checkpoint.
