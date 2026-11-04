@@ -1851,5 +1851,8 @@ a close and 0.52 s after an open) and the per-point normalisation statistics. Th
 
 The real-only checkpoint is published as `real_quick_new2/curvature/6449` of `JingwuLuo/ur3_sim_pick_and_place_cube` together
 with the model card of `runs/pick_place_quick_new2/publish/README_v7.md`; the upload was verified file by file (LFS SHA-256 and
-git blob ids). The joint checkpoint is not published. The state sensitivity of the served policies (two requests that differ
-only in the state) has not been measured for either checkpoint.
+git blob ids). The joint checkpoint is published as `joint_sim300_real_quick_new2/curvature/10099` of the same repository with
+`runs/pick_place_quick_new2/publish/README_v8.md`, verified the same way (20 files, 0 differences). The model card requires
+VLA_AGENT commit `0e68c29` or later (the recipes `full_6450` and `joint_10100`) for the two policies of the camera-adjusted
+recordings. The state sensitivity of the served policies (two requests that differ only in the state) has not been measured
+for either checkpoint.
