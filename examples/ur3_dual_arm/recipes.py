@@ -53,6 +53,15 @@ MIX_8K = Recipe("mix_8k", num_train_steps=8_000, peak_lr=2.5e-5, warmup_steps=30
 # simulated rows, 10.2 of the real rows). Checkpoints of 15 GB are kept every 3,000 steps.
 JOINT_9K = Recipe("joint_9k", num_train_steps=9_000, peak_lr=2.5e-5, warmup_steps=300, ema_decay=0.999, keep_period=3000)
 
+# Revision 88bfa623 of pick_and_place_quick_new (72 episodes, 20,610 rows after timing; no held-out episodes), real rows
+# only: 10 passes over the rows, 6,441 steps of batch 32 rounded to 6,450. Checkpoints are kept every 1,000 steps.
+FULL_6450 = Recipe("full_6450", num_train_steps=6_450, peak_lr=2.5e-5, warmup_steps=150, ema_decay=0.999, keep_period=1000)
+# The same real rows mixed with revision 493421dd of the simulated recordings (300 episodes, 58,408 rows, no held-out
+# episodes), one stage: 10 passes over the real rows and 2 over the simulated rows, 322,916 samples of batch 32, 10,091
+# steps rounded to 10,100; the simulated fraction runs from 0.6 to 0.15 (mean 0.375, 2.08 passes of the simulated rows, 9.8
+# of the real rows). Checkpoints of 15 GB are kept every 2,000 steps.
+JOINT_10100 = Recipe("joint_10100", num_train_steps=10_100, peak_lr=2.5e-5, warmup_steps=300, ema_decay=0.999, keep_period=2000)
+
 RECIPES: dict[str, Recipe] = {
-    r.name: r for r in (FULL_20K, FULL_5500, SIM_10K, SIM_15K, LORA_10K, LORA_4K, LORA_4K_EMA999, MIX_8K, JOINT_9K)
+    r.name: r for r in (FULL_20K, FULL_5500, SIM_10K, SIM_15K, LORA_10K, LORA_4K, LORA_4K_EMA999, MIX_8K, JOINT_9K, FULL_6450, JOINT_10100)
 }

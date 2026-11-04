@@ -1683,3 +1683,149 @@ Points, head and stitched error, hold error and edge shifts per checkpoint and s
 Hub delivery is complete: the six checkpoints and `README_v6.md` are in `JingwuLuo/ur3_sim_pick_and_place_cube` under the paths
 above (one commit per checkpoint, 106 files, all SHA-256 digests equal to the local files, no internal path or machine name in
 any scanned file). Each checkpoint carries its `norm_stats.json` and `arc_resample.json`. The open-loop evaluation is open.
+
+## Phase 34
+
+Phase Status: completed
+
+Round: 31
+
+### Goal
+
+The re-recorded real episodes of the rig after the top camera was adjusted (Hub dataset `JingwuLuo/pick_and_place_quick_new`
+revision `88bfa623`, 80 raw HDF5 episodes of 2026-11-03, top camera 640x360) as the curvature-label dataset
+`data/pick-and-place-quick-new2-curvature-s48-d0-train` with every kept episode in the training copy (no held-out
+episodes): conversion, one instruction set per episode read from the first and last top-camera frame, audit, keyframes with
+the accepted failed-grasp issues, still-frame trimming with 60 padding rows, curvature labels of
+`label_config_curvature_s48_d0.json`.
+
+### Files
+
+`runs/pick_place_quick_new2/` (conversion record, `make_prompts.py`, `keyframe_overrides*.json`, `keyframes_timing.sh`,
+`build_labels.sh`), `data/pick_and_place_quick_new_88bfa62/` (raw, read-only), `data/pick-and-place-quick-new2*`.
+
+### Structures
+
+None.
+
+### Affected Modules
+
+None.
+
+### Dependencies
+
+Phase 33.
+
+### Observation
+
+Episodes kept and excluded with the reason, audit findings, keyframe counts and the issues accepted with the gripper opening as
+evidence, row counts before and after timing.
+
+### Result
+
+Eight of the 80 episodes are excluded: 18 (68 steps, the gripper never closes, the cube ends on the plate without a grasp), 25
+(no cube moved, 33 s mostly idle), 26, 27 and 28 (the gripper never closes and the arm does not move; the scene is rearranged
+by hand), 29, 30 and 31 (no arm motion). The remaining 72 episodes (21,090 rows) cover the cube moved (pink, orange, blue) and
+the target (white box, plate, another cube). The left arm never moves (state dimensions 0 to 5 static). Ten episodes
+contain a failed grasp that is repeated (the raw `gripper_opening` during the first closed interval is 0.0 or 0.433, a held cube
+reads 0.28), episode 0 starts with a closed gripper and episode 22 carries the cube for 188 frames; these issues are accepted
+and the episodes stay. After still-frame trimming and 60 padding rows the dataset has 72 episodes and 20,610 rows; the
+curvature labels have reach median 48.0 frames, 31.0 % padding rows and no point at weight 0.
+
+## Phase 35
+
+Phase Status: completed
+
+Round: 32
+
+### Goal
+
+The re-recorded simulated episodes (Hub dataset `JingwuLuo/ur3_sim_pick_and_place_cube` revision `493421dd`, 300 right-arm
+episodes, top camera 640x360 at the pose fitted to the real recording) as `data/ur3-sim4-curvature-s48-d0-train` with all 300
+episodes in the training copy: conversion, instructions from the `sim/task` groups, audit, keyframes checked against the
+simulator's recorded gripper events, still-frame trimming with 60 padding rows, curvature labels with the pushed steps at
+weight 0, the gripper switch hold re-measured on the new revision.
+
+### Files
+
+`runs/ur3_sim4_pick_and_place_cube/`, `data/ur3_sim_pick_and_place_cube_493421d/` (raw, read-only), `data/ur3-sim4*`.
+
+### Structures
+
+None.
+
+### Affected Modules
+
+None.
+
+### Dependencies
+
+Phase 33.
+
+### Observation
+
+Episode and row counts, audit findings, keyframe issues accepted and their explanation, switch hold (median seconds from a
+command switch to 90 % of the opening change), row counts after timing, share of points at weight 0.
+
+### Result
+
+All 300 episodes of revision `493421dd` are converted (44,043 rows, five instructions per episode from the `sim/task` groups).
+The audit finds the left arm's actions static (dimensions 0 to 5; the left start pose varies between episodes, standard
+deviation 0.07 to 0.15 rad) and idle left wrist camera frames, as in the earlier revision. The gripper switch hold measured by
+`measure_switch_hold.py` is 0.300 s for closes (328 switches) and 0.300 s for opens (344), the earlier revision's value, so
+`robot_spec.json` keeps `switch_hold_s` [0.3, 0.3]. The keyframes use the grasp and release types only (the lift type that the
+earlier curvature runs carried is not used by the curvature labels and raised 44 order issues, 90 interval issues and 34 phase
+issues that the generator does not explain); 14 issues before timing and 13 after are accepted, each with the simulator's recorded gripper events
+equal to the detected keyframes. After timing the dataset has 300 episodes and 58,408 rows; the curvature labels have reach median
+48.0 frames, 46.0 % padding rows and weight 0 on 1.29 % of the points (pushed steps).
+
+## Phase 36
+
+Phase Status: active
+
+Round: 33
+
+### Goal
+
+Training of two curvature models with the state input, every episode used (no held-out set): a real-only model on
+`data/pick-and-place-quick-new2-curvature-s48-d0-train` and a one-stage joint real + simulated model (real rows primary,
+simulated rows mixed in with a linearly decreasing share, openpi patch 0004) on that dataset plus
+`data/ur3-sim4-curvature-s48-d0-train`. The numbers of passes of the earlier recipes are kept (10 over the real rows; for the
+joint model also 2 over the simulated rows), the sim share 0.6 to 0.15, learning rate 2.5e-5, EMA 0.999. Per-point
+normalisation statistics: the real ones for the real-only model, the union of the real and the simulated ones for the joint
+model; the joint checkpoint carries the real dataset's `arc_resample.json`.
+
+### Files
+
+`examples/ur3_dual_arm/recipes.py` (two recipes), `runs/pick_place_quick_new2/train/`, `runs/ur3_sim4_pick_and_place_cube/train/`,
+`openpi/assets/pi05_ur3_quick_new2_curvature_s48_state_pp/`, `openpi/assets/pi05_ur3_joint2_curvature_s48_state_pp/`,
+`openpi/checkpoints/`.
+
+### Structures
+
+Two `Recipe` entries.
+
+### Affected Modules
+
+Training recipes.
+
+### Dependencies
+
+Phases 34 and 35.
+
+### Observation
+
+Loss at steps 0, 100 and the end, finite parameters at the last step, `arc_resample.json` in every checkpoint's assets, the
+logged row counts of the mixture, state sensitivity of the served policy.
+
+### Launch
+
+Recipes `full_6450` (6,450 steps, warm-up 150, checkpoints kept every 1,000) and `joint_10100` (10,100 steps, warm-up 300,
+kept every 2,000), `--mix-fraction 0.6 0.15` for the joint run, experiments `full6450` and `joint10100`, configs
+`pi05_ur3_quick_new2_curvature_s48_state_pp` and `pi05_ur3_joint2_curvature_s48_state_pp`, one GPU each. The real statistics of
+the parked left arm (state and action dimensions 0 to 5, quantile range 1e-4 rad) are given a minimum range of 0.05 before
+use (`merge_stats_joint.sh`); the joint statistics are the union of those and the simulated ones, stored under both dataset
+names. The logged mixture is 20,610 real + 58,408 simulated rows. A GPU that reports "requires reset" shows no memory in use
+and fails at the first step (JAX OOM or no progress); `launch_when_free.sh` skips such GPUs and starts both runs when two healthy
+GPUs have at least 36,000 MiB free (a run uses 33.4 GB, JAX caps itself at 33.3 GiB on an L40S). Both runs share one node;
+the real-only run steps at 3.2 s, the joint run at about 6 s because its GPU is shared with another job.
